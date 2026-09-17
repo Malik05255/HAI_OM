@@ -16,8 +16,12 @@ class SecretStore(context: Context) {
 
     fun saveGitHubToken(value: String) = putEncrypted("github_token", value.trim())
     fun githubToken(): String = getEncrypted("github_token")
-    fun savePollinationsKey(value: String) = putEncrypted("pollinations_key", value.trim())
-    fun pollinationsKey(): String = getEncrypted("pollinations_key")
+
+    fun saveOmniRouteUrl(value: String) = putEncrypted("omniroute_url", value.trim())
+    fun omniRouteUrl(): String = getEncrypted("omniroute_url")
+
+    fun saveOmniRouteKey(value: String) = putEncrypted("omniroute_key", value.trim())
+    fun omniRouteKey(): String = getEncrypted("omniroute_key")
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
