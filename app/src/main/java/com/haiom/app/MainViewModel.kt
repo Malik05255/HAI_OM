@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.haiom.app.agent.AgentEngine
 import com.haiom.app.model.AgentRunResult
 import com.haiom.app.model.FreeProviderRanking
+import com.haiom.app.model.GitHubRepository
+import com.haiom.app.network.GitHubAccountClient
 import com.haiom.app.network.GitHubClient
 import com.haiom.app.network.OmniRouteClient
 import com.haiom.app.security.SecretStore
@@ -19,11 +21,13 @@ import kotlinx.coroutines.withContext
 
 data class MainUiState(
     val running: Boolean = false,
-    val connecting: Boolean = false,
+    val connecting: Boolean = true,
     val logs: List<String> = emptyList(),
     val result: AgentRunResult? = null,
     val error: String? = null,
     val hasGitHubToken: Boolean = false,
+    val githubLogin: String = "",
+    val repositories: List<GitHubRepository> = emptyList(),
     val omniReady: Boolean = false,
     val strictFreeVerified: Boolean = false,
     val compressionEnabled: Boolean = false,
@@ -37,109 +41,100 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
-    fun savedOmniRouteUrl(): String = secrets.omniRouteUrl().ifBlank { DEFAULT_OMNIROUTE_URL }
+    init { bootstrap() }
 
-    fun connectOmniRoute(url: String, key: String) {
-        if (_state.value.connecting || _state.value.running) return
-        persistOmniRoute(url, key)
-        val savedUrl = secrets.omniRouteUrl()
-        if (savedUrl.isBlank()) {
-            _state.update { it.copy(error = "أدخل رابط OmniRoute") }
-            return
-        }
-        _state.update { it.copy(connecting = true, omniReady = false, error = null) }
+    fun bootstrap() {
+        if (_state.value.running) return
+        _state.update { it.copy(connecting = true, error = null) }
         viewModelScope.launch {
-            try {
-                val omni = OmniRouteClient(savedUrl, secrets.omniRouteKey())
-                val connectionLogs = mutableListOf<String>()
-                omni.verifyAndConfigure { connectionLogs += it }
-                val rankings = runCatching { omni.fetchCodingRankings(50) }.getOrDefault(emptyList())
-                _state.update {
-                    it.copy(
-                        connecting = false,
-                        omniReady = true,
-                        strictFreeVerified = true,
-                        compressionEnabled = true,
-                        rankings = rankings,
-                        logs = (it.logs + connectionLogs).takeLast(120)
-                    )
+            val omniResult = runCatching {
+                val omni = OmniRouteClient(omniUrl(), secrets.omniRouteKey())
+                omni.verifyAndConfigure()
+                runCatching { omni.fetchCodingRankings(30) }.getOrDefault(emptyList())
+            }
+
+            var login = ""
+            var repositories = emptyList<GitHubRepository>()
+            val token = secrets.githubToken()
+            if (token.isNotBlank()) {
+                runCatching {
+                    val account = GitHubAccountClient(token)
+                    login = account.login()
+                    repositories = account.repositories()
                 }
-            } catch (t: Throwable) {
-                _state.update {
-                    it.copy(
-                        connecting = false,
-                        omniReady = false,
-                        strictFreeVerified = false,
-                        compressionEnabled = false,
-                        error = t.message ?: t.javaClass.simpleName
-                    )
-                }
+            }
+
+            _state.update {
+                it.copy(
+                    connecting = false,
+                    omniReady = omniResult.isSuccess,
+                    strictFreeVerified = omniResult.isSuccess,
+                    compressionEnabled = omniResult.isSuccess,
+                    rankings = omniResult.getOrDefault(emptyList()),
+                    hasGitHubToken = token.isNotBlank(),
+                    githubLogin = login,
+                    repositories = repositories
+                )
             }
         }
     }
 
-    fun runAgent(
-        repositoryUrl: String,
-        requirements: String,
-        githubToken: String,
-        omniRouteUrl: String,
-        omniRouteKey: String
-    ) {
+    fun runAgent(repositoryUrl: String, requirements: String) {
         if (_state.value.running || _state.value.connecting) return
-        if (githubToken.isNotBlank()) secrets.saveGitHubToken(githubToken)
-        persistOmniRoute(omniRouteUrl, omniRouteKey)
-
-        val token = secrets.githubToken()
-        val savedUrl = secrets.omniRouteUrl()
-        if (token.isBlank()) {
-            _state.update { it.copy(error = "أدخل GitHub fine-grained token أولًا") }
+        if (repositoryUrl.isBlank()) {
+            _state.update { it.copy(error = "اختر المشروع أولًا") }
             return
         }
-        if (savedUrl.isBlank()) {
-            _state.update { it.copy(error = "أدخل رابط OmniRoute أولًا") }
+        if (requirements.isBlank()) {
+            _state.update { it.copy(error = "اكتب المطلوب") }
+            return
+        }
+
+        val token = secrets.githubToken()
+        if (token.isBlank()) {
+            _state.update { it.copy(error = "اربط GitHub أولًا") }
             return
         }
 
         _state.update {
-            it.copy(
-                running = true,
-                result = null,
-                error = null,
-                logs = listOf("بدء HAI OM Agent", "AI: OmniRoute فقط", "Route: ${OmniRouteClient.CODING_ROUTE}")
-            )
+            it.copy(running = true, result = null, error = null, logs = listOf("بدأ التنفيذ"))
         }
+
         viewModelScope.launch {
             try {
-                val omni = OmniRouteClient(savedUrl, secrets.omniRouteKey())
+                val omni = OmniRouteClient(omniUrl(), secrets.omniRouteKey())
                 omni.verifyAndConfigure(::appendLog)
-                val rankings = runCatching { omni.fetchCodingRankings(50) }.getOrDefault(emptyList())
-                _state.update {
-                    it.copy(
-                        omniReady = true,
-                        strictFreeVerified = true,
-                        compressionEnabled = true,
-                        rankings = rankings
-                    )
-                }
-
                 val github = GitHubClient(token)
                 val result = withContext(Dispatchers.IO) {
                     AgentEngine(omni, github).run(repositoryUrl, requirements, ::appendLog)
                 }
                 _state.update { it.copy(running = false, result = result) }
-            } catch (t: Throwable) {
-                _state.update { it.copy(running = false, error = t.message ?: t.javaClass.simpleName) }
+            } catch (_: Throwable) {
+                _state.update { it.copy(running = false, error = "تعذر إكمال المهمة. حاول مرة ثانية") }
             }
         }
     }
 
-    private fun persistOmniRoute(url: String, key: String) {
-        if (url.isNotBlank()) secrets.saveOmniRouteUrl(url)
-        if (key.isNotBlank()) secrets.saveOmniRouteKey(key)
-    }
+    private fun omniUrl(): String = secrets.omniRouteUrl().ifBlank { DEFAULT_OMNIROUTE_URL }
 
     private fun appendLog(message: String) {
-        _state.update { current -> current.copy(logs = (current.logs + message).takeLast(160)) }
+        val simple = when {
+            message.contains("قراءة المستودع", true) -> "قراءة المشروع"
+            message.contains("إنشاء خطة", true) -> "تجهيز الخطة"
+            message.contains("المهمة ", true) -> message.substringBefore(':')
+            message.contains("تحديث ", true) || message.contains("حذف ", true) -> "تعديل الملفات"
+            message.contains("CI", true) && message.contains("ناجح", true) -> "✓ الفحص ناجح"
+            message.contains("CI", true) -> "فحص التغييرات"
+            message.contains("فشل", true) || message.contains("الإصلاح", true) -> "إصلاح خطأ"
+            message.contains("Commit", true) -> "تم حفظ التعديل"
+            message.contains("Pull Request", true) -> "تم تجهيز النتيجة"
+            message.startsWith("✓ اكتملت") -> message.substringBefore(':')
+            message.contains("اكتمل التنفيذ", true) -> "✓ اكتملت المهمة"
+            else -> return
+        }
+        _state.update { current ->
+            if (current.logs.lastOrNull() == simple) current else current.copy(logs = (current.logs + simple).takeLast(80))
+        }
     }
 
     fun clearError() = _state.update { it.copy(error = null) }
