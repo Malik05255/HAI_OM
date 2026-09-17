@@ -3,18 +3,15 @@ package com.haiom.app.model
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class FreeCodingModel(
-    val id: String,
-    val displayName: String,
-    val provider: String,
-    val endpoint: String,
-    val codingPriority: Int,
-    val auth: AuthMode = AuthMode.NONE,
-    val note: String = ""
+data class FreeProviderRanking(
+    val providerId: String,
+    val providerName: String,
+    val freeType: String,
+    val modelId: String,
+    val modelName: String,
+    val score: Double,
+    val confidence: String
 )
-
-@Serializable
-enum class AuthMode { NONE, OPTIONAL_FREE_KEY }
 
 @Serializable
 data class AgentPlan(val tasks: List<AgentTask>)
