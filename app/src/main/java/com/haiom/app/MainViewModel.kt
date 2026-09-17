@@ -1,16 +1,15 @@
 package com.haiom.app
 
 import android.app.Application
+import com.haiom.app.agent.RemoteAgentRunner
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.haiom.app.agent.AgentEngine
 import com.haiom.app.model.AgentRunResult
 import com.haiom.app.model.FreeProviderRanking
 import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.GitHubAccountClient
 import com.haiom.app.network.GitHubClient
 import com.haiom.app.network.GitHubAppLinker
-import com.haiom.app.network.OmniRouteClient
 import com.haiom.app.security.SecretStore
 import com.haiom.app.update.AppUpdateInfo
 import com.haiom.app.update.AppUpdateManager
@@ -61,21 +60,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.running || _state.value.githubLinking) return
         _state.update { it.copy(connecting = true, error = null) }
         viewModelScope.launch {
-            val omniResult = runCatching {
-                val omni = OmniRouteClient(omniUrl(), "")
-                omni.verifyAndConfigure()
-                runCatching { omni.fetchCodingRankings(30) }.getOrDefault(emptyList())
-            }
-
             val account = loadGitHubAccount()
 
             _state.update {
                 it.copy(
                     connecting = false,
-                    omniReady = omniResult.isSuccess,
-                    strictFreeVerified = omniResult.isSuccess,
-                    compressionEnabled = omniResult.isSuccess,
-                    rankings = omniResult.getOrDefault(emptyList()),
+                    omniReady = account.connected,
+                    strictFreeVerified = account.connected,
+                    compressionEnabled = account.connected,
+                    rankings = emptyList(),
                     hasGitHubToken = account.connected,
                     githubLogin = account.login,
                     repositories = account.repositories
@@ -174,15 +167,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val token = resolveGitHubToken() ?: error("اربط GitHub أولًا")
-                val omni = OmniRouteClient(omniUrl(), "")
-                omni.verifyAndConfigure(::appendLog)
                 val github = GitHubClient(token)
                 val result = withContext(Dispatchers.IO) {
-                    AgentEngine(omni, github).run(repositoryUrl, requirements, ::appendLog)
+                    RemoteAgentRunner(getApplication(), github)
+                        .run(repositoryUrl, requirements, ::appendLog)
                 }
                 _state.update { it.copy(running = false, result = result) }
-            } catch (_: Throwable) {
-                _state.update { it.copy(running = false, error = "تعذر إكمال المهمة. حاول مرة ثانية") }
+            } catch (t: Throwable) {
+                _state.update {
+                    it.copy(
+                        running = false,
+                        error = t.message?.takeIf { message -> message.isNotBlank() }
+                            ?: "تعذر إكمال المهمة. حاول مرة ثانية"
+                    )
+                }
             }
         }
     }
@@ -230,8 +228,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return githubAppLinker.installationToken(appId, privateKey, installationId)
     }
 
-    private fun omniUrl(): String = BuildConfig.OMNIROUTE_BASE_URL
-
     private fun friendlyLinkError(t: Throwable): String {
         val raw = t.message.orEmpty()
         return when {
@@ -247,6 +243,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val simple = when {
             message.contains("قراءة المستودع", true) -> "قراءة المشروع"
             message.contains("إنشاء خطة", true) -> "تجهيز الخطة"
+            message == "تجهيز المهمة" -> "تجهيز المهمة"
+            message == "بدأ التنفيذ" -> "بدأ التنفيذ"
+            message.contains("تنظيف ملفات التشغيل", true) -> "إنهاء المهمة"
+            message.contains("تجهيز النتيجة", true) -> "تجهيز النتيجة"
             message.contains("المهمة ", true) -> message.substringBefore(':')
             message.contains("تحديث ", true) || message.contains("حذف ", true) -> "تعديل الملفات"
             message.contains("CI", true) && message.contains("ناجح", true) -> "✓ الفحص ناجح"
