@@ -9,11 +9,13 @@ import com.haiom.app.model.FreeProviderRanking
 import com.haiom.app.network.GitHubClient
 import com.haiom.app.network.OmniRouteClient
 import com.haiom.app.security.SecretStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class MainUiState(
     val running: Boolean = false,
@@ -121,7 +123,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val github = GitHubClient(token)
-                val result = AgentEngine(omni, github).run(repositoryUrl, requirements, ::appendLog)
+                val result = withContext(Dispatchers.IO) {
+                    AgentEngine(omni, github).run(repositoryUrl, requirements, ::appendLog)
+                }
                 _state.update { it.copy(running = false, result = result) }
             } catch (t: Throwable) {
                 _state.update { it.copy(running = false, error = t.message ?: t.javaClass.simpleName) }
