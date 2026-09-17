@@ -248,7 +248,13 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                 onDisconnect = vm::disconnectGitHub
             )
             2 -> ModelsScreen(Modifier.padding(padding), state.rankings, state.omniReady)
-            else -> ActivityScreen(Modifier.padding(padding), state.logs, state.running, state.result?.pullRequestUrl)
+            else -> ActivityScreen(
+                Modifier.padding(padding),
+                state.logs,
+                state.running,
+                state.result?.pullRequestUrl,
+                state.result?.answer
+            )
         }
     }
 }
@@ -374,6 +380,23 @@ private fun HomeScreen(
                     Icon(Icons.Outlined.PlayArrow, null)
                     Spacer(Modifier.size(8.dp))
                     Text("ابدأ", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        state.result?.answer?.takeIf { it.isNotBlank() }?.let { answer ->
+            item {
+                Text("النتيجة", fontWeight = FontWeight.Bold)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Text(
+                        answer,
+                        modifier = Modifier.padding(18.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
                 }
             }
         }
@@ -510,7 +533,13 @@ private fun ModelsScreen(modifier: Modifier, rankings: List<FreeProviderRanking>
 }
 
 @Composable
-private fun ActivityScreen(modifier: Modifier, logs: List<String>, running: Boolean, prUrl: String?) {
+private fun ActivityScreen(
+    modifier: Modifier,
+    logs: List<String>,
+    running: Boolean,
+    prUrl: String?,
+    answer: String?
+) {
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -542,6 +571,20 @@ private fun ActivityScreen(modifier: Modifier, logs: List<String>, running: Bool
                     )
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+            }
+        }
+        if (!answer.isNullOrBlank()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Text(
+                        answer,
+                        modifier = Modifier.fillMaxWidth().padding(18.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
             }
         }
         if (!prUrl.isNullOrBlank()) {
