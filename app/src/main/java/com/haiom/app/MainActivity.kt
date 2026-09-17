@@ -16,12 +16,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val colors = lightColorScheme(
-                primary = Color(0xFF355F59),
+                primary = Color(0xFF3F51B5),
                 onPrimary = Color.White,
-                primaryContainer = Color(0xFFDCECE8),
-                surface = Color(0xFFF7F8FA),
-                surfaceVariant = Color(0xFFECEFF1),
-                background = Color(0xFFF7F8FA),
+                primaryContainer = Color(0xFFE8EAFF),
+                onPrimaryContainer = Color(0xFF20245A),
+                secondary = Color(0xFF3E7C78),
+                secondaryContainer = Color(0xFFDFF2EF),
+                background = Color(0xFFF9FAFC),
+                surface = Color(0xFFFFFFFF),
+                surfaceVariant = Color(0xFFF0F2F6),
+                onSurface = Color(0xFF17191F),
+                onSurfaceVariant = Color(0xFF666A74),
+                outline = Color(0xFFD9DCE3),
                 error = Color(0xFFB3261E)
             )
             MaterialTheme(colorScheme = colors) {
