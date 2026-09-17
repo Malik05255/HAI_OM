@@ -66,6 +66,9 @@ jobs:
 
           const root = process.env.OMNIROOT;
           const { apiFetch } = await import(pathToFileURL(path.join(root, "bin/cli/api.mjs")).href);
+          const { openOmniRouteDb } = await import(
+            pathToFileURL(path.join(root, "bin/cli/sqlite.mjs")).href
+          );
 
           const settings = await apiFetch("/api/settings", {
             method: "PATCH",
@@ -74,20 +77,43 @@ jobs:
           });
           if (!settings.ok) throw new Error("Unable to enable strict free-only routing: " + settings.status);
 
-          const compression = await apiFetch("/api/settings/compression", {
-            method: "PUT",
-            body: {
+          // Compression's write endpoint requires dashboard auth. This runner is
+          // local and ephemeral, so persist through OmniRoute's own SQLite helper.
+          const { db } = await openOmniRouteDb();
+          try {
+            const put = db.prepare(
+              "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES (?, ?, ?)"
+            );
+            const compression = {
+              enabled: true,
               defaultMode: "stacked",
               autoTriggerMode: "stacked",
               autoTriggerTokens: 32000,
               stackedPipeline: [
                 { engine: "rtk", intensity: "standard" },
                 { engine: "caveman", intensity: "full" }
-              ]
-            },
-            retry: false,
-          });
-          if (!compression.ok) throw new Error("Unable to enable token compression: " + compression.status);
+              ],
+              rtkConfig: {
+                enabled: true,
+                intensity: "standard",
+                applyToToolResults: true,
+                applyToCodeBlocks: false,
+                applyToAssistantMessages: false
+              },
+              cavemanConfig: {
+                enabled: true,
+                intensity: "full"
+              }
+            };
+            const tx = db.transaction(() => {
+              for (const [key, value] of Object.entries(compression)) {
+                put.run("compression", key, JSON.stringify(value));
+              }
+            });
+            tx();
+          } finally {
+            db.close();
+          }
 
           // Dahl intentionally offers a no-signup temporary token endpoint.
           // Keep the token only in the ephemeral runner temp directory.
@@ -101,6 +127,9 @@ jobs:
             }
           } catch {}
           NODE
+
+          # Compression settings are cached for up to five seconds by OmniRoute.
+          sleep 6
 
           if [ -s "$RUNNER_TEMP/dahl-token" ]; then
             export HAI_DAHL_TOKEN="$(cat "$RUNNER_TEMP/dahl-token")"
