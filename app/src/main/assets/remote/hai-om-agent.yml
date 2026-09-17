@@ -55,11 +55,10 @@ jobs:
             exit 1
           fi
 
-          # Fail-closed routing preference. This runner never receives provider API
-          # keys or billing credentials; zero-config/keyless candidates are used.
-          curl -fsS -X PUT http://127.0.0.1:20128/api/settings             -H "Content-Type: application/json"             -d '{"freeAccessPolicy":"strict","excludeTosAvoid":false}' >/dev/null || true
-
-          curl -fsS -X PUT http://127.0.0.1:20128/api/settings/compression             -H "Content-Type: application/json"             -d '{"defaultMode":"stacked","autoTriggerMode":"stacked","autoTriggerTokens":32000,"stackedPipeline":[{"engine":"rtk","intensity":"standard"},{"engine":"caveman","intensity":"full"}],"rtkConfig":{"enabled":true,"intensity":"standard","applyToToolResults":true,"applyToCodeBlocks":false,"applyToAssistantMessages":false,"maxLinesPerResult":120,"maxCharsPerResult":12000,"deduplicateThreshold":3,"rawOutputRetention":"never"}}' >/dev/null || true
+          # This ephemeral runner receives no provider keys or billing credentials,
+          # so only OmniRoute's zero-config/keyless routes can actually execute.
+          # Configure token compression using OmniRoute's authenticated local CLI.
+          omniroute compression engine set stacked || omniroute compression engine set rtk || true
 
       - name: Build, test, and repair
         env:
