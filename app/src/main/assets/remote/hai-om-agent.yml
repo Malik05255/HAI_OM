@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install -g omniroute@3.8.51 --no-fund --no-audit
+          npm install -g omniroute@latest --no-fund --no-audit
           nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/omniroute.pid"
 
