@@ -34,32 +34,39 @@ class AgentEngine(
         github.createBranch(repo, base, branch)
         onEvent("فرع العمل: $branch")
 
+        var prUrl: String? = null
+        suspend fun ensurePullRequest() {
+            if (prUrl != null) return
+            prUrl = github.createPullRequest(
+                repo = repo,
+                branch = branch,
+                base = base,
+                title = "HAI Agent: ${tasks.first().title.take(60)}",
+                body = buildString {
+                    appendLine("يعمل HAI OM على هذا الفرع تلقائيًا. يتم تحديث الفرع مهمة بعد مهمة ويُستخدم هذا PR لتشغيل CI حتى في المستودعات التي تعتمد pull_request فقط.")
+                    appendLine()
+                    appendLine("## الطلب")
+                    appendLine(requirements.take(3000))
+                    appendLine()
+                    appendLine("## خطة العمل")
+                    tasks.forEach { appendLine("- ${it.title}") }
+                    appendLine()
+                    appendLine("السياسة: OmniRoute auto/coding + strict zero-cost + RTK/Caveman compression + CI self-healing.")
+                }
+            )
+            prUrl?.let { onEvent("Pull Request نشط للـCI: $it") }
+        }
+
         var completed = 0
         for ((index, task) in tasks.withIndex()) {
             onEvent("المهمة ${index + 1}/${tasks.size}: ${task.title}")
-            executeTask(repo, branch, requirements, task, onEvent)
+            executeTask(repo, branch, requirements, task, onEvent, ::ensurePullRequest)
             completed++
             onEvent("✓ اكتملت: ${task.title}")
         }
 
-        val prUrl = github.createPullRequest(
-            repo = repo,
-            branch = branch,
-            base = base,
-            title = "HAI Agent: ${tasks.first().title.take(60)}",
-            body = buildString {
-                appendLine("تم إنشاء هذا التغيير تلقائيًا بواسطة HAI OM.")
-                appendLine()
-                appendLine("## الطلب")
-                appendLine(requirements.take(3000))
-                appendLine()
-                appendLine("## المهام المنفذة")
-                tasks.forEach { appendLine("- ${it.title}") }
-                appendLine()
-                appendLine("السياسة: OmniRoute auto/coding + strict zero-cost + RTK/Caveman compression + CI self-healing.")
-            }
-        )
-        onEvent(prUrl?.let { "تم إنشاء Pull Request: $it" } ?: "اكتمل التنفيذ")
+        if (prUrl == null) ensurePullRequest()
+        onEvent(prUrl?.let { "اكتمل التنفيذ: $it" } ?: "اكتمل التنفيذ")
         return AgentRunResult(branch, prUrl, completed, tasks.size)
     }
 
@@ -68,7 +75,8 @@ class AgentEngine(
         branch: String,
         requirements: String,
         task: AgentTask,
-        onEvent: (String) -> Unit
+        onEvent: (String) -> Unit,
+        ensurePullRequest: suspend () -> Unit
     ) {
         var context = github.buildContext(repo, branch)
         val editCompletion = omniRoute.complete(EDITOR_SYSTEM, editorPrompt(requirements, task, context))
@@ -77,10 +85,14 @@ class AgentEngine(
         require(batch.files.isNotEmpty()) { "المهمة لم تنتج أي تعديلات" }
         github.applyBatch(repo, branch, batch, task.id, onEvent)
 
+        // The branch now differs from base, so a PR can be opened. Doing this before
+        // waiting for CI ensures repositories with pull_request-only workflows are covered.
+        ensurePullRequest()
+
         var head = github.headSha(repo, branch)
         var ci = github.waitForCi(repo, branch, head, onEvent)
         if (ci.state == CiState.NOT_FOUND) {
-            onEvent("لا يوجد GitHub Actions لهذه المهمة؛ الانتقال بعد الفحص البنيوي")
+            onEvent("لا يوجد GitHub Actions لهذا الـcommit؛ الانتقال بعد الفحص البنيوي")
             return
         }
 
