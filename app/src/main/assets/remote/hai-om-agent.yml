@@ -55,22 +55,64 @@ jobs:
             exit 1
           fi
 
-          # Add a known keyless provider explicitly. This avoids relying on the
-          # zero-config pool, whose members can reject CI/server traffic.
-          omniroute providers add pollinations             --allow-no-credential             --yes             --name hai-free-pollinations             --default-model qwen-coder || true
+          # Configure OmniRoute through its own authenticated local CLI transport.
+          # Routing is fail-closed to zero-cost sources and token compression is on.
+          OMNIROOT="$(npm root -g)/omniroute"
+          export OMNIROOT
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          import { pathToFileURL } from "node:url";
 
-          # Enable MCP locally so compression CLI commands use the normal supported
-          # management path, then enable stacked RTK + Caveman compression.
-          omniroute mcp enable || true
-          omniroute compression engine set stacked ||             omniroute compression engine set rtk || true
+          const root = process.env.OMNIROOT;
+          const { apiFetch } = await import(pathToFileURL(path.join(root, "bin/cli/api.mjs")).href);
 
-          # Give the provider auto-test a moment to mark the connection active.
-          for i in $(seq 1 20); do
-            if curl -fsS               -H "Authorization: Bearer hai-om-free"               http://127.0.0.1:20128/v1/models               | grep -q '"pol/qwen-coder"'; then
-              break
-            fi
-            sleep 2
-          done
+          const settings = await apiFetch("/api/settings", {
+            method: "PATCH",
+            body: { freeAccessPolicy: "strict", excludeTosAvoid: false },
+            retry: false,
+          });
+          if (!settings.ok) throw new Error("Unable to enable strict free-only routing: " + settings.status);
+
+          const compression = await apiFetch("/api/settings/compression", {
+            method: "PUT",
+            body: {
+              defaultMode: "stacked",
+              autoTriggerMode: "stacked",
+              autoTriggerTokens: 32000,
+              stackedPipeline: [
+                { engine: "rtk", intensity: "standard" },
+                { engine: "caveman", intensity: "full" }
+              ]
+            },
+            retry: false,
+          });
+          if (!compression.ok) throw new Error("Unable to enable token compression: " + compression.status);
+
+          // Dahl intentionally offers a no-signup temporary token endpoint.
+          // Keep the token only in the ephemeral runner temp directory.
+          try {
+            const tokenRes = await apiFetch("/api/dahl/tokens", { method: "POST", retry: false });
+            if (tokenRes.ok) {
+              const body = await tokenRes.json();
+              if (typeof body?.token === "string" && body.token.length > 8) {
+                fs.writeFileSync(path.join(process.env.RUNNER_TEMP, "dahl-token"), body.token, { mode: 0o600 });
+              }
+            }
+          } catch {}
+          NODE
+
+          if [ -s "$RUNNER_TEMP/dahl-token" ]; then
+            export HAI_DAHL_TOKEN="$(cat "$RUNNER_TEMP/dahl-token")"
+            omniroute providers add dahl \
+              --credential-env HAI_DAHL_TOKEN \
+              --yes \
+              --name hai-free-dahl \
+              --default-model moonshotai/Kimi-K2.6 || true
+            omniroute providers test hai-free-dahl || true
+            unset HAI_DAHL_TOKEN
+            rm -f "$RUNNER_TEMP/dahl-token"
+          fi
 
       - name: Build, test, and repair
         env:
