@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material3.Button
@@ -25,6 +26,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -46,7 +48,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.haiom.app.MainViewModel
-import com.haiom.app.model.FreeCodingModel
+import com.haiom.app.model.FreeProviderRanking
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,7 +57,8 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
     var repo by remember { mutableStateOf("") }
     var requirements by remember { mutableStateOf("") }
     var githubToken by remember { mutableStateOf("") }
-    var providerKey by remember { mutableStateOf("") }
+    var omniUrl by remember { mutableStateOf(vm.savedOmniRouteUrl()) }
+    var omniKey by remember { mutableStateOf("") }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(state.error) {
@@ -69,7 +72,7 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                 title = {
                     Column {
                         Text("HAI OM", fontWeight = FontWeight.Bold)
-                        Text("وكيل برمجة مجاني فقط", style = MaterialTheme.typography.labelMedium)
+                        Text("OmniRoute + GitHub Coding Agent", style = MaterialTheme.typography.labelMedium)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -88,15 +91,72 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Outlined.Security, null)
-                            Text("Free-only صارم", fontWeight = FontWeight.Bold)
+                            Text("AI واحد: OmniRoute", fontWeight = FontWeight.Bold)
                         }
-                        Text("لا توجد شاشة دفع ولا نماذج مدفوعة. التوجيه ينتقل تلقائيًا بين النماذج المجانية المسموحة فقط.")
+                        Text("HAI OM لا يتصل بأي مزود AI مباشرة. OmniRoute يدير المزودين، fallback، الحصص، وترتيب النماذج.")
+                        Text(
+                            when {
+                                state.strictFreeVerified && state.compressionEnabled -> "✓ Zero-Cost strict   ✓ RTK → Caveman"
+                                state.omniReady -> "✓ OmniRoute متصل"
+                                else -> "يتم التحقق من Zero-Cost والضغط قبل السماح بالتنفيذ"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
 
-            item { SectionTitle("النماذج — الأقوى للبرمجة أولًا") }
-            itemsIndexed(vm.models) { index, model -> ModelRow(index + 1, model) }
+            item {
+                SectionTitle("اتصال OmniRoute")
+                OutlinedTextField(
+                    value = omniUrl,
+                    onValueChange = { omniUrl = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("OmniRoute Base URL") },
+                    placeholder = { Text("http://127.0.0.1:20128") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Outlined.Link, null) }
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = omniKey,
+                    onValueChange = { omniKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("OmniRoute management/API key — اختياري محليًا") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { vm.connectOmniRoute(omniUrl, omniKey) },
+                    enabled = !state.connecting && !state.running && omniUrl.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(15.dp)
+                ) {
+                    if (state.connecting) {
+                        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.height(20.dp))
+                        Text("   جارٍ التحقق…")
+                    } else {
+                        Text("تحقق واضبط الوضع المجاني")
+                    }
+                }
+            }
+
+            item { SectionTitle("الأقوى للبرمجة — من OmniRoute مباشرة") }
+            if (state.rankings.isEmpty()) {
+                item {
+                    Card(shape = RoundedCornerShape(14.dp)) {
+                        Text(
+                            "بعد الاتصال سيظهر ترتيب Free Provider Rankings لفئة Coding تلقائيًا.",
+                            modifier = Modifier.padding(14.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            } else {
+                itemsIndexed(state.rankings.take(20)) { index, model -> RankingRow(index + 1, model) }
+            }
 
             item {
                 Spacer(Modifier.height(4.dp))
@@ -109,15 +169,6 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Outlined.AccountCircle, null) }
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = providerKey,
-                    onValueChange = { providerKey = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(if (state.hasOptionalProviderKey) "مفتاح Pollinations محفوظ (اختياري)" else "Pollinations key اختياري لرفع الحدود") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -139,8 +190,8 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                 )
                 Spacer(Modifier.height(10.dp))
                 Button(
-                    onClick = { vm.runAgent(repo, requirements, githubToken, providerKey) },
-                    enabled = !state.running && repo.isNotBlank() && requirements.isNotBlank(),
+                    onClick = { vm.runAgent(repo, requirements, githubToken, omniUrl, omniKey) },
+                    enabled = !state.running && !state.connecting && repo.isNotBlank() && requirements.isNotBlank() && omniUrl.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     shape = RoundedCornerShape(16.dp)
                 ) {
@@ -188,7 +239,7 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun ModelRow(rank: Int, model: FreeCodingModel) {
+private fun RankingRow(rank: Int, model: FreeProviderRanking) {
     Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
@@ -197,10 +248,13 @@ private fun ModelRow(rank: Int, model: FreeCodingModel) {
         ) {
             Icon(Icons.Outlined.Code, null, tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f)) {
-                Text("$rank. ${model.displayName}", fontWeight = FontWeight.SemiBold)
-                Text("${model.provider} • ${model.note}", style = MaterialTheme.typography.bodySmall)
+                Text("$rank. ${model.modelName}", fontWeight = FontWeight.SemiBold)
+                Text("${model.providerName} • ${model.freeType.uppercase()}", style = MaterialTheme.typography.bodySmall)
             }
-            Text("مجاني", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+            Column(horizontalAlignment = Alignment.End) {
+                Text(String.format("%.3f", model.score), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                if (model.confidence.isNotBlank()) Text(model.confidence, style = MaterialTheme.typography.labelSmall)
+            }
         }
         HorizontalDivider()
     }
