@@ -9,6 +9,11 @@ val githubClientId = providers.gradleProperty("HAI_GITHUB_CLIENT_ID")
     .orElse(providers.environmentVariable("HAI_GITHUB_CLIENT_ID"))
     .getOrElse("")
 
+val omniRouteBaseUrl = providers.gradleProperty("HAI_OMNIROUTE_URL")
+    .orElse(providers.environmentVariable("HAI_OMNIROUTE_URL"))
+    .getOrElse("")
+    .ifBlank { "http://127.0.0.1:20128" }
+
 android {
     namespace = "com.haiom.app"
     compileSdk = 35
@@ -23,6 +28,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "GITHUB_CLIENT_ID", "\"${githubClientId}\"")
+        buildConfigField("String", "OMNIROUTE_BASE_URL", "\"${omniRouteBaseUrl}\"")
     }
 
     buildTypes {
