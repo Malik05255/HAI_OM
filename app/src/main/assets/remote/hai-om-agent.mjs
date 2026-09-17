@@ -188,8 +188,6 @@ function extractJson(raw) {
 
 async function chat(system, user, toolContext = "") {
   const models = [
-    "dahl/deepseek-ai/DeepSeek-V4-Flash-0731",
-    "dahl/zai-org/GLM-5.3-Flash",
     "dahl/MiniMaxAI/MiniMax-M2.7",
     "kc/openrouter/free",
     "ddgw/gpt-5.6-luna",
