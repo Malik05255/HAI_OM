@@ -41,9 +41,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
-    init {
-        bootstrap()
-    }
+    init { bootstrap() }
 
     fun bootstrap() {
         if (_state.value.running) return
@@ -52,8 +50,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val omniResult = runCatching {
                 val omni = OmniRouteClient(omniUrl(), secrets.omniRouteKey())
                 omni.verifyAndConfigure()
-                val rankings = runCatching { omni.fetchCodingRankings(30) }.getOrDefault(emptyList())
-                rankings
+                runCatching { omni.fetchCodingRankings(30) }.getOrDefault(emptyList())
             }
 
             var login = ""
@@ -100,12 +97,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         _state.update {
-            it.copy(
-                running = true,
-                result = null,
-                error = null,
-                logs = listOf("بدأ التنفيذ")
-            )
+            it.copy(running = true, result = null, error = null, logs = listOf("بدأ التنفيذ"))
         }
 
         viewModelScope.launch {
@@ -117,35 +109,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     AgentEngine(omni, github).run(repositoryUrl, requirements, ::appendLog)
                 }
                 _state.update { it.copy(running = false, result = result) }
-            } catch (t: Throwable) {
-                _state.update { it.copy(running = false, error = friendlyError(t)) }
+            } catch (_: Throwable) {
+                _state.update { it.copy(running = false, error = "تعذر إكمال المهمة. حاول مرة ثانية") }
             }
         }
     }
 
     private fun omniUrl(): String = secrets.omniRouteUrl().ifBlank { DEFAULT_OMNIROUTE_URL }
 
-    private fun friendlyError(t: Throwable): String {
-        val raw = t.message.orEmpty()
-        return when {
-            raw.contains("OmniRoute", true) || raw.contains("connect", true) -> "تعذر الاتصال بالخدمة"
-            raw.contains("GitHub", true) -> "تعذر الاتصال بـ GitHub"
-            raw.isBlank() -> "حدث خطأ، حاول مرة ثانية"
-            else -> raw.take(160)
-        }
-    }
-
     private fun appendLog(message: String) {
         val simple = when {
-            message.contains("CI", true) && message.contains("success", true) -> "✓ الاختبار ناجح"
-            message.contains("فشل CI") -> "إصلاح خطأ"
-            message.contains("فرع العمل") -> "تم تجهيز المشروع"
-            message.contains("Commit") -> "تم حفظ التعديل"
-            message.contains("Pull Request") -> "تم تجهيز المراجعة"
-            message.startsWith("✓") -> message
-            else -> message
+            message.contains("قراءة المستودع", true) -> "قراءة المشروع"
+            message.contains("إنشاء خطة", true) -> "تجهيز الخطة"
+            message.contains("المهمة ", true) -> message.substringBefore(':')
+            message.contains("تحديث ", true) || message.contains("حذف ", true) -> "تعديل الملفات"
+            message.contains("CI", true) && message.contains("ناجح", true) -> "✓ الفحص ناجح"
+            message.contains("CI", true) -> "فحص التغييرات"
+            message.contains("فشل", true) || message.contains("الإصلاح", true) -> "إصلاح خطأ"
+            message.contains("Commit", true) -> "تم حفظ التعديل"
+            message.contains("Pull Request", true) -> "تم تجهيز النتيجة"
+            message.startsWith("✓ اكتملت") -> message.substringBefore(':')
+            message.contains("اكتمل التنفيذ", true) -> "✓ اكتملت المهمة"
+            else -> return
         }
-        _state.update { current -> current.copy(logs = (current.logs + simple).takeLast(80)) }
+        _state.update { current ->
+            if (current.logs.lastOrNull() == simple) current else current.copy(logs = (current.logs + simple).takeLast(80))
+        }
     }
 
     fun clearError() = _state.update { it.copy(error = null) }
