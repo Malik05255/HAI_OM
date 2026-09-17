@@ -50,6 +50,9 @@ jobs:
           const { apiFetch } = await import(
             pathToFileURL(path.join(process.env.OMNIROOT, "bin/cli/api.mjs")).href
           );
+          const { openOmniRouteDb } = await import(
+            pathToFileURL(path.join(process.env.OMNIROOT, "bin/cli/sqlite.mjs")).href
+          );
 
           const settings = await apiFetch("/api/settings", {
             method: "PATCH",
@@ -58,20 +61,38 @@ jobs:
           });
           if (!settings.ok) throw new Error("strict free-only settings failed: " + settings.status);
 
-          const compression = await apiFetch("/api/settings/compression", {
-            method: "PUT",
-            body: {
+          const { db } = await openOmniRouteDb();
+          try {
+            const put = db.prepare(
+              "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES (?, ?, ?)"
+            );
+            const compression = {
+              enabled: true,
               defaultMode: "stacked",
               autoTriggerMode: "stacked",
               autoTriggerTokens: 32000,
               stackedPipeline: [
                 { engine: "rtk", intensity: "standard" },
                 { engine: "caveman", intensity: "full" }
-              ]
-            },
-            retry: false,
-          });
-          if (!compression.ok) throw new Error("compression settings failed: " + compression.status);
+              ],
+              rtkConfig: {
+                enabled: true,
+                intensity: "standard",
+                applyToToolResults: true,
+                applyToCodeBlocks: false,
+                applyToAssistantMessages: false
+              },
+              cavemanConfig: { enabled: true, intensity: "full" }
+            };
+            const tx = db.transaction(() => {
+              for (const [key, value] of Object.entries(compression)) {
+                put.run("compression", key, JSON.stringify(value));
+              }
+            });
+            tx();
+          } finally {
+            db.close();
+          }
 
           try {
             const tokenRes = await apiFetch("/api/dahl/tokens", { method: "POST", retry: false });
@@ -88,6 +109,8 @@ jobs:
           } catch {}
           NODE
 
+          sleep 6
+
           if [ -s "$RUNNER_TEMP/dahl-token" ]; then
             export HAI_DAHL_TOKEN="$(cat "$RUNNER_TEMP/dahl-token")"
             omniroute providers add dahl \
@@ -103,6 +126,7 @@ jobs:
           try_model() {
             MODEL="$1"
             HTTP_CODE="$(curl -sS --max-time 45 \
+              -D "$RUNNER_TEMP/headers.txt" \
               -o "$RUNNER_TEMP/response.json" \
               -w "%{http_code}" \
               http://127.0.0.1:20128/v1/chat/completions \
@@ -113,6 +137,12 @@ jobs:
             if [ "$HTTP_CODE" = "200" ] && \
                jq -e '.choices[0].message.content | strings | length > 0' "$RUNNER_TEMP/response.json" >/dev/null 2>&1; then
               echo "Working free route: $MODEL"
+              COMPRESSION_HEADER="$(grep -i '^x-omniroute-compression:' "$RUNNER_TEMP/headers.txt" | tail -1 || true)"
+              echo "Compression: $COMPRESSION_HEADER"
+              echo "$COMPRESSION_HEADER" | grep -qi 'stacked' || {
+                echo "Token compression was not applied"
+                return 1
+              }
               return 0
             fi
 
