@@ -40,9 +40,25 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Configure compression through the local CLI; it authenticates to the
-          # loopback management plane with OmniRoute's machine token.
-          omniroute compression engine set stacked || omniroute compression engine set rtk || true
+          omniroute providers add pollinations \
+            --allow-no-credential \
+            --yes \
+            --name hai-free-pollinations \
+            --default-model qwen-coder || true
+
+          omniroute mcp enable || true
+          omniroute compression engine set stacked || \
+            omniroute compression engine set rtk || true
+
+          for i in $(seq 1 20); do
+            if curl -fsS \
+              -H "Authorization: Bearer smoke" \
+              http://127.0.0.1:20128/v1/models \
+              | grep -q '"pol/qwen-coder"'; then
+              break
+            fi
+            sleep 2
+          done
 
           try_model() {
             MODEL="$1"
@@ -59,4 +75,9 @@ jobs:
             return 1
           }
 
-          try_model "auto/coding" || try_model "auto"
+          try_model "pol/qwen-coder" || \
+          try_model "pol/deepseek" || \
+          try_model "pol/openai-large" || \
+          try_model "pol/grok" || \
+          try_model "auto/coding" || \
+          try_model "auto"
