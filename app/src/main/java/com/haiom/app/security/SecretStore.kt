@@ -18,6 +18,41 @@ class SecretStore(context: Context) {
     fun githubToken(): String = getEncrypted("github_token")
     fun clearGitHubToken() = prefs.edit().remove("github_token").apply()
 
+    fun saveGitHubApp(
+        appId: Long,
+        slug: String,
+        privateKeyPem: String,
+        ownerLogin: String,
+        installationId: Long
+    ) {
+        putEncrypted("github_app_id", appId.toString())
+        putEncrypted("github_app_slug", slug)
+        putEncrypted("github_app_private_key", privateKeyPem)
+        putEncrypted("github_app_owner", ownerLogin)
+        putEncrypted("github_installation_id", installationId.toString())
+    }
+
+    fun githubAppId(): Long? = getEncrypted("github_app_id").toLongOrNull()
+    fun githubAppSlug(): String = getEncrypted("github_app_slug")
+    fun githubAppPrivateKey(): String = getEncrypted("github_app_private_key")
+    fun githubAppOwner(): String = getEncrypted("github_app_owner")
+    fun githubInstallationId(): Long? = getEncrypted("github_installation_id").toLongOrNull()
+
+    fun hasGitHubApp(): Boolean =
+        githubAppId() != null &&
+            githubInstallationId() != null &&
+            githubAppPrivateKey().isNotBlank()
+
+    fun clearGitHubApp() {
+        prefs.edit()
+            .remove("github_app_id")
+            .remove("github_app_slug")
+            .remove("github_app_private_key")
+            .remove("github_app_owner")
+            .remove("github_installation_id")
+            .apply()
+    }
+
     fun saveOmniRouteUrl(value: String) = putEncrypted("omniroute_url", value.trim())
     fun omniRouteUrl(): String = getEncrypted("omniroute_url")
 
