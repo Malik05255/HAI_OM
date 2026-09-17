@@ -188,12 +188,12 @@ function extractJson(raw) {
 
 async function chat(system, user, toolContext = "") {
   const models = [
-    "pol/qwen-coder",
-    "pol/deepseek",
-    "pol/openai-large",
-    "pol/grok",
-    "auto/coding",
-    "auto"
+    "dahl/moonshotai/Kimi-K2.6",
+    "unc/qwen3.6:27b",
+    "kc/openrouter/free",
+    "ddgw/gpt-5.6-luna",
+    "ddgw/claude-haiku-4-5",
+    "unc/adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic"
   ];
   let lastError = "لم يستجب أي نموذج مجاني";
 
