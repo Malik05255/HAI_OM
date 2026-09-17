@@ -137,7 +137,7 @@ jobs:
               --credential-env HAI_DAHL_TOKEN \
               --yes \
               --name hai-free-dahl \
-              --default-model moonshotai/Kimi-K2.6 || true
+              --default-model deepseek-ai/DeepSeek-V4-Flash-0731 || true
             omniroute providers test hai-free-dahl || true
             unset HAI_DAHL_TOKEN
             rm -f "$RUNNER_TEMP/dahl-token"
