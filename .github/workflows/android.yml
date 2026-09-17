@@ -85,6 +85,13 @@ jobs:
           gradle --no-daemon assembleRelease
           cp app/build/outputs/apk/release/app-release.apk HAI-OM.apk
 
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HAI-OM-signed-release-apk
+          path: HAI-OM.apk
+          if-no-files-found: error
+
       - name: Publish app release
         shell: bash
         run: |
