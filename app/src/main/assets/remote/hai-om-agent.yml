@@ -1,0 +1,78 @@
+name: HAI OM Agent
+
+on:
+  push:
+    branches:
+      - "hai-agent/**"
+
+permissions:
+  contents: write
+
+jobs:
+  agent:
+    if: contains(github.event.head_commit.message, 'agent(remote-bootstrap):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Start free AI engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g omniroute@3.8.51 --no-fund --no-audit
+          nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/omniroute.pid"
+
+          READY=0
+          for i in $(seq 1 90); do
+            if curl -fsS               -H "Authorization: Bearer hai-om-free"               http://127.0.0.1:20128/v1/models >/dev/null 2>&1; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$READY" != "1" ]; then
+            cat "$RUNNER_TEMP/omniroute.log" || true
+            exit 1
+          fi
+
+          # Fail-closed routing preference. This runner never receives provider API
+          # keys or billing credentials; zero-config/keyless candidates are used.
+          curl -fsS -X PUT http://127.0.0.1:20128/api/settings             -H "Content-Type: application/json"             -d '{"freeAccessPolicy":"strict","excludeTosAvoid":false}' >/dev/null || true
+
+          curl -fsS -X PUT http://127.0.0.1:20128/api/settings/compression             -H "Content-Type: application/json"             -d '{"defaultMode":"stacked","autoTriggerMode":"stacked","autoTriggerTokens":32000,"stackedPipeline":[{"engine":"rtk","intensity":"standard"},{"engine":"caveman","intensity":"full"}],"rtkConfig":{"enabled":true,"intensity":"standard","applyToToolResults":true,"applyToCodeBlocks":false,"applyToAssistantMessages":false,"maxLinesPerResult":120,"maxCharsPerResult":12000,"deduplicateThreshold":3,"rawOutputRetention":"never"}}' >/dev/null || true
+
+      - name: Build, test, and repair
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HAI_OMNIROUTE_URL: http://127.0.0.1:20128
+          HAI_BRANCH: ${{ github.ref_name }}
+          HAI_REPOSITORY: ${{ github.repository }}
+        run: node .hai-om/agent.mjs
+
+      - name: Stop AI engine
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/omniroute.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/omniroute.pid")" 2>/dev/null || true
+          fi
