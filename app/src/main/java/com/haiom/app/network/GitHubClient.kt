@@ -188,9 +188,10 @@ class GitHubClient(
         branch: String,
         headSha: String,
         onEvent: (String) -> Unit,
-        workflowName: String? = null
+        workflowName: String? = null,
+        maxAttempts: Int = 45
     ): CiResult {
-        repeat(45) { attempt ->
+        repeat(maxAttempts.coerceIn(1, 360)) { attempt ->
             val root = getJson("/repos/${repo.owner}/${repo.repo}/actions/runs?branch=${enc(branch)}&per_page=50")
             val matching = root["workflow_runs"]?.jsonArray.orEmpty()
                 .map { it.jsonObject }
