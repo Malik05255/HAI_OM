@@ -326,11 +326,14 @@ class GitHubClient(
 
     private fun redactSecrets(input: String): String {
         var text = input
-        text = text.replace(Regex("(?i)(authorization\\s*:\\s*bearer\\s+)[^\\s]+"), "$1[REDACTED]")
+        text = text.replace(Regex("(?i)(authorization\\s*:\\s*bearer\\s+)[^\\s]+")) {
+            "${it.groupValues[1]}[REDACTED]"
+        }
         text = text.replace(
-            Regex("(?i)((?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|passwd)\\s*[=:]\\s*)[\\\"']?[^\\s\\\"']{6,}"),
-            "$1[REDACTED]"
-        )
+            Regex("(?i)((?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|passwd)\\s*[=:]\\s*)[\\\"']?[^\\s\\\"']{6,}")
+        ) {
+            "${it.groupValues[1]}[REDACTED]"
+        }
         text = text.replace(Regex("\\bgh[pousr]_[A-Za-z0-9_]{20,}\\b"), "[REDACTED_GITHUB_TOKEN]")
         text = text.replace(Regex("\\bAKIA[0-9A-Z]{16}\\b"), "[REDACTED_AWS_KEY]")
         return text
