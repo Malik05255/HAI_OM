@@ -51,37 +51,56 @@ class OmniRouteClient(
         )
         onEvent("✓ Zero-Cost strict مفعل")
 
-        putJson(
-            "/api/settings/compression",
-            buildJsonObject {
-                put("defaultMode", "stacked")
-                put("autoTriggerMode", "stacked")
-                put("autoTriggerTokens", 32_000)
-                put("stackedPipeline", buildJsonArray {
-                    add(buildJsonObject { put("engine", "rtk"); put("intensity", "standard") })
-                    add(buildJsonObject { put("engine", "caveman"); put("intensity", "full") })
-                })
-                put("rtkConfig", buildJsonObject {
-                    put("enabled", true)
-                    put("intensity", "standard")
-                    put("applyToToolResults", true)
-                    put("applyToCodeBlocks", false)
-                    put("applyToAssistantMessages", false)
-                    put("maxLinesPerResult", 120)
-                    put("maxCharsPerResult", 12_000)
-                    put("deduplicateThreshold", 3)
-                    put("rawOutputRetention", "failures")
-                })
-            },
-            "تعذر تفعيل ضغط التوكنات في OmniRoute."
-        )
-        onEvent("✓ ضغط RTK → Caveman مفعل")
+        val stackedEnabled = runCatching {
+            putJson(
+                "/api/settings/compression",
+                compressionBody(mode = "stacked", includeCaveman = true),
+                "تعذر تفعيل ضغط RTK → Caveman في OmniRoute."
+            )
+        }.isSuccess
 
-        val rankings = fetchCodingRankings()
-        require(rankings.isNotEmpty()) {
-            "OmniRoute متصل، لكن لا توجد Free Provider Rankings للبرمجة. أضف مزودًا مجانيًا في OmniRoute أولًا."
+        if (stackedEnabled) {
+            onEvent("✓ ضغط RTK → Caveman مفعل")
+        } else {
+            putJson(
+                "/api/settings/compression",
+                compressionBody(mode = "rtk", includeCaveman = false),
+                "تعذر تفعيل ضغط RTK في OmniRoute."
+            )
+            onEvent("✓ RTK مفعل (Caveman غير متاح في هذا الخادم)")
         }
-        onEvent("✓ ${rankings.size} مزودًا مجانيًا مصنفًا للبرمجة متاح")
+
+        val rankings = runCatching { fetchCodingRankings() }.getOrDefault(emptyList())
+        if (rankings.isEmpty()) {
+            // Ranking sync is advisory; OmniRoute intentionally remains usable when its
+            // Arena data is temporarily unavailable. Never block coding for this alone.
+            onEvent("تنبيه: ترتيب Coding غير متاح الآن؛ auto/coding ما زال يعمل")
+        } else {
+            onEvent("✓ ${rankings.size} مزودًا مجانيًا مصنفًا للبرمجة متاح")
+        }
+    }
+
+    private fun compressionBody(mode: String, includeCaveman: Boolean): JsonObject = buildJsonObject {
+        put("defaultMode", mode)
+        put("autoTriggerMode", mode)
+        put("autoTriggerTokens", 32_000)
+        if (includeCaveman) {
+            put("stackedPipeline", buildJsonArray {
+                add(buildJsonObject { put("engine", "rtk"); put("intensity", "standard") })
+                add(buildJsonObject { put("engine", "caveman"); put("intensity", "full") })
+            })
+        }
+        put("rtkConfig", buildJsonObject {
+            put("enabled", true)
+            put("intensity", "standard")
+            put("applyToToolResults", true)
+            put("applyToCodeBlocks", false)
+            put("applyToAssistantMessages", false)
+            put("maxLinesPerResult", 120)
+            put("maxCharsPerResult", 12_000)
+            put("deduplicateThreshold", 3)
+            put("rawOutputRetention", "never")
+        })
     }
 
     suspend fun fetchCodingRankings(limit: Int = 50): List<FreeProviderRanking> = withContext(Dispatchers.IO) {
