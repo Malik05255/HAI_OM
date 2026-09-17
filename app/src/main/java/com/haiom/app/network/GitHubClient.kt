@@ -8,9 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -139,14 +137,17 @@ class GitHubClient(
 
     suspend fun waitForCi(repo: RepoRef, branch: String, headSha: String, onEvent: (String) -> Unit): CiResult {
         repeat(45) { attempt ->
-            val root = getJson("/repos/${repo.owner}/${repo.repo}/actions/runs?branch=${enc(branch)}&event=push&per_page=20")
+            // Do not filter by event: some repositories validate on push, others only on pull_request.
+            // Matching the exact head SHA avoids confusing an older run with the current edit.
+            val root = getJson("/repos/${repo.owner}/${repo.repo}/actions/runs?branch=${enc(branch)}&per_page=30")
             val runs = root["workflow_runs"]?.jsonArray.orEmpty()
             val run = runs.map { it.jsonObject }.firstOrNull { it["head_sha"]?.jsonPrimitive?.content == headSha }
             if (run != null) {
                 val id = run["id"]?.jsonPrimitive?.longOrNull
                 val status = run["status"]?.jsonPrimitive?.content
                 val conclusion = run["conclusion"]?.jsonPrimitive?.contentOrNull
-                onEvent("CI: ${status ?: "..."}${conclusion?.let { " / $it" } ?: ""}")
+                val event = run["event"]?.jsonPrimitive?.contentOrNull
+                onEvent("CI${event?.let { " [$it]" } ?: ""}: ${status ?: "..."}${conclusion?.let { " / $it" } ?: ""}")
                 if (status == "completed") {
                     if (conclusion == "success") return CiResult(CiState.SUCCESS, id)
                     val logs = if (id != null) downloadRunLogs(repo, id) else ""
@@ -217,7 +218,7 @@ class GitHubClient(
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer $token")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "HAI-OM-Android/0.1")
+            .header("User-Agent", "HAI-OM-Android/0.2")
         val requestBody = body?.toString()?.toRequestBody(JSON)
         when (method) {
             "GET" -> builder.get()
