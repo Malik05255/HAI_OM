@@ -13,6 +13,13 @@ data class FreeProviderRanking(
     val confidence: String
 )
 
+data class GitHubRepository(
+    val fullName: String,
+    val htmlUrl: String,
+    val isPrivate: Boolean,
+    val updatedAt: String = ""
+)
+
 @Serializable
 data class AgentPlan(val tasks: List<AgentTask>)
 
