@@ -52,7 +52,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(connecting = true, error = null) }
         viewModelScope.launch {
             val omniResult = runCatching {
-                val omni = OmniRouteClient(omniUrl(), secrets.omniRouteKey())
+                val omni = OmniRouteClient(omniUrl(), "")
                 omni.verifyAndConfigure()
                 runCatching { omni.fetchCodingRankings(30) }.getOrDefault(emptyList())
             }
@@ -172,7 +172,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val omni = OmniRouteClient(omniUrl(), secrets.omniRouteKey())
+                val omni = OmniRouteClient(omniUrl(), "")
                 omni.verifyAndConfigure(::appendLog)
                 val github = GitHubClient(token)
                 val result = withContext(Dispatchers.IO) {
@@ -202,7 +202,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun omniUrl(): String = secrets.omniRouteUrl().ifBlank { DEFAULT_OMNIROUTE_URL }
+    private fun omniUrl(): String = BuildConfig.OMNIROUTE_BASE_URL
 
     private fun friendlyLinkError(t: Throwable): String {
         val raw = t.message.orEmpty()
@@ -242,7 +242,4 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val repositories: List<GitHubRepository> = emptyList()
     )
 
-    companion object {
-        private const val DEFAULT_OMNIROUTE_URL = "http://127.0.0.1:20128"
-    }
 }
