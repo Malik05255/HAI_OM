@@ -473,8 +473,35 @@ private fun ModelsScreen(modifier: Modifier, rankings: List<FreeProviderRanking>
             Text("النماذج", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(8.dp))
         }
-        if (!ready || rankings.isEmpty()) {
-            item { EmptyCard("غير متاحة الآن") }
+        if (!ready) {
+            item { EmptyCard("اربط GitHub") }
+        } else if (rankings.isEmpty()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Outlined.Code, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.size(12.dp))
+                        Text("تلقائي", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        ) {
+                            Text(
+                                "الأقوى المتاح",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                }
+            }
         } else {
             itemsIndexed(rankings.take(20)) { index, model -> ModelRow(index, model) }
         }
