@@ -5,12 +5,12 @@ import com.haiom.app.model.AgentRunResult
 import com.haiom.app.model.AgentTask
 import com.haiom.app.model.CiState
 import com.haiom.app.model.EditBatch
-import com.haiom.app.network.FreeModelRouter
 import com.haiom.app.network.GitHubClient
+import com.haiom.app.network.OmniRouteClient
 import kotlinx.serialization.json.Json
 
 class AgentEngine(
-    private val router: FreeModelRouter,
+    private val omniRoute: OmniRouteClient,
     private val github: GitHubClient
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -25,8 +25,8 @@ class AgentEngine(
         require(initialContext.isNotBlank()) { "لم أجد ملفات نصية قابلة للتحليل في المستودع" }
 
         onEvent("إنشاء خطة التنفيذ")
-        val planCompletion = router.complete(PLANNER_SYSTEM, plannerPrompt(requirements, initialContext))
-        onEvent("النموذج المخطط: ${planCompletion.model.displayName}")
+        val planCompletion = omniRoute.complete(PLANNER_SYSTEM, plannerPrompt(requirements, initialContext))
+        onEvent("المخطط عبر OmniRoute: ${planCompletion.modelLabel}")
         val plan = decode<AgentPlan>(planCompletion.text)
         val tasks = plan.tasks.take(20)
         require(tasks.isNotEmpty()) { "النموذج لم ينشئ مهام تنفيذ" }
@@ -48,7 +48,7 @@ class AgentEngine(
             base = base,
             title = "HAI Agent: ${tasks.first().title.take(60)}",
             body = buildString {
-                appendLine("تم إنشاء هذا التغيير تلقائيًا بواسطة HAI OM Free Coding Agent.")
+                appendLine("تم إنشاء هذا التغيير تلقائيًا بواسطة HAI OM.")
                 appendLine()
                 appendLine("## الطلب")
                 appendLine(requirements.take(3000))
@@ -56,7 +56,7 @@ class AgentEngine(
                 appendLine("## المهام المنفذة")
                 tasks.forEach { appendLine("- ${it.title}") }
                 appendLine()
-                appendLine("السياسة: Free-only model routing + CI self-healing.")
+                appendLine("السياسة: OmniRoute auto/coding + strict zero-cost + RTK/Caveman compression + CI self-healing.")
             }
         )
         onEvent(prUrl?.let { "تم إنشاء Pull Request: $it" } ?: "اكتمل التنفيذ")
@@ -71,8 +71,8 @@ class AgentEngine(
         onEvent: (String) -> Unit
     ) {
         var context = github.buildContext(repo, branch)
-        val editCompletion = router.complete(EDITOR_SYSTEM, editorPrompt(requirements, task, context))
-        onEvent("تنفيذ بواسطة ${editCompletion.model.displayName}")
+        val editCompletion = omniRoute.complete(EDITOR_SYSTEM, editorPrompt(requirements, task, context))
+        onEvent("تنفيذ عبر OmniRoute: ${editCompletion.modelLabel}")
         val batch = decode<EditBatch>(editCompletion.text)
         require(batch.files.isNotEmpty()) { "المهمة لم تنتج أي تعديلات" }
         github.applyBatch(repo, branch, batch, task.id, onEvent)
@@ -80,7 +80,7 @@ class AgentEngine(
         var head = github.headSha(repo, branch)
         var ci = github.waitForCi(repo, branch, head, onEvent)
         if (ci.state == CiState.NOT_FOUND) {
-            onEvent("لا يوجد GitHub Actions لهذه المهمة؛ الانتقال بعد فحص بنيوي فقط")
+            onEvent("لا يوجد GitHub Actions لهذه المهمة؛ الانتقال بعد الفحص البنيوي")
             return
         }
 
@@ -89,11 +89,12 @@ class AgentEngine(
             attempt++
             onEvent("فشل CI — محاولة إصلاح $attempt/$MAX_FIX_ATTEMPTS")
             context = github.buildContext(repo, branch)
-            val fix = router.complete(
-                FIXER_SYSTEM,
-                fixerPrompt(requirements, task, context, ci.logs.takeLast(45_000), attempt)
+            val fix = omniRoute.complete(
+                system = FIXER_SYSTEM,
+                user = fixerPrompt(requirements, task, context, attempt),
+                toolContext = ci.logs.takeLast(80_000)
             )
-            onEvent("الإصلاح بواسطة ${fix.model.displayName}")
+            onEvent("الإصلاح عبر OmniRoute: ${fix.modelLabel}")
             val fixBatch = decode<EditBatch>(fix.text)
             require(fixBatch.files.isNotEmpty()) { "نموذج الإصلاح لم ينتج تغييرات" }
             github.applyBatch(repo, branch, fixBatch, "${task.id}-fix$attempt", onEvent)
@@ -147,7 +148,7 @@ class AgentEngine(
         Never use placeholders, ellipses, TODOs, secrets, paid APIs, or paths outside the repository.
     """.trimIndent()
 
-    private fun fixerPrompt(requirements: String, task: AgentTask, context: String, logs: String, attempt: Int) = """
+    private fun fixerPrompt(requirements: String, task: AgentTask, context: String, attempt: Int) = """
         You are repairing a failed CI build after an automated code edit.
         Attempt: $attempt
         Global requirements: $requirements
@@ -156,8 +157,7 @@ class AgentEngine(
         REPOSITORY CONTEXT:
         $context
 
-        CI LOGS:
-        $logs
+        The CI/build log is attached separately as a tool message so OmniRoute can apply RTK compression to it.
 
         Identify the root cause and return ONLY the minimum complete file replacements needed to fix it:
         {"summary":"root cause and fix","files":[{"path":"relative/path","content":"COMPLETE FILE CONTENT","delete":false}]}
