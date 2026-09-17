@@ -183,12 +183,21 @@ class GitHubClient(
         onEvent("Commit واحد للمهمة: ${commit.take(8)}")
     }
 
-    suspend fun waitForCi(repo: RepoRef, branch: String, headSha: String, onEvent: (String) -> Unit): CiResult {
+    suspend fun waitForCi(
+        repo: RepoRef,
+        branch: String,
+        headSha: String,
+        onEvent: (String) -> Unit,
+        workflowName: String? = null
+    ): CiResult {
         repeat(45) { attempt ->
             val root = getJson("/repos/${repo.owner}/${repo.repo}/actions/runs?branch=${enc(branch)}&per_page=50")
             val matching = root["workflow_runs"]?.jsonArray.orEmpty()
                 .map { it.jsonObject }
-                .filter { it["head_sha"]?.jsonPrimitive?.content == headSha }
+                .filter { run ->
+                    run["head_sha"]?.jsonPrimitive?.content == headSha &&
+                        (workflowName == null || run["name"]?.jsonPrimitive?.contentOrNull == workflowName)
+                }
 
             if (matching.isNotEmpty()) {
                 val pending = matching.filter { it["status"]?.jsonPrimitive?.content != "completed" }
