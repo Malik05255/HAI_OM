@@ -14,6 +14,11 @@ val omniRouteBaseUrl = providers.gradleProperty("HAI_OMNIROUTE_URL")
     .getOrElse("")
     .ifBlank { "http://127.0.0.1:20128" }
 
+val signingStorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
+val signingStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
+val signingKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
+val signingKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+
 android {
     namespace = "com.haiom.app"
     compileSdk = 35
@@ -22,8 +27,8 @@ android {
         applicationId = "com.haiom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -31,9 +36,25 @@ android {
         buildConfigField("String", "OMNIROUTE_BASE_URL", "\"${omniRouteBaseUrl}\"")
     }
 
+    signingConfigs {
+        if (!signingStorePath.isNullOrBlank() &&
+            !signingStorePassword.isNullOrBlank() &&
+            !signingKeyAlias.isNullOrBlank() &&
+            !signingKeyPassword.isNullOrBlank()
+        ) {
+            create("release") {
+                storeFile = file(signingStorePath)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
