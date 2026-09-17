@@ -22,7 +22,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        buildConfigField("String", "GITHUB_CLIENT_ID", "\\\"${githubClientId}\\\"")
+        buildConfigField("String", "GITHUB_CLIENT_ID", "\"${githubClientId}\"")
     }
 
     buildTypes {
