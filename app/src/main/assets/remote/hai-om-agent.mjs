@@ -188,8 +188,9 @@ function extractJson(raw) {
 
 async function chat(system, user, toolContext = "") {
   const models = [
-    "dahl/moonshotai/Kimi-K2.6",
-    "unc/qwen3.6:27b",
+    "dahl/deepseek-ai/DeepSeek-V4-Flash-0731",
+    "dahl/zai-org/GLM-5.3-Flash",
+    "dahl/MiniMaxAI/MiniMax-M2.7",
     "kc/openrouter/free",
     "ddgw/gpt-5.6-luna",
     "ddgw/claude-haiku-4-5",
@@ -216,6 +217,7 @@ async function chat(system, user, toolContext = "") {
           headers: {
             "Content-Type": "application/json",
             "Authorization": "Bearer hai-om-free",
+            "x-omniroute-compression": "default",
           },
           body: JSON.stringify({
             model,
@@ -230,6 +232,8 @@ async function chat(system, user, toolContext = "") {
         const raw = await response.text();
         if (!response.ok) {
           lastError = `${model}: HTTP ${response.status} ${redact(raw).slice(0, 500)}`;
+          const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+          if (!retryable) break;
           await new Promise(r => setTimeout(r, 1500 * attempt));
           continue;
         }
