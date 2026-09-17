@@ -13,8 +13,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.GitHub
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material3.Button
@@ -108,7 +108,7 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                     label = { Text(if (state.hasGitHubToken) "GitHub token محفوظ — اتركه فارغًا" else "GitHub fine-grained token") },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
-                    leadingIcon = { Icon(Icons.Outlined.GitHub, null) }
+                    leadingIcon = { Icon(Icons.Outlined.AccountCircle, null) }
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
