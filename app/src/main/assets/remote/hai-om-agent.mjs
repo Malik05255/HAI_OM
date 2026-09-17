@@ -187,7 +187,14 @@ function extractJson(raw) {
 }
 
 async function chat(system, user, toolContext = "") {
-  const models = ["auto/coding", "auto"];
+  const models = [
+    "pol/qwen-coder",
+    "pol/deepseek",
+    "pol/openai-large",
+    "pol/grok",
+    "auto/coding",
+    "auto"
+  ];
   let lastError = "لم يستجب أي نموذج مجاني";
 
   for (const model of models) {
