@@ -17,6 +17,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      HAI_GITHUB_CLIENT_ID: ${{ vars.HAI_GITHUB_CLIENT_ID }}
+      HAI_OMNIROUTE_URL: ${{ vars.HAI_OMNIROUTE_URL }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
