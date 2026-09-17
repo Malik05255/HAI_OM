@@ -4,7 +4,6 @@ import com.haiom.app.model.FreeProviderRanking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -40,12 +39,6 @@ class OmniRouteClient(
 
     data class Completion(val text: String, val modelLabel: String)
 
-    /**
-     * Refuse to run unless OmniRoute accepts strict zero-cost mode.
-     * Compression is configured as RTK -> Caveman so CI/tool noise is reduced before
-     * reaching the coding model. If the supplied key lacks management permission,
-     * this deliberately fails rather than silently risking a paid route.
-     */
     suspend fun verifyAndConfigure(onEvent: (String) -> Unit = {}) = withContext(Dispatchers.IO) {
         onEvent("التحقق من OmniRoute")
         putJson(
@@ -97,8 +90,8 @@ class OmniRouteClient(
         response.use {
             val raw = it.body?.string().orEmpty()
             if (!it.isSuccessful) error("فشل جلب ترتيب النماذج المجانية من OmniRoute: HTTP ${it.code}")
-            val root = json.parseToJsonElement(raw).jsonObject
-            root["rankings"]?.jsonArray.orEmpty().mapNotNull { item ->
+            val parsed = json.parseToJsonElement(raw).jsonObject
+            parsed["rankings"]?.jsonArray.orEmpty().mapNotNull { item ->
                 val obj = item.jsonObject
                 val top = obj["topModel"]?.jsonObject ?: return@mapNotNull null
                 val providerName = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
@@ -135,12 +128,12 @@ class OmniRouteClient(
             if (!response.isSuccessful) {
                 error("OmniRoute coding request failed HTTP ${response.code}: ${raw.take(700)}")
             }
-            val root = json.parseToJsonElement(raw).jsonObject
-            val text = root["choices"]?.jsonArray?.firstOrNull()?.jsonObject
+            val parsed = json.parseToJsonElement(raw).jsonObject
+            val text = parsed["choices"]?.jsonArray?.firstOrNull()?.jsonObject
                 ?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull
                 ?.trim().orEmpty()
             require(text.isNotBlank()) { "OmniRoute أعاد استجابة فارغة" }
-            val servedModel = root["model"]?.jsonPrimitive?.contentOrNull ?: CODING_ROUTE
+            val servedModel = parsed["model"]?.jsonPrimitive?.contentOrNull ?: CODING_ROUTE
             Completion(text, servedModel)
         }
     }
@@ -179,10 +172,27 @@ class OmniRouteClient(
             var clean = value.trim().trimEnd('/')
             require(clean.isNotBlank()) { "أدخل رابط OmniRoute" }
             if (clean.endsWith("/v1", ignoreCase = true)) clean = clean.dropLast(3).trimEnd('/')
-            val uri = runCatching { URI(clean) }.getOrElse { error("رابط OmniRoute غير صحيح") }
+            val uri = runCatching { URI(clean) }.getOrElse { throw IllegalArgumentException("رابط OmniRoute غير صحيح") }
             require(uri.scheme == "http" || uri.scheme == "https") { "OmniRoute يجب أن يستخدم http أو https" }
             require(!uri.host.isNullOrBlank() && uri.userInfo == null) { "رابط OmniRoute غير آمن أو غير صحيح" }
+            if (uri.scheme == "http") {
+                require(isPrivateOrLoopback(uri.host)) {
+                    "HTTP مسموح فقط لـ OmniRoute المحلي أو داخل الشبكة الخاصة. استخدم HTTPS للسيرفر العام."
+                }
+            }
             return clean
+        }
+
+        private fun isPrivateOrLoopback(host: String): Boolean {
+            val h = host.lowercase()
+            if (h == "localhost" || h == "::1" || h.endsWith(".local")) return true
+            if (h.startsWith("127.") || h.startsWith("10.") || h.startsWith("192.168.")) return true
+            val parts = h.split('.')
+            if (parts.size == 4 && parts[0] == "172") {
+                val second = parts[1].toIntOrNull()
+                if (second != null && second in 16..31) return true
+            }
+            return false
         }
     }
 }
