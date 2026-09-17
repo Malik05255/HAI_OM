@@ -55,10 +55,22 @@ jobs:
             exit 1
           fi
 
-          # This ephemeral runner receives no provider keys or billing credentials,
-          # so only OmniRoute's zero-config/keyless routes can actually execute.
-          # Configure token compression using OmniRoute's authenticated local CLI.
-          omniroute compression engine set stacked || omniroute compression engine set rtk || true
+          # Add a known keyless provider explicitly. This avoids relying on the
+          # zero-config pool, whose members can reject CI/server traffic.
+          omniroute providers add pollinations             --allow-no-credential             --yes             --name hai-free-pollinations             --default-model qwen-coder || true
+
+          # Enable MCP locally so compression CLI commands use the normal supported
+          # management path, then enable stacked RTK + Caveman compression.
+          omniroute mcp enable || true
+          omniroute compression engine set stacked ||             omniroute compression engine set rtk || true
+
+          # Give the provider auto-test a moment to mark the connection active.
+          for i in $(seq 1 20); do
+            if curl -fsS               -H "Authorization: Bearer hai-om-free"               http://127.0.0.1:20128/v1/models               | grep -q '"pol/qwen-coder"'; then
+              break
+            fi
+            sleep 2
+          done
 
       - name: Build, test, and repair
         env:
