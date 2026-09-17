@@ -38,12 +38,12 @@ jobs:
         run: |
           set -euo pipefail
           npm install -g omniroute@latest --no-fund --no-audit
-          nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
+          OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/omniroute.pid"
 
           READY=0
           for i in $(seq 1 90); do
-            if curl -fsS               -H "Authorization: Bearer hai-om-free"               http://127.0.0.1:20128/v1/models >/dev/null 2>&1; then
+            if curl -fsS http://127.0.0.1:20128/api/health/ping >/dev/null 2>&1; then
               READY=1
               break
             fi
