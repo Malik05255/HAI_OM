@@ -228,6 +228,19 @@ class GitHubClient(
         return CiResult(CiState.NOT_FOUND)
     }
 
+    suspend fun deleteBranch(repo: RepoRef, branch: String) = withContext(Dispatchers.IO) {
+        val response = request(
+            "DELETE",
+            "/repos/${repo.owner}/${repo.repo}/git/refs/heads/${enc(branch)}",
+            allow404 = true
+        )
+        response.use {
+            if (it.code !in setOf(204, 404)) {
+                error("تعذر تنظيف فرع المهمة: HTTP ${it.code}")
+            }
+        }
+    }
+
     suspend fun createPullRequest(repo: RepoRef, branch: String, base: String, title: String, body: String): String? {
         val root = postJson(
             "/repos/${repo.owner}/${repo.repo}/pulls",
