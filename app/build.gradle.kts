@@ -5,6 +5,15 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+val githubClientId = providers.gradleProperty("HAI_GITHUB_CLIENT_ID")
+    .orElse(providers.environmentVariable("HAI_GITHUB_CLIENT_ID"))
+    .getOrElse("")
+
+val omniRouteBaseUrl = providers.gradleProperty("HAI_OMNIROUTE_URL")
+    .orElse(providers.environmentVariable("HAI_OMNIROUTE_URL"))
+    .getOrElse("")
+    .ifBlank { "http://127.0.0.1:20128" }
+
 android {
     namespace = "com.haiom.app"
     compileSdk = 35
@@ -13,11 +22,13 @@ android {
         applicationId = "com.haiom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        buildConfigField("String", "GITHUB_CLIENT_ID", "\"${githubClientId}\"")
+        buildConfigField("String", "OMNIROUTE_BASE_URL", "\"${omniRouteBaseUrl}\"")
     }
 
     buildTypes {
@@ -35,7 +46,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
 }
 

@@ -16,6 +16,7 @@ class SecretStore(context: Context) {
 
     fun saveGitHubToken(value: String) = putEncrypted("github_token", value.trim())
     fun githubToken(): String = getEncrypted("github_token")
+    fun clearGitHubToken() = prefs.edit().remove("github_token").apply()
 
     fun saveOmniRouteUrl(value: String) = putEncrypted("omniroute_url", value.trim())
     fun omniRouteUrl(): String = getEncrypted("omniroute_url")

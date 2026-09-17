@@ -8,6 +8,7 @@ import com.haiom.app.model.AgentRunResult
 import com.haiom.app.model.FreeProviderRanking
 import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.GitHubAccountClient
+import com.haiom.app.network.GitHubAuthClient
 import com.haiom.app.network.GitHubClient
 import com.haiom.app.network.OmniRouteClient
 import com.haiom.app.security.SecretStore
@@ -28,6 +29,9 @@ data class MainUiState(
     val hasGitHubToken: Boolean = false,
     val githubLogin: String = "",
     val repositories: List<GitHubRepository> = emptyList(),
+    val githubLinking: Boolean = false,
+    val githubLaunchUrl: String? = null,
+    val githubUserCode: String = "",
     val omniReady: Boolean = false,
     val strictFreeVerified: Boolean = false,
     val compressionEnabled: Boolean = false,
@@ -44,25 +48,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init { bootstrap() }
 
     fun bootstrap() {
-        if (_state.value.running) return
+        if (_state.value.running || _state.value.githubLinking) return
         _state.update { it.copy(connecting = true, error = null) }
         viewModelScope.launch {
             val omniResult = runCatching {
-                val omni = OmniRouteClient(omniUrl(), secrets.omniRouteKey())
+                val omni = OmniRouteClient(omniUrl(), "")
                 omni.verifyAndConfigure()
                 runCatching { omni.fetchCodingRankings(30) }.getOrDefault(emptyList())
             }
 
-            var login = ""
-            var repositories = emptyList<GitHubRepository>()
-            val token = secrets.githubToken()
-            if (token.isNotBlank()) {
-                runCatching {
-                    val account = GitHubAccountClient(token)
-                    login = account.login()
-                    repositories = account.repositories()
-                }
-            }
+            val account = loadGitHubAccount()
 
             _state.update {
                 it.copy(
@@ -71,16 +66,91 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     strictFreeVerified = omniResult.isSuccess,
                     compressionEnabled = omniResult.isSuccess,
                     rankings = omniResult.getOrDefault(emptyList()),
-                    hasGitHubToken = token.isNotBlank(),
-                    githubLogin = login,
-                    repositories = repositories
+                    hasGitHubToken = account.connected,
+                    githubLogin = account.login,
+                    repositories = account.repositories
                 )
             }
         }
     }
 
+    fun startGitHubLink() {
+        if (_state.value.githubLinking || _state.value.running) return
+        if (BuildConfig.GITHUB_CLIENT_ID.isBlank()) {
+            _state.update { it.copy(error = "ربط GitHub غير مفعّل في هذه النسخة") }
+            return
+        }
+
+        _state.update {
+            it.copy(
+                githubLinking = true,
+                githubLaunchUrl = null,
+                githubUserCode = "",
+                error = null
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val auth = GitHubAuthClient(BuildConfig.GITHUB_CLIENT_ID)
+                val code = auth.requestDeviceCode()
+                _state.update {
+                    it.copy(
+                        githubLaunchUrl = code.verificationUri,
+                        githubUserCode = code.userCode
+                    )
+                }
+
+                val token = auth.waitForToken(code)
+                secrets.saveGitHubToken(token)
+
+                val account = loadGitHubAccount()
+                if (!account.connected) error("تعذر ربط GitHub")
+
+                _state.update {
+                    it.copy(
+                        githubLinking = false,
+                        githubLaunchUrl = null,
+                        githubUserCode = "",
+                        hasGitHubToken = true,
+                        githubLogin = account.login,
+                        repositories = account.repositories
+                    )
+                }
+            } catch (t: Throwable) {
+                _state.update {
+                    it.copy(
+                        githubLinking = false,
+                        githubLaunchUrl = null,
+                        githubUserCode = "",
+                        error = friendlyLinkError(t)
+                    )
+                }
+            }
+        }
+    }
+
+    fun consumeGitHubLaunch() {
+        _state.update { it.copy(githubLaunchUrl = null) }
+    }
+
+    fun disconnectGitHub() {
+        if (_state.value.running) return
+        secrets.clearGitHubToken()
+        _state.update {
+            it.copy(
+                hasGitHubToken = false,
+                githubLogin = "",
+                repositories = emptyList(),
+                githubLinking = false,
+                githubLaunchUrl = null,
+                githubUserCode = ""
+            )
+        }
+    }
+
     fun runAgent(repositoryUrl: String, requirements: String) {
-        if (_state.value.running || _state.value.connecting) return
+        if (_state.value.running || _state.value.connecting || _state.value.githubLinking) return
         if (repositoryUrl.isBlank()) {
             _state.update { it.copy(error = "اختر المشروع أولًا") }
             return
@@ -102,7 +172,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val omni = OmniRouteClient(omniUrl(), secrets.omniRouteKey())
+                val omni = OmniRouteClient(omniUrl(), "")
                 omni.verifyAndConfigure(::appendLog)
                 val github = GitHubClient(token)
                 val result = withContext(Dispatchers.IO) {
@@ -115,7 +185,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun omniUrl(): String = secrets.omniRouteUrl().ifBlank { DEFAULT_OMNIROUTE_URL }
+    private suspend fun loadGitHubAccount(): GitHubAccountState {
+        val token = secrets.githubToken()
+        if (token.isBlank()) return GitHubAccountState()
+
+        return runCatching {
+            val account = GitHubAccountClient(token)
+            GitHubAccountState(
+                connected = true,
+                login = account.login(),
+                repositories = account.repositories()
+            )
+        }.getOrElse {
+            secrets.clearGitHubToken()
+            GitHubAccountState()
+        }
+    }
+
+    private fun omniUrl(): String = BuildConfig.OMNIROUTE_BASE_URL
+
+    private fun friendlyLinkError(t: Throwable): String {
+        val raw = t.message.orEmpty()
+        return when {
+            raw.contains("إلغاء") -> "تم إلغاء الربط"
+            raw.contains("مهلة") -> "انتهت المهلة، حاول مرة ثانية"
+            raw.contains("غير مفعّل") -> "ربط GitHub غير مفعّل في هذه النسخة"
+            else -> "تعذر ربط GitHub، حاول مرة ثانية"
+        }
+    }
 
     private fun appendLog(message: String) {
         val simple = when {
@@ -139,7 +236,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearError() = _state.update { it.copy(error = null) }
 
-    companion object {
-        private const val DEFAULT_OMNIROUTE_URL = "http://127.0.0.1:20128"
-    }
+    private data class GitHubAccountState(
+        val connected: Boolean = false,
+        val login: String = "",
+        val repositories: List<GitHubRepository> = emptyList()
+    )
+
 }
