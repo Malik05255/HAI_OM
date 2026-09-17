@@ -1,0 +1,47 @@
+name: OmniRoute smoke
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install and start OmniRoute
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g omniroute@3.8.51 --no-fund --no-audit
+          nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
+          READY=0
+          for i in $(seq 1 90); do
+            if curl -fsS -H "Authorization: Bearer smoke" http://127.0.0.1:20128/v1/models >/dev/null 2>&1; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$READY" != "1" ]; then
+            cat "$RUNNER_TEMP/omniroute.log" || true
+            exit 1
+          fi
+
+      - name: Enforce free-only and test coding route
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS -X PUT http://127.0.0.1:20128/api/settings             -H "Content-Type: application/json"             -d '{"freeAccessPolicy":"strict","excludeTosAvoid":false}' >/dev/null || true
+
+          RESPONSE="$(curl -fsS --max-time 180             http://127.0.0.1:20128/v1/chat/completions             -H "Authorization: Bearer smoke"             -H "Content-Type: application/json"             -d '{"model":"auto/coding","stream":false,"messages":[{"role":"user","content":"Reply with exactly: HAI_OM_OK"}]}')"
+
+          echo "$RESPONSE" | jq -e '.choices[0].message.content | strings | length > 0' >/dev/null
+          echo "$RESPONSE" | jq -r '.model // "auto/coding"'
