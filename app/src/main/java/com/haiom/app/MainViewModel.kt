@@ -53,7 +53,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val omni = OmniRouteClient(savedUrl, secrets.omniRouteKey())
                 val connectionLogs = mutableListOf<String>()
                 omni.verifyAndConfigure { connectionLogs += it }
-                val rankings = omni.fetchCodingRankings(50)
+                val rankings = runCatching { omni.fetchCodingRankings(50) }.getOrDefault(emptyList())
                 _state.update {
                     it.copy(
                         connecting = false,
@@ -112,7 +112,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val omni = OmniRouteClient(savedUrl, secrets.omniRouteKey())
                 omni.verifyAndConfigure(::appendLog)
-                val rankings = omni.fetchCodingRankings(50)
+                val rankings = runCatching { omni.fetchCodingRankings(50) }.getOrDefault(emptyList())
                 _state.update {
                     it.copy(
                         omniReady = true,
