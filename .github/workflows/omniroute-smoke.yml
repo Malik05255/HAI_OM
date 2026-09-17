@@ -35,38 +35,84 @@ jobs:
             exit 1
           fi
 
-      - name: Enable compression and test free routing
+      - name: Verify free-only routing and compression
         shell: bash
         run: |
           set -euo pipefail
 
-          omniroute providers add pollinations \
-            --allow-no-credential \
-            --yes \
-            --name hai-free-pollinations \
-            --default-model qwen-coder || true
+          OMNIROOT="$(npm root -g)/omniroute"
+          export OMNIROOT
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          import { pathToFileURL } from "node:url";
 
-          omniroute mcp enable || true
-          omniroute compression engine set stacked || \
-            omniroute compression engine set rtk || true
+          const { apiFetch } = await import(
+            pathToFileURL(path.join(process.env.OMNIROOT, "bin/cli/api.mjs")).href
+          );
 
-          for i in $(seq 1 20); do
-            if curl -fsS \
-              -H "Authorization: Bearer smoke" \
-              http://127.0.0.1:20128/v1/models \
-              | grep -q '"pol/qwen-coder"'; then
-              break
-            fi
-            sleep 2
-          done
+          const settings = await apiFetch("/api/settings", {
+            method: "PATCH",
+            body: { freeAccessPolicy: "strict", excludeTosAvoid: false },
+            retry: false,
+          });
+          if (!settings.ok) throw new Error("strict free-only settings failed: " + settings.status);
+
+          const compression = await apiFetch("/api/settings/compression", {
+            method: "PUT",
+            body: {
+              defaultMode: "stacked",
+              autoTriggerMode: "stacked",
+              autoTriggerTokens: 32000,
+              stackedPipeline: [
+                { engine: "rtk", intensity: "standard" },
+                { engine: "caveman", intensity: "full" }
+              ]
+            },
+            retry: false,
+          });
+          if (!compression.ok) throw new Error("compression settings failed: " + compression.status);
+
+          try {
+            const tokenRes = await apiFetch("/api/dahl/tokens", { method: "POST", retry: false });
+            if (tokenRes.ok) {
+              const body = await tokenRes.json();
+              if (typeof body?.token === "string" && body.token.length > 8) {
+                fs.writeFileSync(
+                  path.join(process.env.RUNNER_TEMP, "dahl-token"),
+                  body.token,
+                  { mode: 0o600 }
+                );
+              }
+            }
+          } catch {}
+          NODE
+
+          if [ -s "$RUNNER_TEMP/dahl-token" ]; then
+            export HAI_DAHL_TOKEN="$(cat "$RUNNER_TEMP/dahl-token")"
+            omniroute providers add dahl \
+              --credential-env HAI_DAHL_TOKEN \
+              --yes \
+              --name hai-free-dahl \
+              --default-model moonshotai/Kimi-K2.6 || true
+            omniroute providers test hai-free-dahl || true
+            unset HAI_DAHL_TOKEN
+            rm -f "$RUNNER_TEMP/dahl-token"
+          fi
 
           try_model() {
             MODEL="$1"
-            HTTP_CODE="$(curl -sS --max-time 180               -o "$RUNNER_TEMP/response.json"               -w "%{http_code}"               http://127.0.0.1:20128/v1/chat/completions               -H "Authorization: Bearer smoke"               -H "Content-Type: application/json"               -d "{\"model\":\"$MODEL\",\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HAI_OM_OK\"}]}")"
+            HTTP_CODE="$(curl -sS --max-time 45 \
+              -o "$RUNNER_TEMP/response.json" \
+              -w "%{http_code}" \
+              http://127.0.0.1:20128/v1/chat/completions \
+              -H "Authorization: Bearer smoke" \
+              -H "Content-Type: application/json" \
+              -d "{\"model\":\"$MODEL\",\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HAI_OM_OK\"}]}")"
 
-            if [ "$HTTP_CODE" = "200" ] &&                jq -e '.choices[0].message.content | strings | length > 0' "$RUNNER_TEMP/response.json" >/dev/null 2>&1; then
-              echo "Working route: $MODEL"
-              jq -r '.model // "'"$MODEL"'"' "$RUNNER_TEMP/response.json"
+            if [ "$HTTP_CODE" = "200" ] && \
+               jq -e '.choices[0].message.content | strings | length > 0' "$RUNNER_TEMP/response.json" >/dev/null 2>&1; then
+              echo "Working free route: $MODEL"
               return 0
             fi
 
@@ -75,9 +121,10 @@ jobs:
             return 1
           }
 
-          try_model "pol/qwen-coder" || \
-          try_model "pol/deepseek" || \
-          try_model "pol/openai-large" || \
-          try_model "pol/grok" || \
-          try_model "auto/coding" || \
-          try_model "auto"
+          # Quality-first coding fallbacks, all zero-cost/no-user-input.
+          try_model "dahl/moonshotai/Kimi-K2.6" || \
+          try_model "unc/qwen3.6:27b" || \
+          try_model "kc/openrouter/free" || \
+          try_model "ddgw/gpt-5.6-luna" || \
+          try_model "ddgw/claude-haiku-4-5" || \
+          try_model "unc/adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic"
