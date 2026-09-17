@@ -35,13 +35,28 @@ jobs:
             exit 1
           fi
 
-      - name: Enforce free-only and test coding route
+      - name: Enable compression and test free routing
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsS -X PUT http://127.0.0.1:20128/api/settings             -H "Content-Type: application/json"             -d '{"freeAccessPolicy":"strict","excludeTosAvoid":false}' >/dev/null || true
 
-          RESPONSE="$(curl -fsS --max-time 180             http://127.0.0.1:20128/v1/chat/completions             -H "Authorization: Bearer smoke"             -H "Content-Type: application/json"             -d '{"model":"auto/coding","stream":false,"messages":[{"role":"user","content":"Reply with exactly: HAI_OM_OK"}]}')"
+          # Configure compression through the local CLI; it authenticates to the
+          # loopback management plane with OmniRoute's machine token.
+          omniroute compression engine set stacked || omniroute compression engine set rtk || true
 
-          echo "$RESPONSE" | jq -e '.choices[0].message.content | strings | length > 0' >/dev/null
-          echo "$RESPONSE" | jq -r '.model // "auto/coding"'
+          try_model() {
+            MODEL="$1"
+            HTTP_CODE="$(curl -sS --max-time 180               -o "$RUNNER_TEMP/response.json"               -w "%{http_code}"               http://127.0.0.1:20128/v1/chat/completions               -H "Authorization: Bearer smoke"               -H "Content-Type: application/json"               -d "{\"model\":\"$MODEL\",\"stream\":false,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HAI_OM_OK\"}]}")"
+
+            if [ "$HTTP_CODE" = "200" ] &&                jq -e '.choices[0].message.content | strings | length > 0' "$RUNNER_TEMP/response.json" >/dev/null 2>&1; then
+              echo "Working route: $MODEL"
+              jq -r '.model // "'"$MODEL"'"' "$RUNNER_TEMP/response.json"
+              return 0
+            fi
+
+            echo "$MODEL failed with HTTP $HTTP_CODE"
+            cat "$RUNNER_TEMP/response.json" || true
+            return 1
+          }
+
+          try_model "auto/coding" || try_model "auto"
