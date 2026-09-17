@@ -8,7 +8,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -105,53 +108,111 @@ class GitHubClient(
         return out.toString()
     }
 
+    /**
+     * Apply a task as ONE Git commit. The old Contents-API loop generated one commit
+     * (and potentially one Actions run) per file, wasting free CI minutes.
+     */
     suspend fun applyBatch(repo: RepoRef, branch: String, batch: EditBatch, taskId: String, onEvent: (String) -> Unit) {
+        require(batch.files.isNotEmpty()) { "لا توجد ملفات للتعديل" }
         require(batch.files.size <= 20) { "رفض تعديل أكثر من 20 ملفًا في دفعة واحدة" }
+
+        val head = headSha(repo, branch)
+        val treeRoot = getJson("/repos/${repo.owner}/${repo.repo}/git/trees/${enc(branch)}?recursive=1")
+        val baseTree = treeRoot["sha"]?.jsonPrimitive?.content ?: error("تعذر قراءة Git tree")
+        val existingModes = treeRoot["tree"]?.jsonArray.orEmpty().mapNotNull { node ->
+            val obj = node.jsonObject
+            val path = obj["path"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val mode = obj["mode"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            path to mode
+        }.toMap()
+
+        val entries = mutableListOf<JsonObject>()
         for (edit in batch.files) {
             validatePath(edit.path)
             if (edit.delete) {
-                val current = readFile(repo, branch, edit.path) ?: continue
-                deleteJson(
-                    "/repos/${repo.owner}/${repo.repo}/contents/${pathEnc(edit.path)}",
-                    buildJsonObject {
-                        put("message", "agent($taskId): delete ${edit.path}")
-                        put("sha", current.sha)
-                        put("branch", branch)
-                    }
-                )
+                if (edit.path !in existingModes) continue
+                entries += buildJsonObject {
+                    put("path", edit.path)
+                    put("mode", existingModes[edit.path] ?: "100644")
+                    put("type", "blob")
+                    put("sha", JsonNull)
+                }
                 onEvent("حذف ${edit.path}")
             } else {
                 require(edit.content.length <= 450_000) { "الملف ${edit.path} كبير جدًا للتعديل التلقائي" }
-                val current = readFile(repo, branch, edit.path)
-                val payload = buildJsonObject {
-                    put("message", "agent($taskId): update ${edit.path}")
-                    put("content", Base64.encodeToString(edit.content.toByteArray(), Base64.NO_WRAP))
-                    put("branch", branch)
-                    if (current != null) put("sha", current.sha)
+                val blob = postJson(
+                    "/repos/${repo.owner}/${repo.repo}/git/blobs",
+                    buildJsonObject {
+                        put("content", edit.content)
+                        put("encoding", "utf-8")
+                    }
+                )
+                val blobSha = blob["sha"]?.jsonPrimitive?.content ?: error("تعذر إنشاء blob لـ ${edit.path}")
+                entries += buildJsonObject {
+                    put("path", edit.path)
+                    put("mode", existingModes[edit.path] ?: "100644")
+                    put("type", "blob")
+                    put("sha", blobSha)
                 }
-                putJson("/repos/${repo.owner}/${repo.repo}/contents/${pathEnc(edit.path)}", payload)
                 onEvent("تحديث ${edit.path}")
             }
         }
+        require(entries.isNotEmpty()) { "لم تنتج الدفعة أي تغييرات قابلة للتطبيق" }
+
+        val newTree = postJson(
+            "/repos/${repo.owner}/${repo.repo}/git/trees",
+            buildJsonObject {
+                put("base_tree", baseTree)
+                put("tree", JsonArray(entries))
+            }
+        )["sha"]?.jsonPrimitive?.content ?: error("تعذر إنشاء Git tree جديد")
+
+        val commit = postJson(
+            "/repos/${repo.owner}/${repo.repo}/git/commits",
+            buildJsonObject {
+                put("message", "agent($taskId): ${batch.summary.take(120)}")
+                put("tree", newTree)
+                put("parents", buildJsonArray { add(head) })
+            }
+        )["sha"]?.jsonPrimitive?.content ?: error("تعذر إنشاء commit للمهمة")
+
+        patchJson(
+            "/repos/${repo.owner}/${repo.repo}/git/refs/heads/${enc(branch)}",
+            buildJsonObject {
+                put("sha", commit)
+                put("force", false)
+            }
+        )
+        onEvent("Commit واحد للمهمة: ${commit.take(8)}")
     }
 
     suspend fun waitForCi(repo: RepoRef, branch: String, headSha: String, onEvent: (String) -> Unit): CiResult {
         repeat(45) { attempt ->
-            // Do not filter by event: some repositories validate on push, others only on pull_request.
-            // Matching the exact head SHA avoids confusing an older run with the current edit.
-            val root = getJson("/repos/${repo.owner}/${repo.repo}/actions/runs?branch=${enc(branch)}&per_page=30")
-            val runs = root["workflow_runs"]?.jsonArray.orEmpty()
-            val run = runs.map { it.jsonObject }.firstOrNull { it["head_sha"]?.jsonPrimitive?.content == headSha }
-            if (run != null) {
-                val id = run["id"]?.jsonPrimitive?.longOrNull
-                val status = run["status"]?.jsonPrimitive?.content
-                val conclusion = run["conclusion"]?.jsonPrimitive?.contentOrNull
-                val event = run["event"]?.jsonPrimitive?.contentOrNull
-                onEvent("CI${event?.let { " [$it]" } ?: ""}: ${status ?: "..."}${conclusion?.let { " / $it" } ?: ""}")
-                if (status == "completed") {
-                    if (conclusion == "success") return CiResult(CiState.SUCCESS, id)
-                    val logs = if (id != null) downloadRunLogs(repo, id) else ""
-                    return CiResult(CiState.FAILURE, id, logs)
+            val root = getJson("/repos/${repo.owner}/${repo.repo}/actions/runs?branch=${enc(branch)}&per_page=50")
+            val matching = root["workflow_runs"]?.jsonArray.orEmpty()
+                .map { it.jsonObject }
+                .filter { it["head_sha"]?.jsonPrimitive?.content == headSha }
+
+            if (matching.isNotEmpty()) {
+                val pending = matching.filter { it["status"]?.jsonPrimitive?.content != "completed" }
+                if (pending.isNotEmpty()) {
+                    val events = pending.mapNotNull { it["event"]?.jsonPrimitive?.contentOrNull }.distinct().joinToString("+")
+                    onEvent("CI${if (events.isNotBlank()) " [$events]" else ""}: يعمل (${pending.size}/${matching.size})")
+                } else {
+                    val failed = matching.filter {
+                        it["conclusion"]?.jsonPrimitive?.contentOrNull !in setOf("success", "neutral", "skipped")
+                    }
+                    if (failed.isEmpty()) return CiResult(CiState.SUCCESS, matching.first()["id"]?.jsonPrimitive?.longOrNull)
+
+                    val logs = buildString {
+                        for (run in failed.take(4)) {
+                            val id = run["id"]?.jsonPrimitive?.longOrNull ?: continue
+                            val event = run["event"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                            appendLine("\n===== CI $event / run $id =====")
+                            appendLine(downloadRunLogs(repo, id))
+                        }
+                    }.takeLast(100_000)
+                    return CiResult(CiState.FAILURE, failed.first()["id"]?.jsonPrimitive?.longOrNull, logs)
                 }
             } else if (attempt == 8) {
                 onEvent("لم يظهر CI بعد؛ سأواصل الانتظار")
@@ -202,7 +263,7 @@ class GitHubClient(
     private suspend fun getJson(path: String): JsonObject = requestJson("GET", path, null)
     private suspend fun postJson(path: String, body: JsonObject): JsonObject = requestJson("POST", path, body)
     private suspend fun putJson(path: String, body: JsonObject): JsonObject = requestJson("PUT", path, body)
-    private suspend fun deleteJson(path: String, body: JsonObject): JsonObject = requestJson("DELETE", path, body)
+    private suspend fun patchJson(path: String, body: JsonObject): JsonObject = requestJson("PATCH", path, body)
 
     private suspend fun requestJson(method: String, path: String, body: JsonObject?): JsonObject = withContext(Dispatchers.IO) {
         request(method, path, body).use { response ->
@@ -224,6 +285,7 @@ class GitHubClient(
             "GET" -> builder.get()
             "POST" -> builder.post(requestBody ?: "{}".toRequestBody(JSON))
             "PUT" -> builder.put(requestBody ?: "{}".toRequestBody(JSON))
+            "PATCH" -> builder.patch(requestBody ?: "{}".toRequestBody(JSON))
             "DELETE" -> builder.delete(requestBody)
             else -> error("Unsupported method")
         }
