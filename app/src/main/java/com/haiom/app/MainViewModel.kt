@@ -4,10 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.haiom.app.agent.AgentEngine
-import com.haiom.app.data.FreeModelCatalog
 import com.haiom.app.model.AgentRunResult
-import com.haiom.app.network.FreeModelRouter
+import com.haiom.app.model.FreeProviderRanking
 import com.haiom.app.network.GitHubClient
+import com.haiom.app.network.OmniRouteClient
 import com.haiom.app.security.SecretStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,46 +17,111 @@ import kotlinx.coroutines.launch
 
 data class MainUiState(
     val running: Boolean = false,
+    val connecting: Boolean = false,
     val logs: List<String> = emptyList(),
     val result: AgentRunResult? = null,
     val error: String? = null,
     val hasGitHubToken: Boolean = false,
-    val hasOptionalProviderKey: Boolean = false
+    val omniReady: Boolean = false,
+    val strictFreeVerified: Boolean = false,
+    val compressionEnabled: Boolean = false,
+    val rankings: List<FreeProviderRanking> = emptyList()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val secrets = SecretStore(application)
     private val _state = MutableStateFlow(
-        MainUiState(
-            hasGitHubToken = secrets.githubToken().isNotBlank(),
-            hasOptionalProviderKey = secrets.pollinationsKey().isNotBlank()
-        )
+        MainUiState(hasGitHubToken = secrets.githubToken().isNotBlank())
     )
     val state: StateFlow<MainUiState> = _state.asStateFlow()
-    val models = FreeModelCatalog.models
 
-    fun runAgent(repositoryUrl: String, requirements: String, githubToken: String, providerKey: String) {
-        if (_state.value.running) return
+    fun savedOmniRouteUrl(): String = secrets.omniRouteUrl().ifBlank { DEFAULT_OMNIROUTE_URL }
+
+    fun connectOmniRoute(url: String, key: String) {
+        if (_state.value.connecting || _state.value.running) return
+        persistOmniRoute(url, key)
+        val savedUrl = secrets.omniRouteUrl()
+        if (savedUrl.isBlank()) {
+            _state.update { it.copy(error = "أدخل رابط OmniRoute") }
+            return
+        }
+        _state.update { it.copy(connecting = true, omniReady = false, error = null) }
+        viewModelScope.launch {
+            try {
+                val omni = OmniRouteClient(savedUrl, secrets.omniRouteKey())
+                val connectionLogs = mutableListOf<String>()
+                omni.verifyAndConfigure { connectionLogs += it }
+                val rankings = omni.fetchCodingRankings(50)
+                _state.update {
+                    it.copy(
+                        connecting = false,
+                        omniReady = true,
+                        strictFreeVerified = true,
+                        compressionEnabled = true,
+                        rankings = rankings,
+                        logs = (it.logs + connectionLogs).takeLast(120)
+                    )
+                }
+            } catch (t: Throwable) {
+                _state.update {
+                    it.copy(
+                        connecting = false,
+                        omniReady = false,
+                        strictFreeVerified = false,
+                        compressionEnabled = false,
+                        error = t.message ?: t.javaClass.simpleName
+                    )
+                }
+            }
+        }
+    }
+
+    fun runAgent(
+        repositoryUrl: String,
+        requirements: String,
+        githubToken: String,
+        omniRouteUrl: String,
+        omniRouteKey: String
+    ) {
+        if (_state.value.running || _state.value.connecting) return
         if (githubToken.isNotBlank()) secrets.saveGitHubToken(githubToken)
-        if (providerKey.isNotBlank()) secrets.savePollinationsKey(providerKey)
+        persistOmniRoute(omniRouteUrl, omniRouteKey)
+
         val token = secrets.githubToken()
+        val savedUrl = secrets.omniRouteUrl()
         if (token.isBlank()) {
             _state.update { it.copy(error = "أدخل GitHub fine-grained token أولًا") }
             return
         }
-        _state.value = MainUiState(
-            running = true,
-            logs = listOf("بدء HAI OM Agent"),
-            hasGitHubToken = true,
-            hasOptionalProviderKey = secrets.pollinationsKey().isNotBlank()
-        )
+        if (savedUrl.isBlank()) {
+            _state.update { it.copy(error = "أدخل رابط OmniRoute أولًا") }
+            return
+        }
+
+        _state.update {
+            it.copy(
+                running = true,
+                result = null,
+                error = null,
+                logs = listOf("بدء HAI OM Agent", "AI: OmniRoute فقط", "Route: ${OmniRouteClient.CODING_ROUTE}")
+            )
+        }
         viewModelScope.launch {
             try {
-                val router = FreeModelRouter(secrets)
-                val github = GitHubClient(token)
-                val result = AgentEngine(router, github).run(repositoryUrl, requirements) { message ->
-                    _state.update { current -> current.copy(logs = (current.logs + message).takeLast(120)) }
+                val omni = OmniRouteClient(savedUrl, secrets.omniRouteKey())
+                omni.verifyAndConfigure(::appendLog)
+                val rankings = omni.fetchCodingRankings(50)
+                _state.update {
+                    it.copy(
+                        omniReady = true,
+                        strictFreeVerified = true,
+                        compressionEnabled = true,
+                        rankings = rankings
+                    )
                 }
+
+                val github = GitHubClient(token)
+                val result = AgentEngine(omni, github).run(repositoryUrl, requirements, ::appendLog)
                 _state.update { it.copy(running = false, result = result) }
             } catch (t: Throwable) {
                 _state.update { it.copy(running = false, error = t.message ?: t.javaClass.simpleName) }
@@ -64,5 +129,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun persistOmniRoute(url: String, key: String) {
+        if (url.isNotBlank()) secrets.saveOmniRouteUrl(url)
+        if (key.isNotBlank()) secrets.saveOmniRouteKey(key)
+    }
+
+    private fun appendLog(message: String) {
+        _state.update { current -> current.copy(logs = (current.logs + message).takeLast(160)) }
+    }
+
     fun clearError() = _state.update { it.copy(error = null) }
+
+    companion object {
+        private const val DEFAULT_OMNIROUTE_URL = "http://127.0.0.1:20128"
+    }
 }
