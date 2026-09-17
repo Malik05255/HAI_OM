@@ -6,7 +6,11 @@ import com.haiom.app.model.CiState
 import com.haiom.app.model.EditBatch
 import com.haiom.app.model.FileEdit
 import com.haiom.app.network.GitHubClient
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
@@ -21,6 +25,7 @@ class RemoteAgentRunner(
     private val context: Context,
     private val github: GitHubClient
 ) {
+    private val json = Json { ignoreUnknownKeys = true }
     suspend fun run(
         repositoryUrl: String,
         requirements: String,
@@ -74,16 +79,41 @@ class RemoteAgentRunner(
             CiState.PENDING -> throw IllegalStateException("التنفيذ ما زال قيد الانتظار")
         }
 
+        val resultFile = github.readFile(repo, branch, RESULT_PATH)
+            ?: throw IllegalStateException("اكتمل التنفيذ لكن لم تصل النتيجة.")
+        val resultObject = runCatching {
+            json.parseToJsonElement(resultFile.text).jsonObject
+        }.getOrElse {
+            throw IllegalStateException("تعذر قراءة نتيجة المهمة.")
+        }
+        val mode = resultObject["mode"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val answer = resultObject["answer"]?.jsonPrimitive?.contentOrNull
+            ?.trim()
+            .orEmpty()
+
         onEvent("تنظيف ملفات التشغيل")
         val cleanup = EditBatch(
             summary = "إزالة ملفات تشغيل HAI OM المؤقتة",
             files = listOf(
                 FileEdit(WORKFLOW_PATH, delete = true),
                 FileEdit(RUNNER_PATH, delete = true),
-                FileEdit(TASK_PATH, delete = true)
+                FileEdit(TASK_PATH, delete = true),
+                FileEdit(RESULT_PATH, delete = true)
             )
         )
         github.applyBatch(repo, branch, cleanup, "remote-cleanup", onEvent)
+
+        if (mode == "answer") {
+            onEvent("✓ اكتملت القراءة")
+            github.deleteBranch(repo, branch)
+            return AgentRunResult(
+                branch = branch,
+                pullRequestUrl = null,
+                completedTasks = 1,
+                totalTasks = 1,
+                answer = answer.ifBlank { "اكتملت القراءة." }
+            )
+        }
 
         onEvent("تجهيز النتيجة")
         val shortTitle = requirements.lineSequence()
@@ -111,7 +141,8 @@ class RemoteAgentRunner(
             branch = branch,
             pullRequestUrl = pullRequestUrl,
             completedTasks = 1,
-            totalTasks = 1
+            totalTasks = 1,
+            answer = answer.takeIf { it.isNotBlank() }
         )
     }
 
@@ -145,6 +176,7 @@ class RemoteAgentRunner(
         private const val WORKFLOW_PATH = ".github/workflows/hai-om-agent.yml"
         private const val RUNNER_PATH = ".hai-om/agent.mjs"
         private const val TASK_PATH = ".hai-om/task.json"
+        private const val RESULT_PATH = ".hai-om/result.json"
         private const val MAX_REQUIREMENTS_CHARS = 20_000
     }
 }
