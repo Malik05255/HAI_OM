@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,6 +51,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -93,6 +97,13 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
         }
     }
 
+    LaunchedEffect(state.message) {
+        state.message?.let {
+            snackbar.showSnackbar(it)
+            vm.clearMessage()
+        }
+    }
+
     LaunchedEffect(state.githubLaunchUrl, state.githubUserCode) {
         val url = state.githubLaunchUrl ?: return@LaunchedEffect
         if (state.githubUserCode.isNotBlank()) {
@@ -103,6 +114,70 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }
         vm.consumeGitHubLaunch()
+    }
+
+
+    state.updateInfo?.let { update ->
+        AlertDialog(
+            onDismissRequest = { if (!state.downloadingUpdate) vm.dismissUpdate() },
+            title = {
+                Text(if (state.updateInstallUri == null) "تحديث جديد" else "جاهز للتثبيت")
+            },
+            text = {
+                Text(
+                    when {
+                        state.downloadingUpdate -> "جاري تنزيل التحديث ${state.updateProgress}%"
+                        state.updateInstallUri != null -> "تم تنزيل الإصدار ${update.versionName}"
+                        else -> "الإصدار ${update.versionName} متوفر"
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.downloadingUpdate,
+                    onClick = {
+                        val installUri = state.updateInstallUri
+                        if (installUri == null) {
+                            vm.downloadUpdate()
+                        } else if (
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                            !context.packageManager.canRequestPackageInstalls()
+                        ) {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                            )
+                        } else {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(
+                                        Uri.parse(installUri),
+                                        "application/vnd.android.package-archive"
+                                    )
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                            )
+                        }
+                    }
+                ) {
+                    Text(
+                        when {
+                            state.downloadingUpdate -> "جاري التنزيل…"
+                            state.updateInstallUri != null -> "تثبيت"
+                            else -> "تنزيل وتثبيت"
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                if (!state.downloadingUpdate) {
+                    TextButton(onClick = vm::dismissUpdate) { Text("لاحقًا") }
+                }
+            }
+        )
     }
 
     if (showProjects) {
@@ -156,7 +231,9 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                     if (state.hasGitHubToken) showProjects = true else vm.startGitHubLink()
                 },
                 onRun = { vm.runAgent(selectedRepo?.htmlUrl.orEmpty(), requirements) },
-                onConnectGitHub = vm::startGitHubLink
+                onConnectGitHub = vm::startGitHubLink,
+                onCheckUpdate = vm::checkForUpdate,
+                checkingUpdate = state.checkingUpdate
             )
             1 -> ProjectsScreen(
                 modifier = Modifier.padding(padding),
@@ -185,7 +262,9 @@ private fun HomeScreen(
     onRequirements: (String) -> Unit,
     onPickProject: () -> Unit,
     onRun: () -> Unit,
-    onConnectGitHub: () -> Unit
+    onConnectGitHub: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    checkingUpdate: Boolean
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 18.dp),
@@ -203,6 +282,19 @@ private fun HomeScreen(
                     fontWeight = FontWeight.Black
                 )
                 StatusPill(state.omniReady && state.hasGitHubToken)
+            }
+        }
+
+        item {
+            OutlinedButton(
+                onClick = onCheckUpdate,
+                enabled = !checkingUpdate,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Icon(Icons.Outlined.Refresh, null)
+                Spacer(Modifier.size(8.dp))
+                Text(if (checkingUpdate) "جاري البحث…" else "البحث عن تحديث", fontWeight = FontWeight.Bold)
             }
         }
 

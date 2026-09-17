@@ -12,6 +12,8 @@ import com.haiom.app.network.GitHubAuthClient
 import com.haiom.app.network.GitHubClient
 import com.haiom.app.network.OmniRouteClient
 import com.haiom.app.security.SecretStore
+import com.haiom.app.update.AppUpdateInfo
+import com.haiom.app.update.AppUpdateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,11 +37,18 @@ data class MainUiState(
     val omniReady: Boolean = false,
     val strictFreeVerified: Boolean = false,
     val compressionEnabled: Boolean = false,
-    val rankings: List<FreeProviderRanking> = emptyList()
+    val rankings: List<FreeProviderRanking> = emptyList(),
+    val checkingUpdate: Boolean = false,
+    val updateInfo: AppUpdateInfo? = null,
+    val downloadingUpdate: Boolean = false,
+    val updateProgress: Int = 0,
+    val updateInstallUri: String? = null,
+    val message: String? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val secrets = SecretStore(application)
+    private val updater = AppUpdateManager(application)
     private val _state = MutableStateFlow(
         MainUiState(hasGitHubToken = secrets.githubToken().isNotBlank())
     )
@@ -233,6 +242,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (current.logs.lastOrNull() == simple) current else current.copy(logs = (current.logs + simple).takeLast(80))
         }
     }
+
+
+    fun checkForUpdate() {
+        if (_state.value.checkingUpdate || _state.value.downloadingUpdate) return
+        _state.update { it.copy(checkingUpdate = true, updateInfo = null, message = null) }
+        viewModelScope.launch {
+            runCatching { updater.checkLatest() }
+                .onSuccess { update ->
+                    _state.update {
+                        it.copy(
+                            checkingUpdate = false,
+                            updateInfo = update,
+                            message = if (update == null) "أنت على آخر إصدار" else null
+                        )
+                    }
+                }
+                .onFailure {
+                    _state.update { it.copy(checkingUpdate = false, message = "تعذر البحث عن تحديث") }
+                }
+        }
+    }
+
+    fun downloadUpdate() {
+        val update = _state.value.updateInfo ?: return
+        if (_state.value.downloadingUpdate) return
+        _state.update { it.copy(downloadingUpdate = true, updateProgress = 0, message = null) }
+        viewModelScope.launch {
+            runCatching {
+                updater.download(update) { progress ->
+                    _state.update { current -> current.copy(updateProgress = progress) }
+                }
+            }.onSuccess { file ->
+                val uri = updater.installUri(file).toString()
+                _state.update {
+                    it.copy(
+                        downloadingUpdate = false,
+                        updateProgress = 100,
+                        updateInstallUri = uri
+                    )
+                }
+            }.onFailure {
+                _state.update { it.copy(downloadingUpdate = false, message = "تعذر تنزيل التحديث") }
+            }
+        }
+    }
+
+    fun dismissUpdate() = _state.update {
+        if (it.downloadingUpdate) it else it.copy(updateInfo = null, updateInstallUri = null, updateProgress = 0)
+    }
+
+    fun clearMessage() = _state.update { it.copy(message = null) }
 
     fun clearError() = _state.update { it.copy(error = null) }
 

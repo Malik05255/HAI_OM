@@ -36,3 +36,66 @@ jobs:
           name: HAI-OM-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HAI_GITHUB_CLIENT_ID: ${{ vars.HAI_GITHUB_CLIENT_ID }}
+      HAI_OMNIROUTE_URL: ${{ vars.HAI_OMNIROUTE_URL }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Get or create stable signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view hai-om-signing >/dev/null 2>&1; then
+            gh release download hai-om-signing -p 'hai-om-release.jks' -p 'signing.properties' --clobber
+          else
+            PASS="$(openssl rand -hex 24)"
+            keytool -genkeypair -v               -keystore hai-om-release.jks               -storepass "$PASS"               -keypass "$PASS"               -alias haiom               -keyalg RSA               -keysize 3072               -validity 10000               -dname "CN=HAI OM,O=HAI OM,C=SA"
+            {
+              echo "storePassword=$PASS"
+              echo "keyPassword=$PASS"
+              echo "keyAlias=haiom"
+            } > signing.properties
+            gh release create hai-om-signing               --draft               --title "HAI OM signing material"               --notes "Private CI signing material. Do not publish."               hai-om-release.jks signing.properties
+          fi
+
+      - name: Build signed release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          source signing.properties
+          export ANDROID_KEYSTORE_PATH="$PWD/hai-om-release.jks"
+          export ANDROID_KEYSTORE_PASSWORD="$storePassword"
+          export ANDROID_KEY_ALIAS="$keyAlias"
+          export ANDROID_KEY_PASSWORD="$keyPassword"
+          gradle --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk HAI-OM.apk
+
+      - name: Publish app release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(grep 'versionName = "' app/build.gradle.kts | head -1 | sed -E 's/.*versionName = "([^"]+)".*/\1/')"
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" HAI-OM.apk --clobber
+            gh release edit "$TAG" --latest
+          else
+            gh release create "$TAG" HAI-OM.apk               --title "HAI OM $TAG"               --notes "تحديث HAI OM"               --latest
+          fi
