@@ -104,15 +104,11 @@ class GitHubClient(
             val remaining = maxChars - out.length
             if (remaining <= 300) break
             out.append("\n\n===== ${entry.path} =====\n")
-            out.append(file.text.take(remaining - 80))
+            out.append(redactSecrets(file.text).take(remaining - 80))
         }
         return out.toString()
     }
 
-    /**
-     * Apply a task as ONE Git commit. The old Contents-API loop generated one commit
-     * (and potentially one Actions run) per file, wasting free CI minutes.
-     */
     suspend fun applyBatch(repo: RepoRef, branch: String, batch: EditBatch, taskId: String, onEvent: (String) -> Unit) {
         require(batch.files.isNotEmpty()) { "لا توجد ملفات للتعديل" }
         require(batch.files.size <= 20) { "رفض تعديل أكثر من 20 ملفًا في دفعة واحدة" }
@@ -263,7 +259,6 @@ class GitHubClient(
 
     private suspend fun getJson(path: String): JsonObject = requestJson("GET", path, null)
     private suspend fun postJson(path: String, body: JsonObject): JsonObject = requestJson("POST", path, body)
-    private suspend fun putJson(path: String, body: JsonObject): JsonObject = requestJson("PUT", path, body)
     private suspend fun patchJson(path: String, body: JsonObject): JsonObject = requestJson("PATCH", path, body)
 
     private suspend fun requestJson(method: String, path: String, body: JsonObject?): JsonObject = withContext(Dispatchers.IO) {
@@ -285,7 +280,6 @@ class GitHubClient(
         when (method) {
             "GET" -> builder.get()
             "POST" -> builder.post(requestBody ?: "{}".toRequestBody(JSON))
-            "PUT" -> builder.put(requestBody ?: "{}".toRequestBody(JSON))
             "PATCH" -> builder.patch(requestBody ?: "{}".toRequestBody(JSON))
             "DELETE" -> builder.delete(requestBody)
             else -> error("Unsupported method")
@@ -302,16 +296,44 @@ class GitHubClient(
             "مسار ملف غير آمن: $path"
         }
         require(!path.startsWith(".git/")) { "لا يمكن تعديل .git" }
+        require(!isSensitivePath(path)) { "رفض الوصول التلقائي لملف حساس: $path" }
     }
 
     private fun isTextCandidate(path: String, size: Long): Boolean {
-        if (size > 180_000) return false
+        if (size > 180_000 || isSensitivePath(path)) return false
         val lower = path.lowercase()
         if (listOf("node_modules/", ".gradle/", "build/", "dist/", "vendor/", ".git/").any { lower.contains(it) }) return false
         val name = lower.substringAfterLast('/')
         if (name in setOf("readme.md", "package.json", "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "pubspec.yaml", "cargo.toml", "go.mod", "requirements.txt")) return true
         val ext = lower.substringAfterLast('.', "")
         return ext in setOf("kt", "kts", "java", "xml", "json", "md", "ts", "tsx", "js", "jsx", "py", "go", "rs", "swift", "dart", "yaml", "yml", "toml", "properties", "gradle", "css", "html")
+    }
+
+    private fun isSensitivePath(path: String): Boolean {
+        val lower = path.lowercase().replace('\\', '/')
+        val name = lower.substringAfterLast('/')
+        if (name == ".env" || name.startsWith(".env.")) return true
+        if (name in setOf(
+                "local.properties", "google-services.json", "googleservice-info.plist",
+                "credentials.json", "secrets.json", "service-account.json", "service_account.json",
+                "id_rsa", "id_ed25519", ".npmrc", ".pypirc", "netrc", ".netrc"
+            )) return true
+        if ("/.ssh/" in "/$lower" || "/.aws/credentials" in "/$lower" || "/.gnupg/" in "/$lower") return true
+        if (name.contains("service-account") || name.contains("service_account") || name.contains("credential") || name.contains("secret")) return true
+        val ext = name.substringAfterLast('.', "")
+        return ext in setOf("jks", "keystore", "p12", "pfx", "pem", "key", "mobileprovision")
+    }
+
+    private fun redactSecrets(input: String): String {
+        var text = input
+        text = text.replace(Regex("(?i)(authorization\\s*:\\s*bearer\\s+)[^\\s]+"), "$1[REDACTED]")
+        text = text.replace(
+            Regex("(?i)((?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|passwd)\\s*[=:]\\s*)[\\\"']?[^\\s\\\"']{6,}"),
+            "$1[REDACTED]"
+        )
+        text = text.replace(Regex("\\bgh[pousr]_[A-Za-z0-9_]{20,}\\b"), "[REDACTED_GITHUB_TOKEN]")
+        text = text.replace(Regex("\\bAKIA[0-9A-Z]{16}\\b"), "[REDACTED_AWS_KEY]")
+        return text
     }
 
     private fun priority(path: String): Int {
