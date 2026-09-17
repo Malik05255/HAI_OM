@@ -83,7 +83,7 @@ class GitHubAppLinker(
             val code = withTimeout(15 * 60 * 1000L) { manifestCode.await() }
             val app = convertManifest(code)
 
-            onOpenUrl("https://github.com/apps/__SLUG__/installations/new".replace("__SLUG__", app.slug))
+            onOpenUrl("https://github.com/apps/__SLUG__/installations/new?state=__STATE__".replace("__SLUG__", app.slug).replace("__STATE__", enc(state)))
 
             val installed = withTimeout(15 * 60 * 1000L) { installationId.await() }
             val token = createInstallationToken(app.appId, app.privateKeyPem, installed)
@@ -302,7 +302,8 @@ class GitHubAppLinker(
                     }
                     "/installed" -> {
                         val id = params["installation_id"]?.toLongOrNull()
-                        if (id != null) {
+                        val returnedState = params["state"].orEmpty()
+                        if (id != null && returnedState == state) {
                             installationId.complete(id)
                             simplePage("تم ربط GitHub. يمكنك الرجوع للتطبيق.")
                         } else {
@@ -332,7 +333,7 @@ class GitHubAppLinker(
         val action = "https://github.com/settings/apps/new?state=${enc(state)}"
         val safeManifest = manifest
             .replace("&", "&amp;")
-            .replace(""", "&quot;")
+            .replace("\"", "&quot;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         return """
