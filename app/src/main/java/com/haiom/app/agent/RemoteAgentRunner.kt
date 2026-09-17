@@ -67,7 +67,8 @@ class RemoteAgentRunner(
             branch = branch,
             headSha = kickoffSha,
             onEvent = onEvent,
-            workflowName = WORKFLOW_NAME
+            workflowName = WORKFLOW_NAME,
+            maxAttempts = 300
         )
 
         when (run.state) {
