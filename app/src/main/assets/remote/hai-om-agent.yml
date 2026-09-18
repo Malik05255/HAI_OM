@@ -22,7 +22,9 @@ jobs:
       - name: Checkout HAI OM runtime
         uses: actions/checkout@v5
         with:
-          ref: hai-om/runtime
+          # Pin this run to the exact task commit that triggered it.
+          # Using the moving runtime branch here can execute a newer task when runs queue.
+          ref: ${{ github.sha }}
           path: runtime
           fetch-depth: 1
           persist-credentials: false
