@@ -2,7 +2,6 @@ package com.haiom.app
 
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -28,8 +27,6 @@ class MainActivity : ComponentActivity() {
                 AndroidColor.TRANSPARENT
             )
         )
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
-
         setContent {
             val colors = lightColorScheme(
                 primary = Color(0xFF2F7AE9),
