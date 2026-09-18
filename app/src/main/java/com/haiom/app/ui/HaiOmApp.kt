@@ -8,11 +8,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -29,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -94,6 +91,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -379,72 +377,93 @@ private fun MessageBlock(turn: ChatTurn) {
     val codeLike = turn.text.contains(fence)
     val messageText = if (codeLike) turn.text.replace(fence, "") else turn.text
 
-    if (user) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.End
-        ) {
-            Text(
-                "أنا",
-                color = Color(0xFF7A6D82),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(5.dp))
-            Surface(
-                modifier = Modifier.fillMaxWidth(0.82f),
-                color = Lavender,
-                shape = RoundedCornerShape(
-                    topStart = 20.dp,
-                    topEnd = 20.dp,
-                    bottomStart = 20.dp,
-                    bottomEnd = 7.dp
-                ),
-                border = BorderStroke(1.dp, LavenderStrong)
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        if (user) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.End
             ) {
                 Text(
-                    messageText,
-                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
-                    color = Ink,
-                    fontSize = 15.sp,
-                    lineHeight = 23.sp
+                    "أنا",
+                    color = Color(0xFF7A6D82),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
                 )
+                Spacer(Modifier.height(5.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(0.82f),
+                    color = Lavender,
+                    shape = RoundedCornerShape(
+                        topStart = 20.dp,
+                        topEnd = 20.dp,
+                        bottomStart = 20.dp,
+                        bottomEnd = 7.dp
+                    ),
+                    border = BorderStroke(1.dp, LavenderStrong)
+                ) {
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                        Text(
+                            messageText,
+                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                            color = Ink,
+                            fontSize = 15.sp,
+                            lineHeight = 23.sp,
+                            textAlign = TextAlign.Right
+                        )
+                    }
+                }
             }
-        }
-    } else {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.Start
-        ) {
-            Text(
-                "HAI",
-                color = Blue,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(5.dp))
-            Surface(
-                modifier = Modifier.fillMaxWidth(0.90f),
-                color = if (codeLike) Color(0xFFF6F5F8) else Color(0xFFF8FAFF),
-                shape = RoundedCornerShape(
-                    topStart = 20.dp,
-                    topEnd = 20.dp,
-                    bottomStart = 7.dp,
-                    bottomEnd = 20.dp
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    if (codeLike) Line else Color(0xFFE3E9F8)
-                )
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.Start
             ) {
                 Text(
-                    messageText,
-                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
-                    color = if (codeLike) Color(0xFF3B3840) else Ink,
-                    fontSize = if (codeLike) 13.sp else 15.sp,
-                    lineHeight = if (codeLike) 20.sp else 24.sp,
-                    fontFamily = if (codeLike) FontFamily.Monospace else FontFamily.Default
+                    "HAI",
+                    color = Blue,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
                 )
+                Spacer(Modifier.height(5.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(0.90f),
+                    color = if (codeLike) Color(0xFFF6F5F8) else Color(0xFFF8FAFF),
+                    shape = RoundedCornerShape(
+                        topStart = 20.dp,
+                        topEnd = 20.dp,
+                        bottomStart = 7.dp,
+                        bottomEnd = 20.dp
+                    ),
+                    border = BorderStroke(
+                        1.dp,
+                        if (codeLike) Line else Color(0xFFE3E9F8)
+                    )
+                ) {
+                    if (codeLike) {
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Text(
+                                messageText,
+                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                                color = Color(0xFF3B3840),
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp,
+                                fontFamily = FontFamily.Monospace,
+                                textAlign = TextAlign.Left
+                            )
+                        }
+                    } else {
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                            Text(
+                                messageText,
+                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                                color = Ink,
+                                fontSize = 15.sp,
+                                lineHeight = 24.sp,
+                                textAlign = TextAlign.Right
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -611,76 +630,82 @@ private fun AnimatedToolDock(
     onModels: () -> Unit,
     onSettings: () -> Unit
 ) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
+    val panelWidth = 66.dp
+    val handleWidth = 19.dp
+    val panelOffset by animateDpAsState(
+        targetValue = if (open) 0.dp else -panelWidth,
+        animationSpec = tween(durationMillis = 280),
+        label = "drawerPanel"
+    )
+    val handleOffset by animateDpAsState(
+        targetValue = if (open) panelWidth else 0.dp,
+        animationSpec = tween(durationMillis = 280),
+        label = "drawerHandle"
+    )
+
+    Box(
+        modifier = modifier
+            .width(panelWidth + handleWidth)
+            .height(330.dp)
     ) {
-        AnimatedVisibility(
-            visible = open,
-            enter = expandHorizontally(
-                expandFrom = Alignment.Start,
-                animationSpec = tween(durationMillis = 280)
-            ) + fadeIn(animationSpec = tween(durationMillis = 180)),
-            exit = shrinkHorizontally(
-                shrinkTowards = Alignment.Start,
-                animationSpec = tween(durationMillis = 230)
-            ) + fadeOut(animationSpec = tween(durationMillis = 140))
+        Surface(
+            modifier = Modifier
+                .width(panelWidth)
+                .offset(x = panelOffset),
+            color = SurfaceSoft,
+            shape = RoundedCornerShape(
+                topEnd = 30.dp,
+                bottomEnd = 30.dp
+            ),
+            border = BorderStroke(1.dp, Line),
+            shadowElevation = 8.dp
         ) {
-            Surface(
-                modifier = Modifier.width(66.dp),
-                color = SurfaceSoft,
-                shape = RoundedCornerShape(
-                    topEnd = 30.dp,
-                    bottomEnd = 30.dp
+            Column(
+                modifier = Modifier.padding(
+                    vertical = 12.dp,
+                    horizontal = 8.dp
                 ),
-                border = BorderStroke(1.dp, Line),
-                shadowElevation = 8.dp
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(
-                        vertical = 12.dp,
-                        horizontal = 8.dp
-                    ),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(7.dp)
-                ) {
-                    DockIcon(
-                        Icons.Outlined.ChatBubbleOutline,
-                        "دردشة جديدة",
-                        onNewChat
-                    )
-                    DockIcon(
-                        Icons.Outlined.FolderOpen,
-                        "المشاريع",
-                        onProjects
-                    )
-                    DockIcon(
-                        Icons.Outlined.History,
-                        "السجل",
-                        onHistory
-                    )
-                    DockIcon(
-                        Icons.Outlined.AutoAwesome,
-                        "النماذج",
-                        onModels
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.width(34.dp),
-                        color = Line
-                    )
-                    DockIcon(
-                        Icons.Outlined.Settings,
-                        if (connected) "الإعدادات" else "الربط",
-                        onSettings
-                    )
-                }
+                DockIcon(
+                    Icons.Outlined.ChatBubbleOutline,
+                    "دردشة جديدة",
+                    onNewChat
+                )
+                DockIcon(
+                    Icons.Outlined.FolderOpen,
+                    "المشاريع",
+                    onProjects
+                )
+                DockIcon(
+                    Icons.Outlined.History,
+                    "السجل",
+                    onHistory
+                )
+                DockIcon(
+                    Icons.Outlined.AutoAwesome,
+                    "النماذج",
+                    onModels
+                )
+                HorizontalDivider(
+                    modifier = Modifier.width(34.dp),
+                    color = Line
+                )
+                DockIcon(
+                    Icons.Outlined.Settings,
+                    if (connected) "الإعدادات" else "الربط",
+                    onSettings
+                )
             }
         }
 
         Surface(
             modifier = Modifier
-                .width(19.dp)
-                .height(if (open) 86.dp else 76.dp)
+                .align(Alignment.CenterStart)
+                .offset(x = handleOffset)
+                .width(handleWidth)
+                .height(80.dp)
                 .clickable(onClick = onToggle),
             color = Blue,
             shape = RoundedCornerShape(
