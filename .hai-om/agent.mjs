@@ -12,6 +12,7 @@ const TOKEN = process.env.GITHUB_TOKEN || "";
 const MAX_TASKS = 5;
 const MAX_FIX_ATTEMPTS = 3;
 const MAX_CONTEXT_CHARS = 72_000;
+const CHAT_CONTEXT_CHARS = 24_000;
 
 if (!fs.existsSync(TASK_PATH)) fail("ملف المهمة غير موجود");
 if (!BRANCH || !REPOSITORY || !TOKEN) fail("بيئة التشغيل غير مكتملة");
@@ -427,11 +428,10 @@ const FIXER_SYSTEM = [
 ].join(" ");
 
 async function main() {
-  log("قراءة المشروع");
-  const initialContext = buildContext();
-  if (!initialContext.trim()) fail("لم أجد ملفات قابلة للتحليل");
-
   const mayEdit = taskSpec.editAllowed === true && explicitEditIntent(requirements);
+  log("قراءة المشروع");
+  const initialContext = buildContext(mayEdit ? MAX_CONTEXT_CHARS : CHAT_CONTEXT_CHARS);
+  if (!initialContext.trim()) fail("لم أجد ملفات قابلة للتحليل");
   log(mayEdit ? "تجهيز خطة التنفيذ" : "تجهيز الرد");
   const planRaw = await chat(
     PLANNER_SYSTEM,
