@@ -245,6 +245,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             message.contains("إنشاء خطة", true) -> "تجهيز الخطة"
             message == "تجهيز المهمة" -> "تجهيز المهمة"
             message == "بدأ التنفيذ" -> "بدأ التنفيذ"
+            message == "فتح المشروع" -> "فتح المشروع"
+            message == "تجهيز العمل" -> "تجهيز العمل"
+            message == "تجهيز الذكاء" -> "تجهيز الذكاء"
+            message == "قراءة المشروع وتنفيذ المطلوب" -> "قراءة المشروع وتنفيذ المطلوب"
+            message == "جاري التنفيذ" -> "جاري التنفيذ"
             message.contains("تنظيف ملفات التشغيل", true) -> "إنهاء المهمة"
             message.contains("تجهيز النتيجة", true) -> "تجهيز النتيجة"
             message.contains("المهمة ", true) -> message.substringBefore(':')
