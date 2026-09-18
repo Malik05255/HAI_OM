@@ -1,7 +1,5 @@
 package com.haiom.app.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -155,14 +153,21 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
             vm.clearMessage()
         }
     }
-    LaunchedEffect(state.githubLaunchUrl, state.githubUserCode) {
+    LaunchedEffect(state.githubLaunchUrl) {
         val url = state.githubLaunchUrl ?: return@LaunchedEffect
-        if (state.githubUserCode.isNotBlank()) {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("GitHub", state.githubUserCode))
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            )
         }
-        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
         vm.consumeGitHubLaunch()
+    }
+
+    if (state.githubLinking) {
+        GitHubLinkDialog(
+            status = state.githubLinkStatus,
+            onCancel = vm::cancelGitHubLink
+        )
     }
 
     state.updateInfo?.let { update ->
@@ -241,6 +246,8 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                     connected = state.hasGitHubToken,
                     login = state.githubLogin,
                     linking = state.githubLinking,
+                    linkingStatus = state.githubLinkStatus,
+                    repositoryCount = state.repositories.size,
                     logs = state.logs,
                     answer = state.result?.answer,
                     prUrl = state.result?.pullRequestUrl,
@@ -253,6 +260,7 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                         panel = null
                     },
                     onConnect = vm::startGitHubLink,
+                    onCancelLink = vm::cancelGitHubLink,
                     onDisconnect = vm::disconnectGitHub,
                     onCheckUpdate = vm::checkForUpdate,
                     onOpenPr = { url ->
@@ -785,6 +793,8 @@ private fun ToolScreen(
     connected: Boolean,
     login: String,
     linking: Boolean,
+    linkingStatus: String,
+    repositoryCount: Int,
     logs: List<String>,
     answer: String?,
     prUrl: String?,
@@ -794,6 +804,7 @@ private fun ToolScreen(
     onBack: () -> Unit,
     onSelectRepo: (GitHubRepository) -> Unit,
     onConnect: () -> Unit,
+    onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit,
     onOpenPr: (String) -> Unit
@@ -815,7 +826,14 @@ private fun ToolScreen(
         Spacer(Modifier.height(18.dp))
         when (panel) {
             ToolPanel.PROJECTS -> ProjectsContent(
-                repositories, selectedRepo, connected, linking, onSelectRepo, onConnect
+                repositories = repositories,
+                selectedRepo = selectedRepo,
+                connected = connected,
+                linking = linking,
+                linkingStatus = linkingStatus,
+                onSelect = onSelectRepo,
+                onConnect = onConnect,
+                onCancelLink = onCancelLink
             )
             ToolPanel.HISTORY -> HistoryContent(
                 logs = logs,
@@ -826,8 +844,16 @@ private fun ToolScreen(
             )
             ToolPanel.MODELS -> ModelsContent(models, omniReady)
             ToolPanel.SETTINGS -> SettingsContent(
-                connected, login, linking, checkingUpdate,
-                onConnect, onDisconnect, onCheckUpdate
+                connected = connected,
+                login = login,
+                repositoryCount = repositoryCount,
+                linking = linking,
+                linkingStatus = linkingStatus,
+                checkingUpdate = checkingUpdate,
+                onConnect = onConnect,
+                onCancelLink = onCancelLink,
+                onDisconnect = onDisconnect,
+                onCheckUpdate = onCheckUpdate
             )
         }
     }
@@ -853,28 +879,29 @@ private fun ProjectsContent(
     selectedRepo: GitHubRepository?,
     connected: Boolean,
     linking: Boolean,
+    linkingStatus: String,
     onSelect: (GitHubRepository) -> Unit,
-    onConnect: () -> Unit
+    onConnect: () -> Unit,
+    onCancelLink: () -> Unit
 ) {
     if (!connected) {
-        EmptyToolCard("GitHub غير مربوط", "اربط حسابك حتى تظهر المشاريع هنا.")
-        Spacer(Modifier.height(12.dp))
-        Button(
-            onClick = onConnect,
-            enabled = !linking,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.Link, null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (linking) "بانتظار الموافقة…" else "ربط GitHub")
-        }
+        GitHubConnectCard(
+            linking = linking,
+            status = linkingStatus,
+            onConnect = onConnect,
+            onCancel = onCancelLink
+        )
         return
     }
+
     if (repositories.isEmpty()) {
-        EmptyToolCard("لا توجد مشاريع", "لا توجد مستودعات ظاهرة حاليًا.")
+        EmptyToolCard(
+            "لا توجد مشاريع",
+            "الربط ناجح، لكن لا توجد مستودعات متاحة لهذا الربط."
+        )
         return
     }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
@@ -882,20 +909,45 @@ private fun ProjectsContent(
     ) {
         items(repositories.take(60)) { repo ->
             Surface(
-                modifier = Modifier.fillMaxWidth().clickable { onSelect(repo) },
-                color = if (selectedRepo?.fullName == repo.fullName) Lavender else Color.White,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(repo) },
+                color = if (selectedRepo?.fullName == repo.fullName) {
+                    Lavender
+                } else {
+                    Color.White
+                },
                 shape = RoundedCornerShape(18.dp),
                 border = BorderStroke(1.dp, Line)
             ) {
-                Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.FolderOpen, null, tint = Blue)
+                Row(
+                    Modifier.padding(15.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.FolderOpen,
+                        null,
+                        tint = Blue
+                    )
                     Spacer(Modifier.width(11.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(repo.fullName.substringAfter('/'), color = Ink, fontWeight = FontWeight.SemiBold)
-                        Text(repo.fullName.substringBefore('/'), color = Muted, fontSize = 11.sp)
+                        Text(
+                            repo.fullName.substringAfter('/'),
+                            color = Ink,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            repo.fullName.substringBefore('/'),
+                            color = Muted,
+                            fontSize = 11.sp
+                        )
                     }
                     if (selectedRepo?.fullName == repo.fullName) {
-                        Icon(Icons.Outlined.CheckCircle, null, tint = Blue)
+                        Icon(
+                            Icons.Outlined.CheckCircle,
+                            null,
+                            tint = Blue
+                        )
                     }
                 }
             }
@@ -990,32 +1042,54 @@ private fun ModelsContent(models: List<String>, ready: Boolean) {
 private fun SettingsContent(
     connected: Boolean,
     login: String,
+    repositoryCount: Int,
     linking: Boolean,
+    linkingStatus: String,
     checkingUpdate: Boolean,
     onConnect: () -> Unit,
+    onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit
 ) {
-    Surface(Modifier.fillMaxWidth(), color = Lavender, shape = RoundedCornerShape(20.dp)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.AccountCircle, null, tint = Blue, modifier = Modifier.size(30.dp))
-            Spacer(Modifier.width(11.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (connected) login.ifBlank { "GitHub" } else "GitHub غير مربوط",
-                    color = Ink,
-                    fontWeight = FontWeight.SemiBold
+    if (connected) {
+        Surface(
+            Modifier.fillMaxWidth(),
+            color = Lavender,
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Row(
+                Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Outlined.AccountCircle,
+                    null,
+                    tint = Blue,
+                    modifier = Modifier.size(30.dp)
                 )
-                Text(
-                    if (connected) "المشاريع متاحة للتنفيذ" else "الربط مطلوب للبرمجة",
-                    color = Muted,
-                    fontSize = 12.sp
+                Spacer(Modifier.width(11.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        login.ifBlank { "GitHub" },
+                        color = Ink,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "$repositoryCount مشروع متاح",
+                        color = Muted,
+                        fontSize = 12.sp
+                    )
+                }
+                Icon(
+                    Icons.Outlined.CheckCircle,
+                    null,
+                    tint = Blue
                 )
             }
         }
-    }
-    Spacer(Modifier.height(12.dp))
-    if (connected) {
+
+        Spacer(Modifier.height(12.dp))
+
         OutlinedButton(
             onClick = onDisconnect,
             modifier = Modifier.fillMaxWidth(),
@@ -1026,18 +1100,16 @@ private fun SettingsContent(
             Text("فصل GitHub")
         }
     } else {
-        Button(
-            onClick = onConnect,
-            enabled = !linking,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.Link, null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (linking) "بانتظار الموافقة…" else "ربط GitHub")
-        }
+        GitHubConnectCard(
+            linking = linking,
+            status = linkingStatus,
+            onConnect = onConnect,
+            onCancel = onCancelLink
+        )
     }
+
     Spacer(Modifier.height(10.dp))
+
     OutlinedButton(
         onClick = onCheckUpdate,
         enabled = !checkingUpdate,
@@ -1045,12 +1117,121 @@ private fun SettingsContent(
         shape = RoundedCornerShape(18.dp)
     ) {
         if (checkingUpdate) {
-            CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
+            CircularProgressIndicator(
+                Modifier.size(17.dp),
+                strokeWidth = 2.dp
+            )
         } else {
             Icon(Icons.Outlined.Refresh, null)
         }
         Spacer(Modifier.width(8.dp))
-        Text(if (checkingUpdate) "جاري البحث…" else "البحث عن تحديث")
+        Text(
+            if (checkingUpdate) {
+                "جاري البحث…"
+            } else {
+                "البحث عن تحديث"
+            }
+        )
+    }
+}
+
+@Composable
+private fun GitHubConnectCard(
+    linking: Boolean,
+    status: String,
+    onConnect: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFFF5F7FD),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(
+            1.dp,
+            Color(0xFFE0E6F4)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = CircleShape,
+                    color = Color.White,
+                    border = BorderStroke(1.dp, Line)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.Link,
+                            null,
+                            tint = Ink,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.width(12.dp))
+
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "ربط GitHub",
+                        color = Ink,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
+                    Text(
+                        if (linking) {
+                            status.ifBlank { "جاري الربط…" }
+                        } else {
+                            "زر واحد، ثم وافق واختر مشاريعك في GitHub."
+                        },
+                        color = Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(15.dp))
+
+            if (linking) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = Blue
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        status.ifBlank { "جاري الربط…" },
+                        modifier = Modifier.weight(1f),
+                        color = Ink,
+                        fontSize = 13.sp
+                    )
+                    TextButton(onClick = onCancel) {
+                        Text("إلغاء")
+                    }
+                }
+            } else {
+                Button(
+                    onClick = onConnect,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Icon(Icons.Outlined.Link, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("ربط GitHub")
+                }
+            }
+        }
     }
 }
 
@@ -1063,6 +1244,51 @@ private fun EmptyToolCard(title: String, subtitle: String) {
             Text(subtitle, color = Muted, fontSize = 12.sp)
         }
     }
+}
+
+@Composable
+private fun GitHubLinkDialog(
+    status: String,
+    onCancel: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = {
+            Text("ربط GitHub")
+        },
+        text = {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                        color = Blue
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        status.ifBlank { "جاري الربط…" },
+                        color = Ink,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "سيُفتح GitHub تلقائيًا. وافق على الربط واختر المستودعات، وبعدها سيعود التطبيق تلقائيًا. لا تحتاج نسخ رمز أو مفتاح.",
+                    color = Muted,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onCancel) {
+                Text("إلغاء الربط")
+            }
+        }
+    )
 }
 
 @Composable
