@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -558,14 +557,19 @@ private fun CompactComposer(
 }
 
 @Composable
-private fun MediaStrip(media: List<PickedMedia>, onRemove: (PickedMedia) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+private fun MediaStrip(
+    media: List<PickedMedia>,
+    onRemove: (PickedMedia) -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 3.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         media.take(2).forEach { item ->
             Surface(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 color = BlueSoft,
                 shape = RoundedCornerShape(13.dp)
             ) {
@@ -580,8 +584,16 @@ private fun MediaStrip(media: List<PickedMedia>, onRemove: (PickedMedia) -> Unit
                         fontSize = 11.sp,
                         maxLines = 1
                     )
-                    IconButton(onClick = { onRemove(item) }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Outlined.Close, "إزالة", Modifier.size(16.dp), tint = Color(0xFF666B76))
+                    IconButton(
+                        onClick = { onRemove(item) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Close,
+                            "إزالة",
+                            Modifier.size(16.dp),
+                            tint = Color(0xFF666B76)
+                        )
                     }
                 }
             }
