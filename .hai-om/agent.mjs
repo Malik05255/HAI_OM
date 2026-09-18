@@ -188,17 +188,25 @@ function extractJson(raw) {
 }
 
 async function chat(system, user, toolContext = "") {
-  const models = [
-    "dahl/MiniMaxAI/MiniMax-M2.7",
-    "kc/openrouter/free",
-    "ddgw/gpt-5.6-luna",
-    "ddgw/claude-haiku-4-5",
-    "unc/adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic"
-  ];
+  const readOnly = taskSpec.editAllowed !== true;
+  const models = readOnly
+    ? [
+        "ddgw/claude-haiku-4-5",
+        "unc/adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic",
+        "dahl/MiniMaxAI/MiniMax-M2.7"
+      ]
+    : [
+        "dahl/MiniMaxAI/MiniMax-M2.7",
+        "kc/openrouter/free",
+        "ddgw/gpt-5.6-luna",
+        "ddgw/claude-haiku-4-5",
+        "unc/adamo1139/Hermes-3-Llama-3.1-8B-FP8-Dynamic"
+      ];
+  const attemptsPerModel = readOnly ? 1 : 2;
   let lastError = "لم يستجب أي نموذج مجاني";
 
   for (const model of models) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= attemptsPerModel; attempt++) {
       try {
         const messages = [
           { role: "system", content: system },
@@ -223,9 +231,9 @@ async function chat(system, user, toolContext = "") {
             messages,
             stream: false,
             temperature: 0.1,
-            max_tokens: 12_000,
+            max_tokens: readOnly ? 3_000 : 12_000,
           }),
-          signal: AbortSignal.timeout(180_000),
+          signal: AbortSignal.timeout(readOnly ? 75_000 : 180_000),
         });
 
         const raw = await response.text();
