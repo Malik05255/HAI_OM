@@ -233,7 +233,8 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                 onRun = { vm.runAgent(selectedRepo?.htmlUrl.orEmpty(), requirements) },
                 onConnectGitHub = vm::startGitHubLink,
                 onCheckUpdate = vm::checkForUpdate,
-                checkingUpdate = state.checkingUpdate
+                checkingUpdate = state.checkingUpdate,
+                programmingRequest = vm.isProgrammingRequest(requirements)
             )
             1 -> ProjectsScreen(
                 modifier = Modifier.padding(padding),
@@ -270,7 +271,8 @@ private fun HomeScreen(
     onRun: () -> Unit,
     onConnectGitHub: () -> Unit,
     onCheckUpdate: () -> Unit,
-    checkingUpdate: Boolean
+    checkingUpdate: Boolean,
+    programmingRequest: Boolean
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 18.dp),
@@ -382,7 +384,7 @@ private fun HomeScreen(
                     Icon(Icons.Outlined.PlayArrow, null)
                     Spacer(Modifier.size(8.dp))
                     Text(
-                        if (vm.isProgrammingRequest(requirements)) "ابدأ البرمجة" else "إرسال",
+                        if (programmingRequest) "ابدأ البرمجة" else "إرسال",
                         fontWeight = FontWeight.Bold
                     )
                 }
