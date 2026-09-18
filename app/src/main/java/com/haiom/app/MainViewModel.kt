@@ -431,7 +431,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (it.downloadingUpdate) it else it.copy(updateInfo = null, updateInstallUri = null, updateProgress = 0)
     }
 
-    fun clearChat() = _state.update {\n        it.copy(\n            chatHistory = emptyList(),\n            result = null,\n            logs = emptyList(),\n            error = null,\n            message = null,\n            programming = false\n        )\n    }\n\n    fun clearMessage() = _state.update { it.copy(message = null) }\n\n    fun clearError() = _state.update { it.copy(error = null) }
+    fun clearChat() = _state.update {
+        it.copy(
+            chatHistory = emptyList(),
+            result = null,
+            logs = emptyList(),
+            error = null,
+            message = null,
+            programming = false
+        )
+    }
+
+    fun clearMessage() = _state.update { it.copy(message = null) }
+
+    fun clearError() = _state.update { it.copy(error = null) }
 
     companion object {
         private val EXPLICIT_PROGRAMMING_PHRASES = listOf(
