@@ -287,7 +287,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         .run(repositoryUrl, requirements, ::appendLog)
                 }
                 val completedHistory = result.answer
-                    .takeIf { it.isNotBlank() }
+                    ?.takeIf { it.isNotBlank() }
                     ?.let { answer ->
                         (visibleHistory + ChatTurn("assistant", answer)).takeLast(20)
                     }
