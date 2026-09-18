@@ -45,6 +45,13 @@ data class GitHubAppLinkResult(
     val repositories: List<GitHubRepository>
 )
 
+enum class GitHubLinkStage {
+    PREPARING,
+    APPROVE_APP,
+    CHOOSE_REPOSITORIES,
+    LOADING_REPOSITORIES
+}
+
 class GitHubAppLinker(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -53,40 +60,65 @@ class GitHubAppLinker(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun link(onOpenUrl: (String) -> Unit): GitHubAppLinkResult = coroutineScope {
+    suspend fun link(
+        onOpenUrl: (String) -> Unit,
+        onStage: (GitHubLinkStage) -> Unit = {}
+    ): GitHubAppLinkResult = coroutineScope {
+        onStage(GitHubLinkStage.PREPARING)
+
         val state = UUID.randomUUID().toString().replace("-", "")
+        val sessionPath = UUID.randomUUID().toString().replace("-", "")
         val appSuffix = UUID.randomUUID().toString().take(8)
         val manifestCode = CompletableDeferred<String>()
+        val installationUrl = CompletableDeferred<String>()
         val installationId = CompletableDeferred<Long>()
 
         val server = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
-        val baseUrl = "http://127.0.0.1:__PORT__".replace("__PORT__", server.localPort.toString())
+        val baseUrl = "http://127.0.0.1:${server.localPort}"
+        val prefix = "/$sessionPath"
         val manifest = buildManifest(
-            name = "HAI OM $appSuffix",
-            redirectUrl = "$baseUrl/manifest",
-            setupUrl = "$baseUrl/installed"
+            name = "OM Mobile $appSuffix",
+            redirectUrl = "$baseUrl$prefix/manifest",
+            setupUrl = "$baseUrl$prefix/installed"
         )
 
         val serverJob = launch(Dispatchers.IO) {
             serveLoopback(
                 server = server,
                 state = state,
+                sessionPath = sessionPath,
                 manifest = manifest,
                 manifestCode = manifestCode,
+                installationUrl = installationUrl,
                 installationId = installationId
             )
         }
 
         try {
-            onOpenUrl("$baseUrl/start")
+            onStage(GitHubLinkStage.APPROVE_APP)
+            onOpenUrl("$baseUrl$prefix/start")
 
-            val code = withTimeout(15 * 60 * 1000L) { manifestCode.await() }
+            val code = withTimeout(LINK_TIMEOUT_MS) {
+                manifestCode.await()
+            }
             val app = convertManifest(code)
 
-            onOpenUrl("https://github.com/apps/__SLUG__/installations/new?state=__STATE__".replace("__SLUG__", app.slug).replace("__STATE__", enc(state)))
+            val installUrl =
+                "https://github.com/apps/${app.slug}/installations/new?state=${enc(state)}"
 
-            val installed = withTimeout(15 * 60 * 1000L) { installationId.await() }
-            val token = createInstallationToken(app.appId, app.privateKeyPem, installed)
+            onStage(GitHubLinkStage.CHOOSE_REPOSITORIES)
+            installationUrl.complete(installUrl)
+
+            val installed = withTimeout(LINK_TIMEOUT_MS) {
+                installationId.await()
+            }
+
+            onStage(GitHubLinkStage.LOADING_REPOSITORIES)
+            val token = createInstallationToken(
+                appId = app.appId,
+                privateKeyPem = app.privateKeyPem,
+                installationId = installed
+            )
             val repositories = installationRepositories(token)
 
             GitHubAppLinkResult(
@@ -116,7 +148,7 @@ class GitHubAppLinker(
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer $token")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "HAI-OM-Android/0.4")
+            .header("User-Agent", "OM-Android/0.8")
             .build()
 
         client.newCall(request).execute().use { response ->
@@ -147,13 +179,13 @@ class GitHubAppLinker(
         return buildJsonObject {
             put("name", name)
             put("url", "https://github.com/Malik05255/HAI_OM")
-            put("description", "HAI OM Android coding agent")
+            put("description", "OM Android coding assistant")
             put("redirect_url", redirectUrl)
             put("setup_url", setupUrl)
-            put("setup_on_update", true)
+            put("setup_on_update", false)
             put("public", false)
             put("hook_attributes", buildJsonObject {
-                put("url", "https://example.invalid/hai-om")
+                put("url", "https://example.invalid/om")
                 put("active", false)
             })
             put("default_permissions", buildJsonObject {
@@ -161,7 +193,6 @@ class GitHubAppLinker(
                 put("contents", "write")
                 put("pull_requests", "write")
                 put("actions", "read")
-                put("checks", "read")
                 put("workflows", "write")
             })
         }.toString()
@@ -172,7 +203,7 @@ class GitHubAppLinker(
             .url("https://api.github.com/app-manifests/__CODE__/conversions".replace("__CODE__", enc(code)))
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "HAI-OM-Android/0.4")
+            .header("User-Agent", "OM-Android/0.8")
             .post("{}".toRequestBody(JSON))
             .build()
 
@@ -200,7 +231,7 @@ class GitHubAppLinker(
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer $jwt")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "HAI-OM-Android/0.4")
+            .header("User-Agent", "OM-Android/0.8")
             .post("{}".toRequestBody(JSON))
             .build()
 
@@ -263,14 +294,18 @@ class GitHubAppLinker(
         return byteArrayOf((0x80 or bytes.size).toByte()) + bytes.toByteArray()
     }
 
-    private fun serveLoopback(
+    private suspend fun serveLoopback(
         server: ServerSocket,
         state: String,
+        sessionPath: String,
         manifest: String,
         manifestCode: CompletableDeferred<String>,
+        installationUrl: CompletableDeferred<String>,
         installationId: CompletableDeferred<Long>
     ) {
-        while (!server.isClosed && (!manifestCode.isCompleted || !installationId.isCompleted)) {
+        val prefix = "/$sessionPath"
+
+        while (!server.isClosed && !installationId.isCompleted) {
             val socket = try {
                 server.accept()
             } catch (_: Throwable) {
@@ -278,39 +313,58 @@ class GitHubAppLinker(
             }
 
             socket.use { clientSocket ->
-                val reader = BufferedReader(InputStreamReader(clientSocket.getInputStream(), Charsets.UTF_8))
-                val firstLine = reader.readLine().orEmpty()
+                clientSocket.soTimeout = 5_000
+                val reader = BufferedReader(
+                    InputStreamReader(clientSocket.getInputStream(), Charsets.UTF_8)
+                )
+                val firstLine = reader.readLine().orEmpty().take(8_192)
+                if (!firstLine.startsWith("GET ")) return@use
+
                 var line = reader.readLine()
-                while (!line.isNullOrBlank()) line = reader.readLine()
+                var headerLines = 0
+                while (!line.isNullOrBlank() && headerLines < 100) {
+                    headerLines++
+                    line = reader.readLine()
+                }
 
                 val target = firstLine.split(' ').getOrNull(1).orEmpty()
-                val uri = runCatching { java.net.URI("http://127.0.0.1$target") }.getOrNull()
+                val uri = runCatching {
+                    java.net.URI("http://127.0.0.1$target")
+                }.getOrNull()
                 val path = uri?.path.orEmpty()
                 val params = parseQuery(uri?.rawQuery.orEmpty())
 
                 val body = when (path) {
-                    "/start" -> autoSubmitPage(state, manifest)
-                    "/manifest" -> {
+                    "$prefix/start" -> autoSubmitPage(state, manifest)
+
+                    "$prefix/manifest" -> {
                         val returnedState = params["state"].orEmpty()
                         val code = params["code"].orEmpty()
+
                         if (returnedState == state && code.isNotBlank()) {
                             manifestCode.complete(code)
-                            simplePage("تم إنشاء الربط. انتظر لحظة…")
+                            val nextUrl = withTimeout(CONVERSION_TIMEOUT_MS) {
+                                installationUrl.await()
+                            }
+                            redirectPage(nextUrl)
                         } else {
                             simplePage("تعذر التحقق من الربط")
                         }
                     }
-                    "/installed" -> {
+
+                    "$prefix/installed" -> {
                         val id = params["installation_id"]?.toLongOrNull()
                         val returnedState = params["state"].orEmpty()
+
                         if (id != null && returnedState == state) {
                             installationId.complete(id)
-                            simplePage("تم ربط GitHub. يمكنك الرجوع للتطبيق.")
+                            returnToAppPage()
                         } else {
                             simplePage("تعذر إكمال الربط")
                         }
                     }
-                    else -> simplePage("HAI OM")
+
+                    else -> simplePage("OM")
                 }
 
                 val bytes = body.toByteArray(Charsets.UTF_8)
@@ -319,6 +373,7 @@ class GitHubAppLinker(
                     (
                         "HTTP/1.1 200 OK\r\n" +
                             "Content-Type: text/html; charset=utf-8\r\n" +
+                            "Cache-Control: no-store\r\n" +
                             "Content-Length: ${bytes.size}\r\n" +
                             "Connection: close\r\n\r\n"
                     ).toByteArray(Charsets.UTF_8)
@@ -331,16 +386,16 @@ class GitHubAppLinker(
 
     private fun autoSubmitPage(state: String, manifest: String): String {
         val action = "https://github.com/settings/apps/new?state=${enc(state)}"
-        val safeManifest = manifest
-            .replace("&", "&amp;")
-            .replace("\"", "&quot;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
+        val safeManifest = htmlEscape(manifest)
         return """
             <!doctype html>
             <html lang="ar" dir="rtl">
-            <head><meta charset="utf-8"><title>HAI OM</title></head>
-            <body>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width,initial-scale=1">
+              <title>OM</title>
+            </head>
+            <body style="font-family:sans-serif;padding:24px">
               <form id="f" action="$action" method="post">
                 <input type="hidden" name="manifest" value="$safeManifest">
               </form>
@@ -351,13 +406,64 @@ class GitHubAppLinker(
         """.trimIndent()
     }
 
+    private fun redirectPage(url: String): String {
+        val safeUrl = htmlEscape(url)
+        return """
+            <!doctype html>
+            <html lang="ar" dir="rtl">
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width,initial-scale=1">
+              <meta http-equiv="refresh" content="0;url=$safeUrl">
+              <title>OM</title>
+            </head>
+            <body style="font-family:sans-serif;padding:24px">
+              <p>جاري إكمال الربط…</p>
+              <p><a href="$safeUrl">متابعة</a></p>
+            </body>
+            </html>
+        """.trimIndent()
+    }
+
+    private fun returnToAppPage(): String = """
+        <!doctype html>
+        <html lang="ar" dir="rtl">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>OM</title>
+        </head>
+        <body style="font-family:sans-serif;padding:24px">
+          <h3>تم ربط GitHub</h3>
+          <p>جاري الرجوع للتطبيق…</p>
+          <p><a href="om://github-connected">العودة للتطبيق</a></p>
+          <script>
+            setTimeout(function () {
+              window.location.href = 'om://github-connected';
+            }, 350);
+          </script>
+        </body>
+        </html>
+    """.trimIndent()
+
     private fun simplePage(message: String): String = """
         <!doctype html>
         <html lang="ar" dir="rtl">
-        <head><meta charset="utf-8"><title>HAI OM</title></head>
-        <body style="font-family:sans-serif;padding:32px"><h2>$message</h2></body>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>OM</title>
+        </head>
+        <body style="font-family:sans-serif;padding:24px"><h3>$message</h3></body>
         </html>
     """.trimIndent()
+
+    private fun htmlEscape(value: String): String =
+        value
+            .replace("&", "&amp;")
+            .replace("\"", "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
 
     private fun parseQuery(raw: String): Map<String, String> {
         if (raw.isBlank()) return emptyMap()
@@ -376,6 +482,8 @@ class GitHubAppLinker(
         URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
 
     companion object {
+        private const val LINK_TIMEOUT_MS = 15 * 60 * 1000L
+        private const val CONVERSION_TIMEOUT_MS = 45 * 1000L
         private val JSON = "application/json; charset=utf-8".toMediaType()
     }
 }
