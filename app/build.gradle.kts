@@ -5,11 +5,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-val omniRouteBaseUrl = providers.gradleProperty("HAI_OMNIROUTE_URL")
-    .orElse(providers.environmentVariable("HAI_OMNIROUTE_URL"))
-    .getOrElse("")
-    .ifBlank { "http://127.0.0.1:20128" }
-
 val signingStorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
 val signingStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
 val signingKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
@@ -23,12 +18,11 @@ android {
         applicationId = "com.haiom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        buildConfigField("String", "OMNIROUTE_BASE_URL", "\"${omniRouteBaseUrl}\"")
     }
 
     signingConfigs {

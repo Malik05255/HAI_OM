@@ -183,12 +183,22 @@ class GitHubClient(
         onEvent("Commit واحد للمهمة: ${commit.take(8)}")
     }
 
-    suspend fun waitForCi(repo: RepoRef, branch: String, headSha: String, onEvent: (String) -> Unit): CiResult {
-        repeat(45) { attempt ->
+    suspend fun waitForCi(
+        repo: RepoRef,
+        branch: String,
+        headSha: String,
+        onEvent: (String) -> Unit,
+        workflowName: String? = null,
+        maxAttempts: Int = 45
+    ): CiResult {
+        repeat(maxAttempts.coerceIn(1, 360)) { attempt ->
             val root = getJson("/repos/${repo.owner}/${repo.repo}/actions/runs?branch=${enc(branch)}&per_page=50")
             val matching = root["workflow_runs"]?.jsonArray.orEmpty()
                 .map { it.jsonObject }
-                .filter { it["head_sha"]?.jsonPrimitive?.content == headSha }
+                .filter { run ->
+                    run["head_sha"]?.jsonPrimitive?.content == headSha &&
+                        (workflowName == null || run["name"]?.jsonPrimitive?.contentOrNull == workflowName)
+                }
 
             if (matching.isNotEmpty()) {
                 val pending = matching.filter { it["status"]?.jsonPrimitive?.content != "completed" }
@@ -217,6 +227,19 @@ class GitHubClient(
             delay(12_000)
         }
         return CiResult(CiState.NOT_FOUND)
+    }
+
+    suspend fun deleteBranch(repo: RepoRef, branch: String) = withContext(Dispatchers.IO) {
+        val response = request(
+            "DELETE",
+            "/repos/${repo.owner}/${repo.repo}/git/refs/heads/${enc(branch)}",
+            allow404 = true
+        )
+        response.use {
+            if (it.code !in setOf(204, 404)) {
+                error("تعذر تنظيف فرع المهمة: HTTP ${it.code}")
+            }
+        }
     }
 
     suspend fun createPullRequest(repo: RepoRef, branch: String, base: String, title: String, body: String): String? {

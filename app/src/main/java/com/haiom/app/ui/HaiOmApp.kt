@@ -248,7 +248,13 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                 onDisconnect = vm::disconnectGitHub
             )
             2 -> ModelsScreen(Modifier.padding(padding), state.rankings, state.omniReady)
-            else -> ActivityScreen(Modifier.padding(padding), state.logs, state.running, state.result?.pullRequestUrl)
+            else -> ActivityScreen(
+                Modifier.padding(padding),
+                state.logs,
+                state.running,
+                state.result?.pullRequestUrl,
+                state.result?.answer
+            )
         }
     }
 }
@@ -378,6 +384,23 @@ private fun HomeScreen(
             }
         }
 
+        state.result?.answer?.takeIf { it.isNotBlank() }?.let { answer ->
+            item {
+                Text("النتيجة", fontWeight = FontWeight.Bold)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Text(
+                        answer,
+                        modifier = Modifier.padding(18.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            }
+        }
+
         item { Spacer(Modifier.height(18.dp)) }
     }
 }
@@ -473,8 +496,35 @@ private fun ModelsScreen(modifier: Modifier, rankings: List<FreeProviderRanking>
             Text("النماذج", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(8.dp))
         }
-        if (!ready || rankings.isEmpty()) {
-            item { EmptyCard("غير متاحة الآن") }
+        if (!ready) {
+            item { EmptyCard("اربط GitHub") }
+        } else if (rankings.isEmpty()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Outlined.Code, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.size(12.dp))
+                        Text("تلقائي", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        ) {
+                            Text(
+                                "الأقوى المتاح",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                }
+            }
         } else {
             itemsIndexed(rankings.take(20)) { index, model -> ModelRow(index, model) }
         }
@@ -483,7 +533,13 @@ private fun ModelsScreen(modifier: Modifier, rankings: List<FreeProviderRanking>
 }
 
 @Composable
-private fun ActivityScreen(modifier: Modifier, logs: List<String>, running: Boolean, prUrl: String?) {
+private fun ActivityScreen(
+    modifier: Modifier,
+    logs: List<String>,
+    running: Boolean,
+    prUrl: String?,
+    answer: String?
+) {
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -515,6 +571,20 @@ private fun ActivityScreen(modifier: Modifier, logs: List<String>, running: Bool
                     )
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+            }
+        }
+        if (!answer.isNullOrBlank()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Text(
+                        answer,
+                        modifier = Modifier.fillMaxWidth().padding(18.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
             }
         }
         if (!prUrl.isNullOrBlank()) {

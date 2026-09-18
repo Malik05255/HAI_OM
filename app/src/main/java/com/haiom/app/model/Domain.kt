@@ -48,7 +48,8 @@ data class AgentRunResult(
     val branch: String,
     val pullRequestUrl: String?,
     val completedTasks: Int,
-    val totalTasks: Int
+    val totalTasks: Int,
+    val answer: String? = null
 )
 
 enum class CiState { PENDING, SUCCESS, FAILURE, NOT_FOUND }

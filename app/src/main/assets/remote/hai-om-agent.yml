@@ -1,0 +1,159 @@
+name: HAI OM Agent
+
+on:
+  push:
+    branches:
+      - "hai-agent/**"
+
+permissions:
+  contents: write
+
+jobs:
+  agent:
+    if: contains(github.event.head_commit.message, 'agent(remote-bootstrap):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Start free AI engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g omniroute@latest --no-fund --no-audit
+          OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/omniroute.pid"
+
+          READY=0
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:20128/api/health/ping >/dev/null 2>&1; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$READY" != "1" ]; then
+            cat "$RUNNER_TEMP/omniroute.log" || true
+            exit 1
+          fi
+
+          # Configure OmniRoute through its own authenticated local CLI transport.
+          # Routing is fail-closed to zero-cost sources and token compression is on.
+          OMNIROOT="$(npm root -g)/omniroute"
+          export OMNIROOT
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          import { pathToFileURL } from "node:url";
+
+          const root = process.env.OMNIROOT;
+          const { apiFetch } = await import(pathToFileURL(path.join(root, "bin/cli/api.mjs")).href);
+          const { openOmniRouteDb } = await import(
+            pathToFileURL(path.join(root, "bin/cli/sqlite.mjs")).href
+          );
+
+          const settings = await apiFetch("/api/settings", {
+            method: "PATCH",
+            body: { freeAccessPolicy: "strict", excludeTosAvoid: false },
+            retry: false,
+          });
+          if (!settings.ok) throw new Error("Unable to enable strict free-only routing: " + settings.status);
+
+          // Compression's write endpoint requires dashboard auth. This runner is
+          // local and ephemeral, so persist through OmniRoute's own SQLite helper.
+          const { db } = await openOmniRouteDb();
+          try {
+            const put = db.prepare(
+              "INSERT OR REPLACE INTO key_value (namespace, key, value) VALUES (?, ?, ?)"
+            );
+            const compression = {
+              enabled: true,
+              defaultMode: "stacked",
+              autoTriggerMode: "stacked",
+              autoTriggerTokens: 32000,
+              stackedPipeline: [
+                { engine: "rtk", intensity: "standard" },
+                { engine: "caveman", intensity: "full" }
+              ],
+              rtkConfig: {
+                enabled: true,
+                intensity: "standard",
+                applyToToolResults: true,
+                applyToCodeBlocks: false,
+                applyToAssistantMessages: false
+              },
+              cavemanConfig: {
+                enabled: true,
+                intensity: "full"
+              }
+            };
+            const tx = db.transaction(() => {
+              for (const [key, value] of Object.entries(compression)) {
+                put.run("compression", key, JSON.stringify(value));
+              }
+            });
+            tx();
+          } finally {
+            db.close();
+          }
+
+          // Dahl intentionally offers a no-signup temporary token endpoint.
+          // Keep the token only in the ephemeral runner temp directory.
+          try {
+            const tokenRes = await apiFetch("/api/dahl/tokens", { method: "POST", retry: false });
+            if (tokenRes.ok) {
+              const body = await tokenRes.json();
+              if (typeof body?.token === "string" && body.token.length > 8) {
+                fs.writeFileSync(path.join(process.env.RUNNER_TEMP, "dahl-token"), body.token, { mode: 0o600 });
+              }
+            }
+          } catch {}
+          NODE
+
+          # Compression settings are cached for up to five seconds by OmniRoute.
+          sleep 6
+
+          if [ -s "$RUNNER_TEMP/dahl-token" ]; then
+            export HAI_DAHL_TOKEN="$(cat "$RUNNER_TEMP/dahl-token")"
+            omniroute providers add dahl \
+              --credential-env HAI_DAHL_TOKEN \
+              --yes \
+              --name hai-free-dahl \
+              --default-model MiniMaxAI/MiniMax-M2.7 || true
+            unset HAI_DAHL_TOKEN
+            rm -f "$RUNNER_TEMP/dahl-token"
+          fi
+
+      - name: Build, test, and repair
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HAI_OMNIROUTE_URL: http://127.0.0.1:20128
+          HAI_BRANCH: ${{ github.ref_name }}
+          HAI_REPOSITORY: ${{ github.repository }}
+        run: node .hai-om/agent.mjs
+
+      - name: Stop AI engine
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/omniroute.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/omniroute.pid")" 2>/dev/null || true
+          fi
