@@ -158,12 +158,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val value = text.trim().lowercase()
         if (value.isBlank()) return false
 
-        if (
-            value.startsWith("هل ") ||
-            value.startsWith("وش معنى") ||
-            value.startsWith("ما معنى") ||
-            value.startsWith("اشرح") ||
-            value.startsWith("فسر")
+        val questionStarters = listOf(
+            "هل ", "وش ", "وش معنى", "ما ", "ما معنى", "ليش ", "كيف ",
+            "متى ", "وين ", "ايش ", "اشرح", "فسر", "وضح", "لخص", "اقرأ", "اقرا"
+        )
+        if (questionStarters.any { value.startsWith(it) } &&
+            !EXPLICIT_PROGRAMMING_PHRASES.any { value.contains(it) }
         ) {
             return false
         }
