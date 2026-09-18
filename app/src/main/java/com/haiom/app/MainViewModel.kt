@@ -41,9 +41,6 @@ data class MainUiState(
     val rankings: List<FreeProviderRanking> = emptyList(),
     val checkingUpdate: Boolean = false,
     val updateInfo: AppUpdateInfo? = null,
-    val downloadingUpdate: Boolean = false,
-    val updateProgress: Int = 0,
-    val updateInstallUri: String? = null,
     val message: String? = null,
     val programming: Boolean = false,
     val chatHistory: List<ChatTurn> = emptyList()
@@ -384,7 +381,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
 
     fun checkForUpdate() {
-        if (_state.value.checkingUpdate || _state.value.downloadingUpdate) return
+        if (_state.value.checkingUpdate) return
         _state.update { it.copy(checkingUpdate = true, updateInfo = null, message = null) }
         viewModelScope.launch {
             runCatching { updater.checkLatest() }
@@ -403,33 +400,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun downloadUpdate() {
-        val update = _state.value.updateInfo ?: return
-        if (_state.value.downloadingUpdate) return
-        _state.update { it.copy(downloadingUpdate = true, updateProgress = 0, message = null) }
-        viewModelScope.launch {
-            runCatching {
-                updater.download(update) { progress ->
-                    _state.update { current -> current.copy(updateProgress = progress) }
-                }
-            }.onSuccess { file ->
-                val uri = updater.installUri(file).toString()
-                _state.update {
-                    it.copy(
-                        downloadingUpdate = false,
-                        updateProgress = 100,
-                        updateInstallUri = uri
-                    )
-                }
-            }.onFailure {
-                _state.update { it.copy(downloadingUpdate = false, message = "تعذر تنزيل التحديث") }
-            }
-        }
-    }
-
-    fun dismissUpdate() = _state.update {
-        if (it.downloadingUpdate) it else it.copy(updateInfo = null, updateInstallUri = null, updateProgress = 0)
-    }
+    fun dismissUpdate() = _state.update { it.copy(updateInfo = null) }
 
     fun clearChat() = _state.update {
         it.copy(
