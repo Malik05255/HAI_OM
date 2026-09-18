@@ -183,19 +183,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun runChat(repositoryUrl: String, prompt: String) {
+        val existingHistory = _state.value.chatHistory
+        val visibleHistory = (
+            existingHistory + ChatTurn("user", prompt)
+            ).takeLast(20)
+
         _state.update {
             it.copy(
                 running = true,
                 programming = false,
                 result = null,
                 error = null,
-                logs = emptyList()
+                logs = emptyList(),
+                chatHistory = visibleHistory
             )
         }
 
         viewModelScope.launch {
             try {
-                val existingHistory = _state.value.chatHistory
                 val needsRepo = needsRepositoryContext(prompt)
                 val context = if (needsRepo) {
                     if (repositoryUrl.isBlank()) error("اختر المشروع عشان أقرأه")
@@ -217,9 +222,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
 
                 val updatedHistory = (
-                    existingHistory +
-                        ChatTurn("user", prompt) +
-                        ChatTurn("assistant", answer)
+                    visibleHistory + ChatTurn("assistant", answer)
                     ).takeLast(20)
 
                 _state.update {
@@ -259,13 +262,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val existingHistory = _state.value.chatHistory
+        val visibleHistory = (
+            existingHistory + ChatTurn("user", requirements)
+            ).takeLast(20)
+
         _state.update {
             it.copy(
                 running = true,
                 programming = true,
                 result = null,
                 error = null,
-                logs = listOf("بدأ التنفيذ")
+                logs = listOf("بدأ التنفيذ"),
+                chatHistory = visibleHistory
             )
         }
 
@@ -277,7 +286,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     RemoteAgentRunner(getApplication(), github)
                         .run(repositoryUrl, requirements, ::appendLog)
                 }
-                _state.update { it.copy(running = false, programming = false, result = result) }
+                val completedHistory = result.answer
+                    .takeIf { it.isNotBlank() }
+                    ?.let { answer ->
+                        (visibleHistory + ChatTurn("assistant", answer)).takeLast(20)
+                    }
+                    ?: visibleHistory
+
+                _state.update {
+                    it.copy(
+                        running = false,
+                        programming = false,
+                        result = result,
+                        chatHistory = completedHistory
+                    )
+                }
             } catch (t: Throwable) {
                 _state.update {
                     it.copy(
