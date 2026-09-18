@@ -573,20 +573,25 @@ private fun MediaStrip(
                 color = BlueSoft,
                 shape = RoundedCornerShape(13.dp)
             ) {
-                Row(
-                    Modifier.padding(start = 10.dp, end = 3.dp, top = 4.dp, bottom = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 10.dp, end = 3.dp, top = 4.dp, bottom = 4.dp)
                 ) {
                     Text(
                         item.name,
-                        Modifier.weight(1f),
+                        Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(end = 36.dp),
                         color = Color(0xFF5D6270),
                         fontSize = 11.sp,
                         maxLines = 1
                     )
                     IconButton(
                         onClick = { onRemove(item) },
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(28.dp)
                     ) {
                         Icon(
                             Icons.Outlined.Close,
