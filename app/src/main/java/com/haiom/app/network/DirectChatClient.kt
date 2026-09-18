@@ -46,21 +46,24 @@ class DirectChatClient(
     ): String = withContext(Dispatchers.IO) {
         require(prompt.isNotBlank()) { "اكتب رسالتك" }
 
-        val kiloBody = buildBody(
-            model = KILO_MODEL,
-            prompt = prompt,
-            history = history,
-            repositoryContext = repositoryContext
-        )
-        val kilo = send(
-            url = KILO_URL,
-            token = "anonymous",
-            body = kiloBody,
-            extraHeaders = mapOf("X-KILOCODE-EDITORNAME" to "HAI OM")
-        )
-        if (kilo.answer != null) return@withContext kilo.answer
+        var lastError = "الخدمة المجانية مشغولة الآن"
 
-        var lastError = kilo.error ?: "الخدمة المجانية مشغولة الآن"
+        for (route in KILO_LIGHT_ROUTES) {
+            val kiloBody = buildBody(
+                model = route.model,
+                prompt = prompt,
+                history = history,
+                repositoryContext = repositoryContext
+            )
+            val kilo = send(
+                url = route.url,
+                token = "anonymous",
+                body = kiloBody,
+                extraHeaders = mapOf("X-KILOCODE-EDITORNAME" to "HAI OM")
+            )
+            if (kilo.answer != null) return@withContext kilo.answer
+            lastError = kilo.error ?: lastError
+        }
 
         var dahlToken = runCatching {
             cachedDahlToken ?: issueDahlToken().also { cachedDahlToken = it }
@@ -123,7 +126,7 @@ class DirectChatClient(
         put("model", model)
         put("stream", false)
         put("temperature", 0.35)
-        put("max_tokens", 4096)
+        put("max_tokens", LIGHT_CHAT_MAX_TOKENS)
         put("messages", buildJsonArray {
             add(buildJsonObject {
                 put("role", "system")
@@ -237,9 +240,21 @@ class DirectChatClient(
         }
     }
 
+    private data class KiloRoute(
+        val url: String,
+        val model: String
+    )
+
     companion object {
-        private const val KILO_URL = "https://api.kilo.ai/api/openrouter/chat/completions"
-        private const val KILO_MODEL = "openrouter/free"
+        private const val KILO_GATEWAY_URL = "https://api.kilo.ai/api/gateway/chat/completions"
+        private const val KILO_LEGACY_URL = "https://api.kilo.ai/api/openrouter/chat/completions"
+        private const val LIGHT_CHAT_MAX_TOKENS = 2048
+
+        private val KILO_LIGHT_ROUTES = listOf(
+            KiloRoute(KILO_GATEWAY_URL, "kilo-auto/small"),
+            KiloRoute(KILO_GATEWAY_URL, "kilo-auto/free"),
+            KiloRoute(KILO_LEGACY_URL, "openrouter/free")
+        )
 
         private const val DAHL_TOKEN_URL = "https://inference.dahl.global/tokens"
         private const val DAHL_CHAT_URL = "https://inference.dahl.global/v1/chat/completions"
