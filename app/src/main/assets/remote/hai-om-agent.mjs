@@ -431,7 +431,7 @@ async function main() {
   const initialContext = buildContext();
   if (!initialContext.trim()) fail("لم أجد ملفات قابلة للتحليل");
 
-  const mayEdit = explicitEditIntent(requirements);
+  const mayEdit = taskSpec.editAllowed === true && explicitEditIntent(requirements);
   log(mayEdit ? "تجهيز خطة التنفيذ" : "تجهيز الرد");
   const planRaw = await chat(
     PLANNER_SYSTEM,
