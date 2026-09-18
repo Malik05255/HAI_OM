@@ -14,57 +14,67 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * Runs OmniRoute and the autonomous coding loop inside GitHub Actions.
+ * Uses one persistent runtime branch per repository.
  *
- * Nothing AI-related has to run on the Android device. The app only creates an
- * ephemeral branch, injects the runner into that branch, waits for the named
- * workflow, removes the runner files, then opens a PR containing only the
- * requested project changes.
+ * Conversation is read-only by default. A separate working branch is created
+ * only when the user gives an explicit programming/edit command.
  */
 class RemoteAgentRunner(
     private val context: Context,
     private val github: GitHubClient
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
     suspend fun run(
         repositoryUrl: String,
         requirements: String,
         onEvent: (String) -> Unit
     ): AgentRunResult {
-        require(requirements.isNotBlank()) { "اكتب المطلوب" }
+        require(requirements.isNotBlank()) { "اكتب رسالتك" }
 
         val repo = github.parseRepository(repositoryUrl)
         val base = github.defaultBranch(repo)
-        val branch = "hai-agent/" + System.currentTimeMillis()
+        val taskId = System.currentTimeMillis().toString()
+        val programming = explicitProgrammingCommand(requirements)
 
-        onEvent("تجهيز المهمة")
-        github.createBranch(repo, base, branch)
+        onEvent("تجهيز المحادثة")
+        ensureRuntime(repo, base, onEvent)
 
-        val workflow = asset("remote/hai-om-agent.yml")
-        val runner = asset("remote/hai-om-agent.mjs")
+        val targetBranch = if (programming) {
+            "hai-agent/$taskId".also {
+                onEvent("تجهيز فرع البرمجة")
+                github.createBranch(repo, base, it)
+            }
+        } else {
+            base
+        }
+
         val taskJson = buildJsonObject {
+            put("taskId", taskId)
             put("requirements", requirements.take(MAX_REQUIREMENTS_CHARS))
             put("baseBranch", base)
-            put("branch", branch)
+            put("targetBranch", targetBranch)
+            put("editAllowed", programming)
             put("repository", repo.owner + "/" + repo.repo)
         }.toString()
 
-        val bootstrap = EditBatch(
-            summary = "تجهيز تنفيذ HAI OM السحابي",
-            files = listOf(
-                FileEdit(WORKFLOW_PATH, workflow),
-                FileEdit(RUNNER_PATH, runner),
-                FileEdit(TASK_PATH, taskJson)
-            )
+        github.applyBatch(
+            repo = repo,
+            branch = RUNTIME_BRANCH,
+            batch = EditBatch(
+                summary = "تشغيل HAI OM",
+                files = listOf(FileEdit(TASK_PATH, taskJson))
+            ),
+            taskId = "task",
+            onEvent = onEvent
         )
-        github.applyBatch(repo, branch, bootstrap, "remote-bootstrap", onEvent)
 
-        val kickoffSha = github.headSha(repo, branch)
-        onEvent("بدأ التنفيذ")
+        val kickoffSha = github.headSha(repo, RUNTIME_BRANCH)
+        onEvent(if (programming) "بدأ التنفيذ" else "جاري الرد")
 
         val run = github.waitForCi(
             repo = repo,
-            branch = branch,
+            branch = RUNTIME_BRANCH,
             headSha = kickoffSha,
             onEvent = onEvent,
             workflowName = WORKFLOW_NAME,
@@ -72,47 +82,56 @@ class RemoteAgentRunner(
         )
 
         when (run.state) {
-            CiState.SUCCESS -> onEvent("✓ اكتمل التنفيذ")
+            CiState.SUCCESS -> Unit
             CiState.FAILURE -> throw IllegalStateException(friendlyFailure(run.logs))
             CiState.NOT_FOUND -> throw IllegalStateException(
-                "لم يبدأ التنفيذ. تأكد أن GitHub Actions مفعّل لهذا المشروع."
+                "لم يبدأ HAI OM. تأكد أن GitHub Actions مفعّل لهذا المشروع."
             )
-            CiState.PENDING -> throw IllegalStateException("التنفيذ ما زال قيد الانتظار")
+            CiState.PENDING -> throw IllegalStateException("المهمة ما زالت قيد الانتظار")
         }
 
-        val resultFile = github.readFile(repo, branch, RESULT_PATH)
-            ?: throw IllegalStateException("اكتمل التنفيذ لكن لم تصل النتيجة.")
+        val resultPath = "$RESULTS_DIR/$taskId.json"
+        val resultFile = github.readFile(repo, RUNTIME_BRANCH, resultPath)
+            ?: throw IllegalStateException("اكتمل التشغيل لكن لم تصل النتيجة.")
+
         val resultObject = runCatching {
             json.parseToJsonElement(resultFile.text).jsonObject
         }.getOrElse {
-            throw IllegalStateException("تعذر قراءة نتيجة المهمة.")
+            throw IllegalStateException("تعذر قراءة نتيجة HAI OM.")
         }
+
         val mode = resultObject["mode"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val answer = resultObject["answer"]?.jsonPrimitive?.contentOrNull
             ?.trim()
             .orEmpty()
 
-        onEvent("تنظيف ملفات التشغيل")
-        val cleanup = EditBatch(
-            summary = "إزالة ملفات تشغيل HAI OM المؤقتة",
-            files = listOf(
-                FileEdit(WORKFLOW_PATH, delete = true),
-                FileEdit(RUNNER_PATH, delete = true),
-                FileEdit(TASK_PATH, delete = true),
-                FileEdit(RESULT_PATH, delete = true)
+        runCatching {
+            github.applyBatch(
+                repo = repo,
+                branch = RUNTIME_BRANCH,
+                batch = EditBatch(
+                    summary = "تنظيف نتيجة HAI OM",
+                    files = listOf(
+                        FileEdit(TASK_PATH, delete = true),
+                        FileEdit(resultPath, delete = true)
+                    )
+                ),
+                taskId = "runtime-cleanup",
+                onEvent = {}
             )
-        )
-        github.applyBatch(repo, branch, cleanup, "remote-cleanup", onEvent)
+        }
 
-        if (mode == "answer") {
-            onEvent("✓ اكتملت القراءة")
-            github.deleteBranch(repo, branch)
+        if (!programming || mode == "answer") {
+            onEvent("✓ تم الرد")
+            if (programming && targetBranch != base) {
+                runCatching { github.deleteBranch(repo, targetBranch) }
+            }
             return AgentRunResult(
-                branch = branch,
+                branch = base,
                 pullRequestUrl = null,
                 completedTasks = 1,
                 totalTasks = 1,
-                answer = answer.ifBlank { "اكتملت القراءة." }
+                answer = answer.ifBlank { "تم." }
             )
         }
 
@@ -125,26 +144,88 @@ class RemoteAgentRunner(
 
         val pullRequestUrl = github.createPullRequest(
             repo = repo,
-            branch = branch,
+            branch = targetBranch,
             base = base,
-            title = "HAI OM: " + shortTitle,
+            title = "HAI OM: $shortTitle",
             body = buildString {
                 appendLine("تم تنفيذ الطلب تلقائيًا بواسطة HAI OM.")
                 appendLine()
                 appendLine("## الطلب")
                 appendLine(requirements.take(3_000))
                 appendLine()
-                appendLine("تم تشغيل البرمجة والفحص والإصلاح داخل GitHub Actions باستخدام OmniRoute ومصادر مجانية فقط.")
+                appendLine("تم تشغيل البرمجة والفحص والإصلاح باستخدام OmniRoute ومصادر مجانية فقط.")
             }
         )
 
+        onEvent("✓ اكتملت البرمجة")
         return AgentRunResult(
-            branch = branch,
+            branch = targetBranch,
             pullRequestUrl = pullRequestUrl,
             completedTasks = 1,
             totalTasks = 1,
             answer = answer.takeIf { it.isNotBlank() }
         )
+    }
+
+    private suspend fun ensureRuntime(
+        repo: GitHubClient.RepoRef,
+        base: String,
+        onEvent: (String) -> Unit
+    ) {
+        val exists = runCatching { github.headSha(repo, RUNTIME_BRANCH) }.isSuccess
+        if (!exists) {
+            github.createBranch(repo, base, RUNTIME_BRANCH)
+        }
+
+        val workflow = asset("remote/hai-om-agent.yml")
+        val runner = asset("remote/hai-om-agent.mjs")
+
+        val updates = mutableListOf<FileEdit>()
+        val currentWorkflow = runCatching {
+            github.readFile(repo, RUNTIME_BRANCH, WORKFLOW_PATH)?.text
+        }.getOrNull()
+        val currentRunner = runCatching {
+            github.readFile(repo, RUNTIME_BRANCH, RUNNER_PATH)?.text
+        }.getOrNull()
+
+        if (currentWorkflow != workflow) updates += FileEdit(WORKFLOW_PATH, workflow)
+        if (currentRunner != runner) updates += FileEdit(RUNNER_PATH, runner)
+
+        if (updates.isNotEmpty()) {
+            onEvent("تجهيز المشغل")
+            github.applyBatch(
+                repo = repo,
+                branch = RUNTIME_BRANCH,
+                batch = EditBatch(
+                    summary = "مزامنة مشغل HAI OM",
+                    files = updates
+                ),
+                taskId = "runtime-sync",
+                onEvent = {}
+            )
+        }
+    }
+
+    private fun explicitProgrammingCommand(text: String): Boolean {
+        val value = text.trim()
+        if (value.isBlank()) return false
+
+        val directArabic = Regex(
+            """(?:^|\s)(?:نفذ|نفّذ|عدل|عدّل|اصلح|أصلح|اضف|أضف|احذف|برمج|ابن|ابني|أنشئ|انشئ|غيّر|غير|طوّر|طور|صمم|ادمج|اربط|حدّث|حدث|طبّق|طبق)(?:\s|$|:|،|,)""",
+            RegexOption.IGNORE_CASE
+        )
+        val phraseArabic = Regex(
+            """(?:اكتب\s+(?:الكود|كود)|أعد\s+بناء|اعد\s+بناء|ابي\s+(?:تضيف|تعدل|تصلح|تحذف|تبرمج|تنفذ|تسوي)|أريدك\s+(?:أن\s+)?(?:تضيف|تعدل|تصلح|تحذف|تبرمج|تنفذ|تسوي))""",
+            RegexOption.IGNORE_CASE
+        )
+        val english = Regex(
+            """\b(?:implement|modify|edit|fix|add|remove|delete|refactor|build|create|code|program|redesign|merge|apply|update)\b""",
+            RegexOption.IGNORE_CASE
+        )
+
+        return directArabic.containsMatchIn(value) ||
+            phraseArabic.containsMatchIn(value) ||
+            english.containsMatchIn(value)
     }
 
     private fun asset(path: String): String =
@@ -159,7 +240,7 @@ class RemoteAgentRunner(
                 "الموديلات المجانية مشغولة أو غير متاحة الآن. حاول مرة ثانية بعد قليل."
 
             "workflow" in lower && "permission" in lower ->
-                "المشروع لا يسمح للتطبيق بتشغيل التعديلات تلقائيًا."
+                "المشروع لا يسمح لـ HAI OM بالتشغيل التلقائي."
 
             "resource not accessible by integration" in lower ||
                 "403" in lower ->
@@ -168,16 +249,17 @@ class RemoteAgentRunner(
             "timed out" in lower || "timeout" in lower ->
                 "استغرق التنفيذ وقتًا أطول من المسموح. حاول مرة ثانية."
 
-            else -> "تعذر إكمال المهمة أثناء التنفيذ. حاول مرة ثانية."
+            else -> "تعذر إكمال الطلب. حاول مرة ثانية."
         }
     }
 
     companion object {
+        private const val RUNTIME_BRANCH = "hai-om/runtime"
         private const val WORKFLOW_NAME = "HAI OM Agent"
         private const val WORKFLOW_PATH = ".github/workflows/hai-om-agent.yml"
         private const val RUNNER_PATH = ".hai-om/agent.mjs"
         private const val TASK_PATH = ".hai-om/task.json"
-        private const val RESULT_PATH = ".hai-om/result.json"
+        private const val RESULTS_DIR = ".hai-om/results"
         private const val MAX_REQUIREMENTS_CHARS = 20_000
     }
 }

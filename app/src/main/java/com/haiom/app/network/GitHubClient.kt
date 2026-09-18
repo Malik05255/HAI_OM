@@ -252,7 +252,8 @@ class GitHubClient(
                 "Checkout project" -> "فتح المشروع"
                 "Java", "Node" -> "تجهيز العمل"
                 "Start free AI engine" -> "تجهيز الذكاء"
-                "Build, test, and repair" -> "قراءة المشروع وتنفيذ المطلوب"
+                "Build, test, and repair", "Answer or program" -> "قراءة المشروع وتنفيذ المطلوب"
+                "Publish result" -> "تجهيز النتيجة"
                 "Stop AI engine" -> "إنهاء المهمة"
                 else -> "جاري التنفيذ"
             }
