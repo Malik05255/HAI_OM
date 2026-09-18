@@ -353,7 +353,7 @@ private fun HomeScreen(
                 value = requirements,
                 onValueChange = onRequirements,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("وش تبغى؟") },
+                label = { Text("اكتب رسالتك") },
                 minLines = 6,
                 maxLines = 12,
                 shape = RoundedCornerShape(20.dp)
@@ -361,6 +361,7 @@ private fun HomeScreen(
         }
 
         item {
+            val programming = remember(requirements) { explicitProgrammingCommand(requirements) }
             Button(
                 onClick = onRun,
                 enabled = !state.running &&
@@ -375,11 +376,20 @@ private fun HomeScreen(
                 if (state.running) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.size(10.dp))
-                    Text("جاري العمل…", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (programming) "جاري التنفيذ…" else "جاري الرد…",
+                        fontWeight = FontWeight.Bold
+                    )
                 } else {
-                    Icon(Icons.Outlined.PlayArrow, null)
+                    Icon(
+                        if (programming) Icons.Outlined.PlayArrow else Icons.Outlined.AutoAwesome,
+                        null
+                    )
                     Spacer(Modifier.size(8.dp))
-                    Text("ابدأ", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (programming) "تنفيذ" else "إرسال",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -677,6 +687,29 @@ private fun ModelRow(index: Int, model: FreeProviderRanking) {
             }
         }
     }
+}
+
+
+private fun explicitProgrammingCommand(text: String): Boolean {
+    val value = text.trim()
+    if (value.isBlank()) return false
+
+    val directArabic = Regex(
+        """(?:^|\s)(?:نفذ|نفّذ|عدل|عدّل|اصلح|أصلح|اضف|أضف|احذف|برمج|ابن|ابني|أنشئ|انشئ|غيّر|غير|طوّر|طور|صمم|ادمج|اربط|حدّث|حدث|طبّق|طبق)(?:\s|$|:|،|,)""",
+        RegexOption.IGNORE_CASE
+    )
+    val phraseArabic = Regex(
+        """(?:اكتب\s+(?:الكود|كود)|أعد\s+بناء|اعد\s+بناء|ابي\s+(?:تضيف|تعدل|تصلح|تحذف|تبرمج|تنفذ|تسوي)|أريدك\s+(?:أن\s+)?(?:تضيف|تعدل|تصلح|تحذف|تبرمج|تنفذ|تسوي))""",
+        RegexOption.IGNORE_CASE
+    )
+    val english = Regex(
+        """\b(?:implement|modify|edit|fix|add|remove|delete|refactor|build|create|code|program|redesign|merge|apply|update)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    return directArabic.containsMatchIn(value) ||
+        phraseArabic.containsMatchIn(value) ||
+        english.containsMatchIn(value)
 }
 
 @Composable
