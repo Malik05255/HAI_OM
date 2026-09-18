@@ -10,6 +10,8 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.GitHubAccountClient
 import com.haiom.app.network.GitHubClient
 import com.haiom.app.network.GitHubAppLinker
+import com.haiom.app.network.DirectChatClient
+import com.haiom.app.network.ChatTurn
 import com.haiom.app.security.SecretStore
 import com.haiom.app.update.AppUpdateInfo
 import com.haiom.app.update.AppUpdateManager
@@ -42,13 +44,16 @@ data class MainUiState(
     val downloadingUpdate: Boolean = false,
     val updateProgress: Int = 0,
     val updateInstallUri: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    val programming: Boolean = false,
+    val chatHistory: List<ChatTurn> = emptyList()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val secrets = SecretStore(application)
     private val updater = AppUpdateManager(application)
     private val githubAppLinker = GitHubAppLinker()
+    private val directChat = DirectChatClient()
     private val _state = MutableStateFlow(
         MainUiState(hasGitHubToken = secrets.githubToken().isNotBlank() || secrets.hasGitHubApp())
     )
@@ -149,19 +154,122 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun isProgrammingRequest(text: String): Boolean {
+        val value = text.trim().lowercase()
+        if (value.isBlank()) return false
+
+        if (
+            value.startsWith("هل ") ||
+            value.startsWith("وش معنى") ||
+            value.startsWith("ما معنى") ||
+            value.startsWith("اشرح") ||
+            value.startsWith("فسر")
+        ) {
+            return false
+        }
+
+        return PROGRAMMING_PATTERNS.any { it.containsMatchIn(value) }
+    }
+
     fun runAgent(repositoryUrl: String, requirements: String) {
         if (_state.value.running || _state.value.connecting || _state.value.githubLinking) return
+        if (requirements.isBlank()) {
+            _state.update { it.copy(error = "اكتب رسالتك") }
+            return
+        }
+
+        if (isProgrammingRequest(requirements)) {
+            runProgramming(repositoryUrl, requirements)
+        } else {
+            runChat(repositoryUrl, requirements)
+        }
+    }
+
+    private fun runChat(repositoryUrl: String, prompt: String) {
+        _state.update {
+            it.copy(
+                running = true,
+                programming = false,
+                result = null,
+                error = null,
+                logs = emptyList()
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val existingHistory = _state.value.chatHistory
+                val needsRepo = needsRepositoryContext(prompt)
+                val context = if (needsRepo) {
+                    if (repositoryUrl.isBlank()) error("اختر المشروع عشان أقرأه")
+                    val token = resolveGitHubToken() ?: error("اربط GitHub عشان أقرأ المشروع")
+                    val github = GitHubClient(token)
+                    withContext(Dispatchers.IO) {
+                        val repo = github.parseRepository(repositoryUrl)
+                        val branch = github.defaultBranch(repo)
+                        github.buildContext(repo, branch, maxChars = 36_000)
+                    }
+                } else {
+                    null
+                }
+
+                val answer = directChat.chat(
+                    prompt = prompt,
+                    history = existingHistory,
+                    repositoryContext = context
+                )
+
+                val updatedHistory = (
+                    existingHistory +
+                        ChatTurn("user", prompt) +
+                        ChatTurn("assistant", answer)
+                    ).takeLast(20)
+
+                _state.update {
+                    it.copy(
+                        running = false,
+                        programming = false,
+                        chatHistory = updatedHistory,
+                        result = AgentRunResult(
+                            branch = "",
+                            pullRequestUrl = null,
+                            completedTasks = 1,
+                            totalTasks = 1,
+                            answer = answer
+                        )
+                    )
+                }
+            } catch (t: Throwable) {
+                _state.update {
+                    it.copy(
+                        running = false,
+                        programming = false,
+                        error = t.message?.takeIf { message -> message.isNotBlank() }
+                            ?: "تعذر الرد الآن"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun runProgramming(repositoryUrl: String, requirements: String) {
         if (repositoryUrl.isBlank()) {
             _state.update { it.copy(error = "اختر المشروع أولًا") }
             return
         }
-        if (requirements.isBlank()) {
-            _state.update { it.copy(error = "اكتب المطلوب") }
+        if (!_state.value.hasGitHubToken) {
+            _state.update { it.copy(error = "اربط GitHub أولًا") }
             return
         }
 
         _state.update {
-            it.copy(running = true, result = null, error = null, logs = listOf("بدأ التنفيذ"))
+            it.copy(
+                running = true,
+                programming = true,
+                result = null,
+                error = null,
+                logs = listOf("بدأ التنفيذ")
+            )
         }
 
         viewModelScope.launch {
@@ -172,17 +280,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     RemoteAgentRunner(getApplication(), github)
                         .run(repositoryUrl, requirements, ::appendLog)
                 }
-                _state.update { it.copy(running = false, result = result) }
+                _state.update { it.copy(running = false, programming = false, result = result) }
             } catch (t: Throwable) {
                 _state.update {
                     it.copy(
                         running = false,
+                        programming = false,
                         error = t.message?.takeIf { message -> message.isNotBlank() }
                             ?: "تعذر إكمال المهمة. حاول مرة ثانية"
                     )
                 }
             }
         }
+    }
+
+    private fun needsRepositoryContext(text: String): Boolean {
+        val value = text.lowercase()
+        return REPOSITORY_CONTEXT_WORDS.any { value.contains(it) }
     }
 
     private suspend fun loadGitHubAccount(): GitHubAccountState {
@@ -320,6 +434,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearMessage() = _state.update { it.copy(message = null) }
 
     fun clearError() = _state.update { it.copy(error = null) }
+
+    companion object {
+        private val PROGRAMMING_PATTERNS = listOf(
+            Regex("""(^|\\s)(برمج|نفذ|نفّذ|عدل|عدّل|اصلح|أصلح|صحح|صحّح|اضف|أضف|احذف|حذف|غير|غيّر|انشئ|أنشئ|طور|طوّر|طبق|طبّق|استبدل|ادمج|اربط)(\\s|$)"""),
+            Regex("""(اكتب|سو|سوي)\\s+(لي\\s+)?(الكود|كود|ملف|ميزة|شاشة|صفحة|تطبيق)"""),
+            Regex("""(^|\\s)(implement|fix|modify|edit|add|delete|remove|refactor|build|code)(\\s|$)""", RegexOption.IGNORE_CASE),
+            Regex("""اتصل\\s+بالمستودع.*(نفذ|عدل|اصلح|اضف|احذف|كمل)""")
+        )
+
+        private val REPOSITORY_CONTEXT_WORDS = listOf(
+            "المشروع", "المستودع", "الكود", "الملفات", "repo", "repository",
+            "اقرأه", "اقراه", "اقرأ", "اقرا", "راجعه", "راجع المشروع",
+            "لخصه", "لخص المشروع", "وش لقيت", "وش فيه"
+        )
+    }
 
     private data class GitHubAccountState(
         val connected: Boolean = false,
