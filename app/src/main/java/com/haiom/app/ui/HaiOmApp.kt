@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,7 +23,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -86,7 +88,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -372,129 +376,179 @@ private fun ChatHome(
     val extraAnswer = standaloneAnswer?.takeIf {
         it.isNotBlank() && it != lastHistoryAnswer
     }
+    val density = LocalDensity.current
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
 
-    Column(
+    BoxWithConstraints(
         modifier = modifier
             .statusBarsPadding()
             .navigationBarsPadding()
-            .imePadding()
-            .padding(horizontal = 14.dp)
     ) {
-        Spacer(Modifier.height(16.dp))
-        Surface(
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-            color = Color(0xFFFFFAFF),
-            shape = RoundedCornerShape(28.dp),
-            border = BorderStroke(2.dp, SoftLavenderBorder)
-        ) {
-            Text(
-                text = "دردشة",
-                modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
-                color = Color(0xFF4A434D),
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
+        val narrow = maxWidth < 360.dp
+        val veryWide = maxWidth >= 520.dp
+        val short = maxHeight < 680.dp
+        val keyboardLayout = imeVisible || maxHeight < 460.dp
+        val horizontalPadding = when {
+            narrow -> 10.dp
+            veryWide -> 26.dp
+            else -> 16.dp
         }
+        val showTitle = !keyboardLayout && maxHeight >= 560.dp
+        val showEmptyHero = stateHistory.isEmpty() &&
+            extraAnswer == null &&
+            !running &&
+            !keyboardLayout
 
-        Box(
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
+                .fillMaxSize()
+                .padding(horizontal = horizontalPadding)
         ) {
-            if (stateHistory.isEmpty() && extraAnswer == null && !running) {
-                EmptyConversation(
-                    modifier = Modifier.align(Alignment.Center)
-                )
-            } else {
+            if (showTitle) {
+                Spacer(Modifier.height(if (short) 10.dp else 16.dp))
+                Surface(
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    color = Color(0xFFFFFCFF),
+                    shape = RoundedCornerShape(25.dp),
+                    border = BorderStroke(1.dp, SoftLavenderBorder)
+                ) {
+                    Text(
+                        text = "دردشة",
+                        modifier = Modifier.padding(
+                            horizontal = if (narrow) 24.dp else 30.dp,
+                            vertical = if (short) 8.dp else 10.dp
+                        ),
+                        color = Color(0xFF423C46),
+                        fontSize = if (narrow) 17.sp else 19.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                if (showEmptyHero) {
+                    EmptyConversation(
+                        modifier = Modifier.align(Alignment.Center),
+                        availableWidth = maxWidth,
+                        availableHeight = maxHeight
+                    )
+                } else if (stateHistory.isNotEmpty() || extraAnswer != null || running) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(
+                                top = if (keyboardLayout) 4.dp else 14.dp,
+                                bottom = 8.dp
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(stateHistory) { turn ->
+                            ChatBubble(turn)
+                        }
+                        extraAnswer?.let { answer ->
+                            item {
+                                ChatBubble(ChatTurn(role = "assistant", text = answer))
+                            }
+                        }
+                        if (running) {
+                            item {
+                                WorkingBubble(
+                                    programming = programming,
+                                    progressText = progressText
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (media.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = 18.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .fillMaxWidth()
+                        .height((media.size.coerceAtMost(if (keyboardLayout) 1 else 2) * 42).dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    items(stateHistory) { turn ->
-                        ChatBubble(turn)
-                    }
-                    extraAnswer?.let { answer ->
-                        item {
-                            ChatBubble(ChatTurn(role = "assistant", text = answer))
-                        }
-                    }
-                    if (running) {
-                        item {
-                            WorkingBubble(
-                                programming = programming,
-                                progressText = progressText
-                            )
-                        }
+                    items(media) { item ->
+                        MediaRow(item, onRemoveMedia)
                     }
                 }
+                Spacer(Modifier.height(6.dp))
             }
-        }
 
-        if (media.isNotEmpty()) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height((media.size.coerceAtMost(2) * 46).dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(media) { item ->
-                    MediaRow(item, onRemoveMedia)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
+            Composer(
+                value = draft,
+                onValueChange = onDraftChange,
+                enabled = !running,
+                compact = narrow || short || keyboardLayout,
+                onPickMedia = onPickMedia,
+                onSend = onSend
+            )
+            Spacer(Modifier.height(if (keyboardLayout) 4.dp else 8.dp))
         }
-
-        Composer(
-            value = draft,
-            onValueChange = onDraftChange,
-            enabled = !running,
-            onPickMedia = onPickMedia,
-            onSend = onSend
-        )
-        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
-private fun EmptyConversation(modifier: Modifier = Modifier) {
+private fun EmptyConversation(
+    modifier: Modifier = Modifier,
+    availableWidth: androidx.compose.ui.unit.Dp,
+    availableHeight: androidx.compose.ui.unit.Dp
+) {
+    val narrow = availableWidth < 360.dp
+    val short = availableHeight < 700.dp
+    val logoSize = when {
+        short && narrow -> 76.dp
+        short -> 84.dp
+        narrow -> 88.dp
+        else -> 100.dp
+    }
+    val gap = when {
+        short -> 30.dp
+        availableHeight > 850.dp -> 48.dp
+        else -> 38.dp
+    }
+
     Column(
-        modifier = modifier.padding(horizontal = 24.dp),
+        modifier = modifier.padding(horizontal = if (narrow) 12.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(116.dp)
-                .clip(CircleShape)
-                .background(Color.Transparent),
+                .size(logoSize)
+                .clip(CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = Color.Transparent,
                 shape = CircleShape,
-                border = BorderStroke(2.dp, Color(0xFFE8ECFA))
+                border = BorderStroke(1.dp, Color(0xFFE8ECFA))
             ) {}
             Text(
                 "H AI",
                 color = Color(0xFFDCE4FB),
                 fontWeight = FontWeight.Bold,
-                fontSize = 30.sp
+                fontSize = if (short) 23.sp else 27.sp
             )
         }
-        Spacer(Modifier.height(54.dp))
+
+        Spacer(Modifier.height(gap))
+
         Text(
             "مرحبًا، كيف أساعدك اليوم؟",
             color = Ink,
-            fontSize = 23.sp,
-            fontWeight = FontWeight.Medium
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            "اكتب رسالتك بالأسفل، وباقي الأدوات داخل الشريط الأزرق على اليسار.",
-            color = MutedText,
-            fontSize = 14.sp
+            fontSize = when {
+                narrow -> 19.sp
+                short -> 20.sp
+                else -> 22.sp
+            },
+            fontWeight = FontWeight.Medium,
+            maxLines = 1
         )
     }
 }
@@ -569,35 +623,44 @@ private fun Composer(
     value: String,
     onValueChange: (String) -> Unit,
     enabled: Boolean,
+    compact: Boolean,
     onPickMedia: () -> Unit,
     onSend: () -> Unit
 ) {
+    val buttonSize = if (compact) 42.dp else 46.dp
+    val verticalPadding = if (compact) 5.dp else 6.dp
+    val inputFont = if (compact) 17.sp else 18.sp
+
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFFF8F5FA),
-            shape = RoundedCornerShape(40.dp),
-            border = BorderStroke(2.dp, SoftLavenderBorder)
+            color = Color(0xFFFAF7FB),
+            shape = RoundedCornerShape(if (compact) 30.dp else 34.dp),
+            border = BorderStroke(1.dp, SoftLavenderBorder)
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 7.dp, vertical = verticalPadding),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FilledIconButton(
                     onClick = onSend,
                     enabled = enabled && value.isNotBlank(),
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(buttonSize),
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = if (value.isNotBlank() && enabled) Color(0xFF5A5864) else Color(0xFFE4DFE7),
+                        containerColor = if (value.isNotBlank() && enabled) Color(0xFF5A5864) else Color(0xFFE6E1E8),
                         contentColor = Color.White,
-                        disabledContainerColor = Color(0xFFE4DFE7),
-                        disabledContentColor = Color(0xFF8C8992)
+                        disabledContainerColor = Color(0xFFE6E1E8),
+                        disabledContentColor = Color(0xFF98939C)
                     )
                 ) {
-                    Icon(Icons.Outlined.ArrowUpward, "إرسال")
+                    Icon(
+                        Icons.Outlined.ArrowUpward,
+                        "إرسال",
+                        modifier = Modifier.size(if (compact) 23.dp else 25.dp)
+                    )
                 }
 
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(if (compact) 5.dp else 7.dp))
 
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     BasicTextField(
@@ -606,13 +669,13 @@ private fun Composer(
                         enabled = enabled,
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                            .padding(horizontal = 7.dp, vertical = if (compact) 7.dp else 8.dp),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = Ink,
-                            fontSize = 19.sp
+                            fontSize = inputFont
                         ),
                         cursorBrush = SolidColor(RailBlue),
-                        maxLines = 5,
+                        maxLines = if (compact) 3 else 5,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(
                             onSend = {
@@ -620,12 +683,12 @@ private fun Composer(
                             }
                         ),
                         decorationBox = { inner ->
-                            Box {
+                            Box(contentAlignment = Alignment.CenterStart) {
                                 if (value.isBlank()) {
                                     Text(
                                         "اطرح سؤالاً…",
                                         color = MutedText,
-                                        fontSize = 19.sp
+                                        fontSize = inputFont
                                     )
                                 }
                                 inner()
@@ -634,12 +697,12 @@ private fun Composer(
                     )
                 }
 
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(if (compact) 5.dp else 7.dp))
 
                 FilledIconButton(
                     onClick = onPickMedia,
                     enabled = enabled,
-                    modifier = Modifier.size(50.dp),
+                    modifier = Modifier.size(buttonSize),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = RailBlue,
                         contentColor = Color.White,
@@ -647,7 +710,11 @@ private fun Composer(
                         disabledContentColor = Color.White.copy(alpha = 0.7f)
                     )
                 ) {
-                    Icon(Icons.Outlined.Add, "إدراج وسائط")
+                    Icon(
+                        Icons.Outlined.Add,
+                        "إدراج وسائط",
+                        modifier = Modifier.size(if (compact) 25.dp else 27.dp)
+                    )
                 }
             }
         }
@@ -693,20 +760,27 @@ private fun RailHandle(
     modifier: Modifier,
     onClick: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val short = configuration.screenHeightDp < 700
+    val narrow = configuration.screenWidthDp < 360
+    val handleWidth = if (narrow) 21.dp else 23.dp
+    val handleHeight = if (short) 70.dp else 82.dp
+
     Surface(
         modifier = modifier
-            .width(30.dp)
-            .height(118.dp)
+            .width(handleWidth)
+            .height(handleHeight)
             .clickable(onClick = onClick),
         color = RailBlue,
-        shape = RoundedCornerShape(topEnd = 15.dp, bottomEnd = 15.dp),
-        shadowElevation = 3.dp
+        shape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp),
+        shadowElevation = 2.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 Icons.Outlined.MoreVert,
                 "فتح الأدوات",
-                tint = Color.White
+                tint = Color.White,
+                modifier = Modifier.size(19.dp)
             )
         }
     }
@@ -723,21 +797,32 @@ private fun SideRail(
     onModels: () -> Unit,
     onSettings: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp
+    val screenWidth = configuration.screenWidthDp
+    val narrow = screenWidth < 360
+    val railWidth = if (narrow) 70.dp else 76.dp
+    val railHeight = (screenHeight * 0.50f).dp.coerceIn(300.dp, 410.dp)
+    val handleWidth = if (narrow) 21.dp else 23.dp
+    val handleHeight = if (screenHeight < 700) 70.dp else 82.dp
+
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
             modifier = Modifier
-                .width(88.dp)
-                .height(430.dp),
+                .width(railWidth)
+                .height(railHeight),
             color = Color(0xFFFFFBFF),
-            shape = RoundedCornerShape(topEnd = 34.dp, bottomEnd = 34.dp),
+            shape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
             border = BorderStroke(1.dp, Color(0xFFE4DEE7)),
-            shadowElevation = 9.dp
+            shadowElevation = 7.dp
         ) {
             Column(
-                modifier = Modifier.fillMaxSize().padding(vertical = 15.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(vertical = if (screenHeight < 700) 8.dp else 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceEvenly
             ) {
@@ -763,7 +848,7 @@ private fun SideRail(
                 )
                 Box(
                     modifier = Modifier
-                        .width(56.dp)
+                        .width(if (narrow) 42.dp else 48.dp)
                         .height(1.dp)
                         .background(Color(0xFFDAD3DD))
                 )
@@ -777,17 +862,18 @@ private fun SideRail(
 
         Surface(
             modifier = Modifier
-                .width(30.dp)
-                .height(118.dp)
+                .width(handleWidth)
+                .height(handleHeight)
                 .clickable(onClick = onClose),
             color = RailBlue,
-            shape = RoundedCornerShape(topEnd = 15.dp, bottomEnd = 15.dp)
+            shape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     Icons.Outlined.MoreVert,
                     "إغلاق الأدوات",
-                    tint = Color.White
+                    tint = Color.White,
+                    modifier = Modifier.size(19.dp)
                 )
             }
         }
@@ -800,15 +886,17 @@ private fun RailIconButton(
     label: String,
     onClick: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val compact = configuration.screenHeightDp < 700 || configuration.screenWidthDp < 360
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(54.dp)
+        modifier = Modifier.size(if (compact) 45.dp else 50.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
             tint = Ink,
-            modifier = Modifier.size(30.dp)
+            modifier = Modifier.size(if (compact) 25.dp else 28.dp)
         )
     }
 }
