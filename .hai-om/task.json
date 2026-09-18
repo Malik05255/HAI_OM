@@ -1,8 +1,0 @@
-{
-  "taskId": "smoke-chat-fast-001",
-  "requirements": "وش هذا التطبيق؟ جاوب بجملة قصيرة ولا تعدل أي ملف.",
-  "baseBranch": "main",
-  "targetBranch": "main",
-  "editAllowed": false,
-  "repository": "Malik05255/HAI_OM"
-}
