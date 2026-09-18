@@ -62,23 +62,24 @@ jobs:
         id: omni-cache
         uses: actions/cache@v4
         with:
-          path: ~/.hai-om/omniroute
-          key: hai-om-omniroute-3.8.50-node22-linux
+          path: ~/.hai-om/omniroute-lite
+          key: hai-om-omniroute-lite-3.8.50-v1-node22-linux
 
       - name: Install OmniRoute runtime
         if: steps.omni-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.hai-om/omniroute"
-          npm install --prefix "$HOME/.hai-om/omniroute" omniroute@3.8.50 --no-fund --no-audit
+          mkdir -p "$HOME/.hai-om/omniroute-lite"
+          npm install --prefix "$HOME/.hai-om/omniroute-lite" --omit=optional --no-fund --no-audit \
+            omniroute@3.8.50 better-sqlite3@13.0.2 js-tiktoken@1.0.20
 
       - name: Start free AI engine
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$HOME/.hai-om/omniroute/node_modules/.bin:$PATH"
-          export OMNIROOT="$HOME/.hai-om/omniroute/node_modules/omniroute"
+          export PATH="$HOME/.hai-om/omniroute-lite/node_modules/.bin:$PATH"
+          export OMNIROOT="$HOME/.hai-om/omniroute-lite/node_modules/omniroute"
 
           OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/omniroute.pid"
