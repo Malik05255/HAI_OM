@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -328,6 +329,22 @@ private fun ChatCanvas(
     val lastAnswer = history.lastOrNull { it.role == "assistant" }?.text
     val extraAnswer = standaloneAnswer?.takeIf { it.isNotBlank() && it != lastAnswer }
     val empty = history.isEmpty() && extraAnswer == null && !running
+    val listState = rememberLazyListState()
+    val renderedItemCount =
+        history.size +
+            if (extraAnswer != null) 1 else 0 +
+            if (running) 1 else 0
+
+    LaunchedEffect(
+        history.size,
+        extraAnswer,
+        running,
+        progressText
+    ) {
+        if (renderedItemCount > 0) {
+            listState.animateScrollToItem(renderedItemCount - 1)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -337,27 +354,44 @@ private fun ChatCanvas(
         Spacer(Modifier.height(8.dp))
 
         if (empty) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
                 EmptyState(Modifier.align(Alignment.Center))
             }
         } else {
             LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(top = 18.dp, bottom = 18.dp),
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(
+                    top = 18.dp,
+                    bottom = 10.dp
+                ),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                items(history) { MessageBlock(it) }
-                extraAnswer?.let { answer ->
-                    item { MessageBlock(ChatTurn("assistant", answer)) }
+                items(history) { turn ->
+                    MessageBlock(turn)
                 }
+
+                extraAnswer?.let { answer ->
+                    item {
+                        MessageBlock(ChatTurn("assistant", answer))
+                    }
+                }
+
                 if (running) {
-                    item { RunningLine(programming, progressText) }
+                    item {
+                        RunningLine(programming, progressText)
+                    }
                 }
             }
         }
     }
 }
-
 @Composable
 private fun EmptyState(modifier: Modifier = Modifier) {
     Column(
@@ -495,7 +529,7 @@ private fun CompactComposer(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+                .padding(start = 12.dp, end = 12.dp, top = 3.dp, bottom = 1.dp),
             color = Color(0xFFF8F4FA),
             shape = RoundedCornerShape(29.dp),
             border = BorderStroke(1.dp, LavenderStrong)
