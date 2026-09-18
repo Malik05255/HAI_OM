@@ -431,6 +431,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (it.downloadingUpdate) it else it.copy(updateInfo = null, updateInstallUri = null, updateProgress = 0)
     }
 
+    fun clearChat() = _state.update {
+        it.copy(
+            chatHistory = emptyList(),
+            result = null,
+            logs = emptyList(),
+            error = null,
+            message = null,
+            programming = false
+        )
+    }
+
     fun clearMessage() = _state.update { it.copy(message = null) }
 
     fun clearError() = _state.update { it.copy(error = null) }
