@@ -1,6 +1,6 @@
 {
-  "taskId": "smoke-chat-lite-002",
-  "requirements": "وش وظيفة HAI OM؟ جاوب بسطر واحد ولا تعدل أي ملف.",
+  "taskId": "smoke-chat-fast-001",
+  "requirements": "وش هذا التطبيق؟ جاوب بجملة قصيرة ولا تعدل أي ملف.",
   "baseBranch": "main",
   "targetBranch": "main",
   "editAllowed": false,
