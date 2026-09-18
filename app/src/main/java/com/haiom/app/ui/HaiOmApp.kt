@@ -1,6 +1,7 @@
 package com.haiom.app.ui
 
 import android.content.Context
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -260,6 +261,7 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                         panel = null
                     },
                     onConnect = vm::startGitHubLink,
+                    onTokenConnect = vm::connectGitHubToken,
                     onCancelLink = vm::cancelGitHubLink,
                     onDisconnect = vm::disconnectGitHub,
                     onCheckUpdate = vm::checkForUpdate,
@@ -804,6 +806,7 @@ private fun ToolScreen(
     onBack: () -> Unit,
     onSelectRepo: (GitHubRepository) -> Unit,
     onConnect: () -> Unit,
+    onTokenConnect: (String) -> Unit,
     onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit,
@@ -833,6 +836,7 @@ private fun ToolScreen(
                 linkingStatus = linkingStatus,
                 onSelect = onSelectRepo,
                 onConnect = onConnect,
+                onTokenConnect = onTokenConnect,
                 onCancelLink = onCancelLink
             )
             ToolPanel.HISTORY -> HistoryContent(
@@ -851,6 +855,7 @@ private fun ToolScreen(
                 linkingStatus = linkingStatus,
                 checkingUpdate = checkingUpdate,
                 onConnect = onConnect,
+                onTokenConnect = onTokenConnect,
                 onCancelLink = onCancelLink,
                 onDisconnect = onDisconnect,
                 onCheckUpdate = onCheckUpdate
@@ -882,6 +887,7 @@ private fun ProjectsContent(
     linkingStatus: String,
     onSelect: (GitHubRepository) -> Unit,
     onConnect: () -> Unit,
+    onTokenConnect: (String) -> Unit,
     onCancelLink: () -> Unit
 ) {
     if (!connected) {
@@ -889,6 +895,7 @@ private fun ProjectsContent(
             linking = linking,
             status = linkingStatus,
             onConnect = onConnect,
+            onTokenConnect = onTokenConnect,
             onCancel = onCancelLink
         )
         return
@@ -1047,6 +1054,7 @@ private fun SettingsContent(
     linkingStatus: String,
     checkingUpdate: Boolean,
     onConnect: () -> Unit,
+    onTokenConnect: (String) -> Unit,
     onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit
@@ -1104,6 +1112,7 @@ private fun SettingsContent(
             linking = linking,
             status = linkingStatus,
             onConnect = onConnect,
+            onTokenConnect = onTokenConnect,
             onCancel = onCancelLink
         )
     }
@@ -1140,8 +1149,11 @@ private fun GitHubConnectCard(
     linking: Boolean,
     status: String,
     onConnect: () -> Unit,
+    onTokenConnect: (String) -> Unit,
     onCancel: () -> Unit
 ) {
+    val context = LocalContext.current
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(0xFFF5F7FD),
@@ -1186,9 +1198,9 @@ private fun GitHubConnectCard(
                     )
                     Text(
                         if (linking) {
-                            status.ifBlank { "جاري الربط…" }
+                            status.ifBlank { "جاري التحقق…" }
                         } else {
-                            "زر واحد، ثم وافق واختر مشاريعك في GitHub."
+                            "افتح GitHub، أنشئ الرمز وانسخه، ثم ارجع واضغط لصق وربط."
                         },
                         color = Muted,
                         fontSize = 12.sp,
@@ -1197,7 +1209,7 @@ private fun GitHubConnectCard(
                 }
             }
 
-            Spacer(Modifier.height(15.dp))
+            Spacer(Modifier.height(14.dp))
 
             if (linking) {
                 Row(
@@ -1211,7 +1223,7 @@ private fun GitHubConnectCard(
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        status.ifBlank { "جاري الربط…" },
+                        status.ifBlank { "جاري التحقق…" },
                         modifier = Modifier.weight(1f),
                         color = Ink,
                         fontSize = 13.sp
@@ -1228,8 +1240,37 @@ private fun GitHubConnectCard(
                 ) {
                     Icon(Icons.Outlined.Link, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("ربط GitHub")
+                    Text("فتح GitHub وإنشاء الرمز")
                 }
+
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(
+                            Context.CLIPBOARD_SERVICE
+                        ) as ClipboardManager
+                        val token = clipboard.primaryClip
+                            ?.getItemAt(0)
+                            ?.coerceToText(context)
+                            ?.toString()
+                            .orEmpty()
+                        onTokenConnect(token)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Text("لصق وربط")
+                }
+
+                Spacer(Modifier.height(9.dp))
+
+                Text(
+                    "سيطلب GitHub صلاحيات المشروع فقط: تعديل الملفات، Pull Requests، قراءة Actions، وتعديل Workflows. الرمز يُحفظ مشفرًا داخل جهازك.",
+                    color = Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 17.sp
+                )
             }
         }
     }
@@ -1253,39 +1294,28 @@ private fun GitHubLinkDialog(
 ) {
     AlertDialog(
         onDismissRequest = {},
-        title = {
-            Text("ربط GitHub")
-        },
+        title = { Text("ربط GitHub") },
         text = {
-            Column {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        strokeWidth = 2.dp,
-                        color = Blue
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        status.ifBlank { "جاري الربط…" },
-                        color = Ink,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                    color = Blue
+                )
+                Spacer(Modifier.width(12.dp))
                 Text(
-                    "سيُفتح GitHub تلقائيًا. وافق على الربط واختر المستودعات، وبعدها سيعود التطبيق تلقائيًا. لا تحتاج نسخ رمز أو مفتاح.",
-                    color = Muted,
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp
+                    status.ifBlank { "جاري التحقق من الرمز…" },
+                    color = Ink,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         },
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onCancel) {
-                Text("إلغاء الربط")
+                Text("إلغاء")
             }
         }
     )
