@@ -10,12 +10,15 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.GitHubAccountClient
 import com.haiom.app.network.GitHubClient
 import com.haiom.app.network.GitHubAppLinker
+import com.haiom.app.network.GitHubLinkStage
 import com.haiom.app.network.DirectChatClient
 import com.haiom.app.network.ChatTurn
 import com.haiom.app.security.SecretStore
 import com.haiom.app.update.AppUpdateInfo
 import com.haiom.app.update.AppUpdateManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,7 +37,7 @@ data class MainUiState(
     val repositories: List<GitHubRepository> = emptyList(),
     val githubLinking: Boolean = false,
     val githubLaunchUrl: String? = null,
-    val githubUserCode: String = "",
+    val githubLinkStatus: String = "",
     val omniReady: Boolean = false,
     val strictFreeVerified: Boolean = false,
     val compressionEnabled: Boolean = false,
@@ -51,6 +54,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val updater = AppUpdateManager(application)
     private val githubAppLinker = GitHubAppLinker()
     private val directChat = DirectChatClient()
+    private var githubLinkJob: Job? = null
     private val _state = MutableStateFlow(
         MainUiState(hasGitHubToken = secrets.githubToken().isNotBlank() || secrets.hasGitHubApp())
     )
@@ -82,21 +86,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun startGitHubLink() {
         if (_state.value.githubLinking || _state.value.running) return
 
+        githubLinkJob?.cancel()
         _state.update {
             it.copy(
                 githubLinking = true,
                 githubLaunchUrl = null,
-                githubUserCode = "",
+                githubLinkStatus = "جاري تجهيز الربط…",
                 error = null,
-                message = "افتح GitHub ووافق على الربط"
+                message = null
             )
         }
 
-        viewModelScope.launch {
+        githubLinkJob = viewModelScope.launch {
             try {
-                val linked = githubAppLinker.link { url ->
-                    _state.update { current -> current.copy(githubLaunchUrl = url) }
-                }
+                val linked = githubAppLinker.link(
+                    onOpenUrl = { url ->
+                        _state.update { current ->
+                            current.copy(githubLaunchUrl = url)
+                        }
+                    },
+                    onStage = { stage ->
+                        _state.update { current ->
+                            current.copy(
+                                githubLinkStatus = when (stage) {
+                                    GitHubLinkStage.PREPARING ->
+                                        "جاري تجهيز الربط…"
+                                    GitHubLinkStage.APPROVE_APP ->
+                                        "وافق في GitHub للمتابعة"
+                                    GitHubLinkStage.CHOOSE_REPOSITORIES ->
+                                        "اختر المستودعات ثم اضغط Install"
+                                    GitHubLinkStage.LOADING_REPOSITORIES ->
+                                        "جاري تحميل مشاريعك…"
+                                }
+                            )
+                        }
+                    }
+                )
 
                 secrets.clearGitHubToken()
                 secrets.saveGitHubApp(
@@ -111,11 +136,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         githubLinking = false,
                         githubLaunchUrl = null,
-                        githubUserCode = "",
+                        githubLinkStatus = "",
                         hasGitHubToken = true,
                         githubLogin = linked.ownerLogin.ifBlank { "GitHub" },
                         repositories = linked.repositories,
-                        message = "تم ربط GitHub"
+                        message = "تم ربط GitHub وتحميل مشاريعك"
+                    )
+                }
+            } catch (_: CancellationException) {
+                _state.update {
+                    it.copy(
+                        githubLinking = false,
+                        githubLaunchUrl = null,
+                        githubLinkStatus = ""
                     )
                 }
             } catch (t: Throwable) {
@@ -123,11 +156,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         githubLinking = false,
                         githubLaunchUrl = null,
-                        githubUserCode = "",
+                        githubLinkStatus = "",
                         error = friendlyLinkError(t)
                     )
                 }
+            } finally {
+                githubLinkJob = null
             }
+        }
+    }
+
+    fun cancelGitHubLink() {
+        githubLinkJob?.cancel()
+        githubLinkJob = null
+        _state.update {
+            it.copy(
+                githubLinking = false,
+                githubLaunchUrl = null,
+                githubLinkStatus = "",
+                message = "تم إلغاء الربط"
+            )
         }
     }
 
@@ -137,6 +185,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun disconnectGitHub() {
         if (_state.value.running) return
+        githubLinkJob?.cancel()
+        githubLinkJob = null
         secrets.clearGitHubToken()
         secrets.clearGitHubApp()
         _state.update {
@@ -146,7 +196,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 repositories = emptyList(),
                 githubLinking = false,
                 githubLaunchUrl = null,
-                githubUserCode = ""
+                githubLinkStatus = "",
+                message = "تم فصل GitHub"
             )
         }
     }
