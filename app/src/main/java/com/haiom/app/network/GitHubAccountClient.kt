@@ -30,22 +30,53 @@ class GitHubAccountClient(
         }
     }
 
-    suspend fun repositories(limit: Int = 80): List<GitHubRepository> = withContext(Dispatchers.IO) {
-        val safeLimit = limit.coerceIn(1, 100)
-        request("https://api.github.com/user/repos?sort=updated&direction=desc&per_page=$safeLimit&affiliation=owner,collaborator,organization_member").use { response ->
-            val raw = response.body?.string().orEmpty()
-            if (!response.isSuccessful) error("تعذر تحميل المشاريع")
-            json.parseToJsonElement(raw).jsonArray.mapNotNull { item ->
-                val obj = item.jsonObject
-                val fullName = obj["full_name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                GitHubRepository(
-                    fullName = fullName,
-                    htmlUrl = obj["html_url"]?.jsonPrimitive?.contentOrNull ?: "https://github.com/$fullName",
-                    isPrivate = obj["private"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false,
-                    updatedAt = obj["updated_at"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                )
+    suspend fun repositories(): List<GitHubRepository> = withContext(Dispatchers.IO) {
+        val all = LinkedHashMap<String, GitHubRepository>()
+        var page = 1
+
+        while (true) {
+            val url =
+                "https://api.github.com/user/repos" +
+                    "?sort=updated" +
+                    "&direction=desc" +
+                    "&per_page=100" +
+                    "&page=$page" +
+                    "&affiliation=owner,collaborator,organization_member"
+
+            val pageItems = request(url).use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) error("تعذر تحميل المشاريع")
+
+                json.parseToJsonElement(raw).jsonArray.mapNotNull { item ->
+                    val obj = item.jsonObject
+                    val fullName =
+                        obj["full_name"]?.jsonPrimitive?.contentOrNull
+                            ?: return@mapNotNull null
+
+                    GitHubRepository(
+                        fullName = fullName,
+                        htmlUrl =
+                            obj["html_url"]?.jsonPrimitive?.contentOrNull
+                                ?: "https://github.com/$fullName",
+                        isPrivate =
+                            obj["private"]?.jsonPrimitive?.contentOrNull
+                                ?.toBooleanStrictOrNull() ?: false,
+                        updatedAt =
+                            obj["updated_at"]?.jsonPrimitive?.contentOrNull
+                                .orEmpty()
+                    )
+                }
             }
+
+            pageItems.forEach { repo ->
+                all[repo.fullName] = repo
+            }
+
+            if (pageItems.size < 100) break
+            page++
         }
+
+        all.values.toList()
     }
 
     private fun request(url: String): okhttp3.Response {
@@ -54,7 +85,7 @@ class GitHubAccountClient(
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer $token")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "HAI-OM-Android/0.3")
+            .header("User-Agent", "OM-Android/0.9")
         return client.newCall(builder.build()).execute()
     }
 }
