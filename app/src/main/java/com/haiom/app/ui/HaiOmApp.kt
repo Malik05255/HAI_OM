@@ -5,9 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.provider.OpenableColumns
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -164,33 +162,14 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
     state.updateInfo?.let { update ->
         UpdateDialog(
             versionName = update.versionName,
-            downloading = state.downloadingUpdate,
-            progress = state.updateProgress,
-            installUri = state.updateInstallUri,
             onDismiss = vm::dismissUpdate,
-            onDownload = vm::downloadUpdate,
-            onInstall = { uri ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                    !context.packageManager.canRequestPackageInstalls()
-                ) {
+            onOpenDownload = {
+                runCatching {
                     context.startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                            Uri.parse("package:" + context.packageName)
-                        )
-                    )
-                } else {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(
-                                Uri.parse(uri),
-                                "application/vnd.android.package-archive"
-                            )
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
+                        Intent(Intent.ACTION_VIEW, Uri.parse(update.downloadUrl))
                     )
                 }
+                vm.dismissUpdate()
             }
         )
     }
@@ -973,47 +952,30 @@ private fun EmptyToolCard(title: String, subtitle: String) {
 @Composable
 private fun UpdateDialog(
     versionName: String,
-    downloading: Boolean,
-    progress: Int,
-    installUri: String?,
     onDismiss: () -> Unit,
-    onDownload: () -> Unit,
-    onInstall: (String) -> Unit
+    onOpenDownload: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = { if (!downloading) onDismiss() },
-        title = { Text(if (installUri == null) "تحديث جديد" else "جاهز للتثبيت") },
+        onDismissRequest = onDismiss,
+        title = { Text("تحديث جديد") },
         text = {
             Text(
-                when {
-                    downloading -> "جاري تنزيل التحديث " + progress + "%"
-                    installUri != null -> "تم تنزيل الإصدار " + versionName
-                    else -> "الإصدار " + versionName + " متوفر"
-                }
+                "الإصدار " + versionName +
+                    " متوفر. سيتم فتح ملف الإصدار الموقّع في المتصفح، ولن يطلب التطبيق صلاحية تثبيت تطبيقات أخرى."
             )
         },
         confirmButton = {
-            TextButton(
-                enabled = !downloading,
-                onClick = { if (installUri == null) onDownload() else onInstall(installUri) }
-            ) {
-                Text(
-                    when {
-                        downloading -> "جاري التنزيل…"
-                        installUri != null -> "تثبيت"
-                        else -> "تنزيل وتثبيت"
-                    }
-                )
+            TextButton(onClick = onOpenDownload) {
+                Text("فتح التنزيل")
             }
         },
         dismissButton = {
-            if (!downloading) {
-                TextButton(onClick = onDismiss) { Text("لاحقًا") }
+            TextButton(onClick = onDismiss) {
+                Text("لاحقًا")
             }
         }
     )
 }
-
 private fun displayName(context: Context, uri: Uri): String {
     val name = runCatching {
         context.contentResolver.query(
