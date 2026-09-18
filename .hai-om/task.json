@@ -1,0 +1,8 @@
+{
+  "taskId": "smoke-chat-001",
+  "requirements": "وش هذا المشروع؟ اشرح لي باختصار بدون تعديل أي ملف.",
+  "baseBranch": "main",
+  "targetBranch": "main",
+  "editAllowed": false,
+  "repository": "Malik05255/HAI_OM"
+}
