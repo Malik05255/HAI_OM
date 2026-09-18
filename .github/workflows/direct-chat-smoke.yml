@@ -1,0 +1,27 @@
+name: Direct chat smoke
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  chat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify Dahl direct chat
+        shell: bash
+        run: |
+          set -euo pipefail
+          START="$(date +%s)"
+          TOKEN="$(curl -fsS --max-time 30             -X POST https://inference.dahl.global/tokens             -H 'Content-Type: application/json'             -d '{}' | jq -r '.token')"
+
+          test -n "$TOKEN"
+          RESPONSE="$(curl -fsS --max-time 90             https://inference.dahl.global/v1/chat/completions             -H "Authorization: Bearer $TOKEN"             -H 'Content-Type: application/json'             -d '{"model":"MiniMaxAI/MiniMax-M2.7","stream":false,"max_tokens":64,"messages":[{"role":"user","content":"Reply with exactly HAI_CHAT_OK"}]}')"
+
+          echo "$RESPONSE" | jq -e '.choices[0].message.content | strings | length > 0' >/dev/null
+          END="$(date +%s)"
+          echo "direct_chat_seconds=$((END-START))"
