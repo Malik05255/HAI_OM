@@ -384,16 +384,18 @@ private fun ChatHome(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        val narrow = maxWidth < 360.dp
-        val veryWide = maxWidth >= 520.dp
-        val short = maxHeight < 680.dp
-        val keyboardLayout = imeVisible || maxHeight < 460.dp
+        val availableWidth = maxWidth
+        val availableHeight = maxHeight
+        val narrow = availableWidth < 360.dp
+        val veryWide = availableWidth >= 520.dp
+        val short = availableHeight < 680.dp
+        val keyboardLayout = imeVisible || availableHeight < 460.dp
         val horizontalPadding = when {
             narrow -> 10.dp
             veryWide -> 26.dp
             else -> 16.dp
         }
-        val showTitle = !keyboardLayout && maxHeight >= 560.dp
+        val showTitle = !keyboardLayout && availableHeight >= 560.dp
         val showEmptyHero = stateHistory.isEmpty() &&
             extraAnswer == null &&
             !running &&
@@ -433,8 +435,8 @@ private fun ChatHome(
                 if (showEmptyHero) {
                     EmptyConversation(
                         modifier = Modifier.align(Alignment.Center),
-                        availableWidth = maxWidth,
-                        availableHeight = maxHeight
+                        availableWidth = availableWidth,
+                        availableHeight = availableHeight
                     )
                 } else if (stateHistory.isNotEmpty() || extraAnswer != null || running) {
                     LazyColumn(
