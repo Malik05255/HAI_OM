@@ -84,12 +84,16 @@ class DirectChatClient(
 
             if (attempt.code == 401) {
                 cachedDahlToken = null
-                dahlToken = runCatching {
+                val refreshed = runCatching {
                     issueDahlToken().also { cachedDahlToken = it }
-                }.getOrElse {
+                }.getOrNull()
+
+                if (refreshed == null) {
                     lastError = attempt.error ?: lastError
                     continue
                 }
+
+                dahlToken = refreshed
                 attempt = send(
                     url = DAHL_CHAT_URL,
                     token = dahlToken,
