@@ -6,7 +6,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="HAI OM"
+        android:label="OM"
         android:supportsRtl="true"
         android:theme="@style/Theme.HAIOM"
         android:usesCleartextTraffic="false">
