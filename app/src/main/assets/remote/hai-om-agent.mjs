@@ -197,6 +197,7 @@ async function chat(system, user, toolContext = "") {
       ]
     : [
         "dahl/MiniMaxAI/MiniMax-M2.7",
+        "dahl/moonshotai/Kimi-K2.6",
         "kc/openrouter/free",
         "ddgw/gpt-5.6-luna",
         "ddgw/claude-haiku-4-5",
