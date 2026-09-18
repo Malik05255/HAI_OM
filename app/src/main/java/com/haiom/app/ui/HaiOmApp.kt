@@ -353,8 +353,8 @@ private fun HomeScreen(
                 value = requirements,
                 onValueChange = onRequirements,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("وش تبغى؟") },
-                minLines = 6,
+                label = { Text("اكتب رسالتك") },
+                minLines = 5,
                 maxLines = 12,
                 shape = RoundedCornerShape(20.dp)
             )
@@ -366,8 +366,6 @@ private fun HomeScreen(
                 enabled = !state.running &&
                     !state.connecting &&
                     !state.githubLinking &&
-                    state.hasGitHubToken &&
-                    selectedRepo != null &&
                     requirements.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 shape = RoundedCornerShape(18.dp)
@@ -375,11 +373,18 @@ private fun HomeScreen(
                 if (state.running) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.size(10.dp))
-                    Text(state.logs.lastOrNull() ?: "جاري العمل…", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (state.programming) state.logs.lastOrNull() ?: "جاري البرمجة…"
+                        else "جاري الرد…",
+                        fontWeight = FontWeight.Bold
+                    )
                 } else {
                     Icon(Icons.Outlined.PlayArrow, null)
                     Spacer(Modifier.size(8.dp))
-                    Text("ابدأ", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (vm.isProgrammingRequest(requirements)) "ابدأ البرمجة" else "إرسال",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
