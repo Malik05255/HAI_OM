@@ -136,10 +136,20 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
     }
 
     LaunchedEffect(state.repositories) {
-        if (selectedRepo == null && state.repositories.isNotEmpty()) {
-            selectedRepo = state.repositories.first()
-        } else if (selectedRepo != null && state.repositories.none { it.fullName == selectedRepo?.fullName }) {
-            selectedRepo = state.repositories.firstOrNull()
+        if (
+            selectedRepo != null &&
+            state.repositories.none { it.fullName == selectedRepo?.fullName }
+        ) {
+            selectedRepo = null
+        }
+    }
+
+    LaunchedEffect(state.githubJustLinked) {
+        if (state.githubJustLinked) {
+            selectedRepo = null
+            dockOpen = false
+            panel = ToolPanel.PROJECTS
+            vm.consumeGitHubJustLinked()
         }
     }
     LaunchedEffect(state.error) {
@@ -909,12 +919,26 @@ private fun ProjectsContent(
         return
     }
 
+    Text(
+        "اختر المشروع الذي تريد العمل عليه",
+        color = Ink,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 15.sp
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "${repositories.size} مشروع متاح",
+        color = Muted,
+        fontSize = 12.sp
+    )
+    Spacer(Modifier.height(12.dp))
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        items(repositories.take(60)) { repo ->
+        items(repositories) { repo ->
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1200,7 +1224,7 @@ private fun GitHubConnectCard(
                         if (linking) {
                             status.ifBlank { "جاري التحقق…" }
                         } else {
-                            "افتح GitHub، أنشئ الرمز وانسخه، ثم ارجع واضغط لصق وربط."
+                            "افتح GitHub واختر All repositories، أنشئ الرمز وانسخه، ثم ارجع واضغط لصق وربط."
                         },
                         color = Muted,
                         fontSize = 12.sp,
