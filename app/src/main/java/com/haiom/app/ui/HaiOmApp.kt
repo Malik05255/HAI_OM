@@ -15,17 +15,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,6 +39,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -57,17 +55,13 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -86,14 +80,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.LayoutDirection
@@ -104,40 +97,33 @@ import com.haiom.app.MainViewModel
 import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
 
-private val PageBackground = Color(0xFFFCFBFE)
-private val SoftLavender = Color(0xFFF1ECF5)
-private val SoftLavenderBorder = Color(0xFFE2DBE7)
-private val RailBlue = Color(0xFF2F7AE9)
-private val MutedText = Color(0xFF96929B)
-private val Ink = Color(0xFF17151A)
+private val Canvas = Color(0xFFFCFBFD)
+private val SurfaceSoft = Color(0xFFFFFAFD)
+private val Lavender = Color(0xFFF3EEF7)
+private val LavenderStrong = Color(0xFFE8DFF0)
+private val Line = Color(0xFFE7E0E9)
+private val Blue = Color(0xFF4E82E9)
+private val BlueSoft = Color(0xFFEAF0FF)
+private val Ink = Color(0xFF1B181D)
+private val Muted = Color(0xFF98929C)
 
-private enum class PanelSheet {
-    PROJECTS,
-    HISTORY,
-    MODELS,
-    SETTINGS
-}
+private enum class ToolPanel { PROJECTS, HISTORY, MODELS, SETTINGS }
 
-private data class PickedMedia(
-    val uri: Uri,
-    val name: String
-)
+private data class PickedMedia(val uri: Uri, val name: String)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HaiOmApp(vm: MainViewModel = viewModel()) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
-
     var draft by remember { mutableStateOf("") }
     var selectedRepo by remember { mutableStateOf<GitHubRepository?>(null) }
-    var railOpen by remember { mutableStateOf(false) }
-    var activeSheet by remember { mutableStateOf<PanelSheet?>(null) }
+    var dockOpen by remember { mutableStateOf(false) }
+    var panel by remember { mutableStateOf<ToolPanel?>(null) }
     val media = remember { mutableStateListOf<PickedMedia>() }
 
     val mediaPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments()
+        ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         uris.forEach { uri ->
             if (media.none { it.uri == uri }) {
@@ -153,30 +139,25 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
             selectedRepo = state.repositories.firstOrNull()
         }
     }
-
     LaunchedEffect(state.error) {
         state.error?.let {
             snackbar.showSnackbar(it)
             vm.clearError()
         }
     }
-
     LaunchedEffect(state.message) {
         state.message?.let {
             snackbar.showSnackbar(it)
             vm.clearMessage()
         }
     }
-
     LaunchedEffect(state.githubLaunchUrl, state.githubUserCode) {
         val url = state.githubLaunchUrl ?: return@LaunchedEffect
         if (state.githubUserCode.isNotBlank()) {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("GitHub", state.githubUserCode))
         }
-        runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        }
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
         vm.consumeGitHubLaunch()
     }
 
@@ -189,8 +170,7 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
             onDismiss = vm::dismissUpdate,
             onDownload = vm::downloadUpdate,
             onInstall = { uri ->
-                if (
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                     !context.packageManager.canRequestPackageInstalls()
                 ) {
                     context.startActivity(
@@ -215,152 +195,128 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
         )
     }
 
-    when (activeSheet) {
-        PanelSheet.PROJECTS -> {
-            ProjectsSheet(
-                repositories = state.repositories,
-                selectedRepo = selectedRepo,
-                connected = state.hasGitHubToken,
-                linking = state.githubLinking,
-                onDismiss = { activeSheet = null },
-                onSelect = {
-                    selectedRepo = it
-                    activeSheet = null
-                },
-                onConnect = vm::startGitHubLink
-            )
-        }
-        PanelSheet.HISTORY -> {
-            HistorySheet(
-                logs = state.logs,
-                running = state.running,
-                answer = state.result?.answer,
-                prUrl = state.result?.pullRequestUrl,
-                onDismiss = { activeSheet = null },
-                onOpenPr = { url ->
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                }
-            )
-        }
-        PanelSheet.MODELS -> {
-            ModelsSheet(
-                models = state.rankings.map { it.modelName },
-                ready = state.omniReady,
-                onDismiss = { activeSheet = null }
-            )
-        }
-        PanelSheet.SETTINGS -> {
-            SettingsSheet(
-                connected = state.hasGitHubToken,
-                login = state.githubLogin,
-                linking = state.githubLinking,
-                checkingUpdate = state.checkingUpdate,
-                onDismiss = { activeSheet = null },
-                onConnect = vm::startGitHubLink,
-                onDisconnect = vm::disconnectGitHub,
-                onCheckUpdate = vm::checkForUpdate
-            )
-        }
-        null -> Unit
-    }
-
     Scaffold(
-        containerColor = PageBackground,
+        containerColor = Canvas,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        snackbarHost = {
-            SnackbarHost(
-                hostState = snackbar,
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .imePadding()
-            )
-        }
-    ) { scaffoldPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(PageBackground)
-                .padding(scaffoldPadding)
-        ) {
-            ChatHome(
-                modifier = Modifier.fillMaxSize(),
-                stateHistory = state.chatHistory,
-                standaloneAnswer = state.result?.answer,
-                running = state.running,
-                programming = state.programming,
-                progressText = state.logs.lastOrNull(),
-                draft = draft,
-                onDraftChange = { draft = it },
-                media = media,
-                onRemoveMedia = { media.remove(it) },
-                onPickMedia = {
-                    mediaPicker.launch(
-                        arrayOf(
-                            "image/*",
-                            "video/*",
-                            "application/pdf",
-                            "text/plain"
-                        )
-                    )
-                },
-                onSend = {
-                    if (draft.isBlank() || state.running) return@ChatHome
-                    val attachmentNote = if (media.isEmpty()) {
-                        ""
-                    } else {
-                        "\n\nالمرفقات المختارة: " + media.joinToString(", ") { it.name }
+        snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = {
+            if (panel == null) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Canvas)
+                        .navigationBarsPadding()
+                ) {
+                    if (media.isNotEmpty()) {
+                        MediaStrip(media) { media.remove(it) }
                     }
-                    vm.runAgent(
-                        selectedRepo?.htmlUrl.orEmpty(),
-                        draft.trim() + attachmentNote
+                    CompactComposer(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        enabled = !state.running,
+                        onMedia = {
+                            mediaPicker.launch(
+                                arrayOf("image/*", "video/*", "application/pdf", "text/plain")
+                            )
+                        },
+                        onSend = {
+                            if (draft.isBlank() || state.running) return@CompactComposer
+                            val attachmentNote = if (media.isEmpty()) "" else
+                                "\n\nالمرفقات المختارة: " + media.joinToString(", ") { it.name }
+                            vm.runAgent(
+                                selectedRepo?.htmlUrl.orEmpty(),
+                                draft.trim() + attachmentNote
+                            )
+                            draft = ""
+                            media.clear()
+                        }
                     )
-                    draft = ""
-                    media.clear()
                 }
-            )
+            }
+        }
+    ) { innerPadding ->
+        Box(Modifier.fillMaxSize().background(Canvas)) {
+            if (panel == null) {
+                ChatCanvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = innerPadding.calculateBottomPadding()),
+                    history = state.chatHistory,
+                    standaloneAnswer = state.result?.answer,
+                    running = state.running,
+                    programming = state.programming,
+                    progressText = state.logs.lastOrNull(),
+                    selectedRepo = selectedRepo
+                )
+            } else {
+                ToolScreen(
+                    panel = panel!!,
+                    repositories = state.repositories,
+                    selectedRepo = selectedRepo,
+                    connected = state.hasGitHubToken,
+                    login = state.githubLogin,
+                    linking = state.githubLinking,
+                    logs = state.logs,
+                    answer = state.result?.answer,
+                    prUrl = state.result?.pullRequestUrl,
+                    models = state.rankings.map { it.modelName },
+                    omniReady = state.omniReady,
+                    checkingUpdate = state.checkingUpdate,
+                    onBack = { panel = null },
+                    onSelectRepo = {
+                        selectedRepo = it
+                        panel = null
+                    },
+                    onConnect = vm::startGitHubLink,
+                    onDisconnect = vm::disconnectGitHub,
+                    onCheckUpdate = vm::checkForUpdate,
+                    onOpenPr = { url ->
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    }
+                )
+            }
 
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                Box(Modifier.fillMaxSize()) {
-                    if (railOpen) {
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.04f))
-                                .clickable { railOpen = false }
-                        )
-                        SideRail(
-                            modifier = Modifier.align(Alignment.CenterStart),
-                            connected = state.hasGitHubToken,
-                            onClose = { railOpen = false },
-                            onNewChat = {
-                                vm.clearChat()
-                                draft = ""
-                                media.clear()
-                                railOpen = false
-                            },
-                            onProjects = {
-                                activeSheet = PanelSheet.PROJECTS
-                                railOpen = false
-                            },
-                            onHistory = {
-                                activeSheet = PanelSheet.HISTORY
-                                railOpen = false
-                            },
-                            onModels = {
-                                activeSheet = PanelSheet.MODELS
-                                railOpen = false
-                            },
-                            onSettings = {
-                                activeSheet = PanelSheet.SETTINGS
-                                railOpen = false
-                            }
-                        )
-                    } else {
-                        RailHandle(
-                            modifier = Modifier.align(Alignment.CenterStart),
-                            onClick = { railOpen = true }
-                        )
-                    }
+                if (dockOpen) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.025f))
+                            .clickable { dockOpen = false }
+                    )
+                    ToolDock(
+                        modifier = Modifier.align(Alignment.CenterStart),
+                        connected = state.hasGitHubToken,
+                        onClose = { dockOpen = false },
+                        onNewChat = {
+                            vm.clearChat()
+                            draft = ""
+                            media.clear()
+                            panel = null
+                            dockOpen = false
+                        },
+                        onProjects = {
+                            panel = ToolPanel.PROJECTS
+                            dockOpen = false
+                        },
+                        onHistory = {
+                            panel = ToolPanel.HISTORY
+                            dockOpen = false
+                        },
+                        onModels = {
+                            panel = ToolPanel.MODELS
+                            dockOpen = false
+                        },
+                        onSettings = {
+                            panel = ToolPanel.SETTINGS
+                            dockOpen = false
+                        }
+                    )
+                } else {
+                    DockHandle(
+                        Modifier.align(Alignment.CenterStart),
+                        onClick = { dockOpen = true }
+                    )
                 }
             }
         }
@@ -368,276 +324,69 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
 }
 
 @Composable
-private fun ChatHome(
+private fun ChatCanvas(
     modifier: Modifier,
-    stateHistory: List<ChatTurn>,
+    history: List<ChatTurn>,
     standaloneAnswer: String?,
     running: Boolean,
     programming: Boolean,
     progressText: String?,
-    draft: String,
-    onDraftChange: (String) -> Unit,
-    media: List<PickedMedia>,
-    onRemoveMedia: (PickedMedia) -> Unit,
-    onPickMedia: () -> Unit,
-    onSend: () -> Unit
+    selectedRepo: GitHubRepository?
 ) {
-    val lastHistoryAnswer = stateHistory.lastOrNull { it.role == "assistant" }?.text
-    val extraAnswer = standaloneAnswer?.takeIf {
-        it.isNotBlank() && it != lastHistoryAnswer
-    }
-
-    val density = LocalDensity.current
-    val imeBottom = WindowInsets.ime.getBottom(density)
-    val imeVisible = imeBottom > 0
-
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(PageBackground)
-    ) {
-        val availableWidth = maxWidth
-        val availableHeight = maxHeight
-        val narrow = availableWidth < 360.dp
-        val wide = availableWidth >= 520.dp
-        val short = availableHeight < 700.dp
-
-        val horizontalPadding = when {
-            narrow -> 10.dp
-            wide -> 24.dp
-            else -> 14.dp
-        }
-        val composerReserve = if (narrow || short) 64.dp else 70.dp
-        val empty = stateHistory.isEmpty() && extraAnswer == null && !running
-
-        if (empty && !imeVisible) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = horizontalPadding)
-                    .padding(bottom = composerReserve + 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(Modifier.height(if (short) 10.dp else 18.dp))
-
-                Surface(
-                    color = Color(0xFFFFFCFF),
-                    shape = RoundedCornerShape(26.dp),
-                    border = BorderStroke(1.dp, SoftLavenderBorder)
-                ) {
-                    Text(
-                        text = "دردشة",
-                        modifier = Modifier.padding(
-                            horizontal = if (narrow) 24.dp else 30.dp,
-                            vertical = if (short) 8.dp else 10.dp
-                        ),
-                        color = Color(0xFF423C46),
-                        fontSize = if (narrow) 17.sp else 19.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(Modifier.weight(if (short) 0.62f else 0.78f))
-
-                EmptyConversation(
-                    availableWidth = availableWidth,
-                    availableHeight = availableHeight
-                )
-
-                Spacer(Modifier.weight(if (short) 0.34f else 0.46f))
-            }
-        } else if (!empty || running) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .imePadding()
-                    .padding(horizontal = horizontalPadding)
-                    .padding(top = 12.dp, bottom = composerReserve + 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(stateHistory) { turn ->
-                    ChatBubble(turn)
-                }
-                extraAnswer?.let { answer ->
-                    item {
-                        ChatBubble(ChatTurn(role = "assistant", text = answer))
-                    }
-                }
-                if (running) {
-                    item {
-                        WorkingBubble(
-                            programming = programming,
-                            progressText = progressText
-                        )
-                    }
-                }
-            }
-        }
-
-        if (media.isNotEmpty()) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .imePadding()
-                    .padding(
-                        start = horizontalPadding,
-                        end = horizontalPadding,
-                        bottom = composerReserve + 14.dp
-                    )
-                    .widthIn(max = 720.dp)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                media.take(if (imeVisible) 1 else 2).forEach { item ->
-                    MediaRow(item, onRemoveMedia)
-                }
-            }
-        }
-
-        Composer(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .imePadding()
-                .padding(
-                    start = horizontalPadding,
-                    end = horizontalPadding,
-                    bottom = 8.dp
-                )
-                .widthIn(max = 720.dp),
-            value = draft,
-            onValueChange = onDraftChange,
-            enabled = !running,
-            compact = narrow || short || imeVisible,
-            onPickMedia = onPickMedia,
-            onSend = onSend
-        )
-    }
-}
-
-@Composable
-private fun EmptyConversation(
-    modifier: Modifier = Modifier,
-    availableWidth: androidx.compose.ui.unit.Dp,
-    availableHeight: androidx.compose.ui.unit.Dp
-) {
-    val narrow = availableWidth < 360.dp
-    val short = availableHeight < 700.dp
-    val logoSize = when {
-        short && narrow -> 76.dp
-        short -> 84.dp
-        narrow -> 88.dp
-        else -> 100.dp
-    }
-    val gap = when {
-        short -> 30.dp
-        availableHeight > 850.dp -> 48.dp
-        else -> 38.dp
-    }
+    val lastAnswer = history.lastOrNull { it.role == "assistant" }?.text
+    val extraAnswer = standaloneAnswer?.takeIf { it.isNotBlank() && it != lastAnswer }
+    val empty = history.isEmpty() && extraAnswer == null && !running
 
     Column(
-        modifier = modifier.padding(horizontal = if (narrow) 12.dp else 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = modifier
+            .statusBarsPadding()
+            .padding(horizontal = 18.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(logoSize)
-                .clip(CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = Color.Transparent,
-                shape = CircleShape,
-                border = BorderStroke(1.dp, Color(0xFFE8ECFA))
-            ) {}
-            Text(
-                "H AI",
-                color = Color(0xFFDCE4FB),
-                fontWeight = FontWeight.Bold,
-                fontSize = if (short) 23.sp else 27.sp
-            )
-        }
+        Spacer(Modifier.height(14.dp))
+        MinimalHeader(selectedRepo)
+        Spacer(Modifier.height(8.dp))
 
-        Spacer(Modifier.height(gap))
-
-        Text(
-            "مرحبًا، كيف أساعدك اليوم؟",
-            color = Ink,
-            fontSize = when {
-                narrow -> 19.sp
-                short -> 20.sp
-                else -> 22.sp
-            },
-            fontWeight = FontWeight.Medium,
-            maxLines = 1
-        )
-    }
-}
-
-@Composable
-private fun ChatBubble(turn: ChatTurn) {
-    val user = turn.role == "user"
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (user) Arrangement.Start else Arrangement.End
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(0.88f),
-            color = if (user) Color(0xFFF0E8F7) else Color.White,
-            shape = RoundedCornerShape(
-                topStart = 22.dp,
-                topEnd = 22.dp,
-                bottomStart = if (user) 22.dp else 6.dp,
-                bottomEnd = if (user) 6.dp else 22.dp
-            ),
-            border = BorderStroke(
-                1.dp,
-                if (user) Color(0xFFE2D7EC) else Color(0xFFEAE7EC)
-            )
-        ) {
-            Text(
-                text = turn.text,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
-                color = Ink,
-                fontSize = 16.sp,
-                lineHeight = 24.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun WorkingBubble(
-    programming: Boolean,
-    progressText: String?
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End
-    ) {
-        Surface(
-            color = Color.White,
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, Color(0xFFEAE7EC))
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+        if (empty) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                EmptyState(Modifier.align(Alignment.Center))
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(top = 18.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = RailBlue
-                )
-                Spacer(Modifier.width(10.dp))
+                items(history) { MessageBlock(it) }
+                extraAnswer?.let { answer ->
+                    item { MessageBlock(ChatTurn("assistant", answer)) }
+                }
+                if (running) {
+                    item { RunningLine(programming, progressText) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MinimalHeader(selectedRepo: GitHubRepository?) {
+    Surface(
+        modifier = Modifier.widthIn(min = 96.dp, max = 210.dp),
+        color = SurfaceSoft,
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, Line)
+    ) {
+        Column(
+            Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("H AI", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            selectedRepo?.let {
                 Text(
-                    if (programming) progressText ?: "جاري تنفيذ المطلوب…" else "جاري الرد…",
-                    color = Color(0xFF5B5660)
+                    it.fullName.substringAfter('/'),
+                    color = Muted,
+                    fontSize = 10.sp,
+                    maxLines = 1
                 )
             }
         }
@@ -645,79 +394,142 @@ private fun WorkingBubble(
 }
 
 @Composable
-private fun Composer(
-    modifier: Modifier = Modifier,
+private fun EmptyState(modifier: Modifier = Modifier) {
+    Column(
+        modifier.padding(horizontal = 26.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("H · AI", color = Color(0xFFE1E7F7), fontSize = 34.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(22.dp))
+        Text("كيف أساعدك؟", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(7.dp))
+        Text("ابدأ من شريط الكتابة بالأسفل", color = Muted, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun MessageBlock(turn: ChatTurn) {
+    val user = turn.role == "user"
+    val fence = 96.toChar().toString().repeat(3)
+    val codeLike = turn.text.contains(fence)
+
+    if (user) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.82f),
+                color = Lavender,
+                shape = RoundedCornerShape(20.dp, 20.dp, 7.dp, 20.dp)
+            ) {
+                Text(
+                    turn.text,
+                    Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                    color = Ink,
+                    fontSize = 15.sp,
+                    lineHeight = 23.sp
+                )
+            }
+        }
+    } else {
+        Column(Modifier.fillMaxWidth()) {
+            Text("H AI", color = Blue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(5.dp))
+            if (codeLike) {
+                Surface(
+                    Modifier.fillMaxWidth(),
+                    color = Color(0xFFF7F5F8),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Line)
+                ) {
+                    Text(
+                        turn.text.replace(fence, ""),
+                        Modifier.padding(14.dp),
+                        color = Color(0xFF3B3840),
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            } else {
+                Text(turn.text, color = Ink, fontSize = 15.sp, lineHeight = 24.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RunningLine(programming: Boolean, progressText: String?) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Blue)
+        Spacer(Modifier.width(9.dp))
+        Text(
+            if (programming) progressText ?: "جاري تنفيذ المطلوب…" else "جاري الرد…",
+            color = Muted,
+            fontSize = 13.sp
+        )
+    }
+}
+
+@Composable
+private fun CompactComposer(
     value: String,
     onValueChange: (String) -> Unit,
     enabled: Boolean,
-    compact: Boolean,
-    onPickMedia: () -> Unit,
+    onMedia: () -> Unit,
     onSend: () -> Unit
 ) {
-    val buttonSize = if (compact) 42.dp else 46.dp
-    val inputFont = if (compact) 17.sp else 18.sp
-
+    val c = LocalConfiguration.current
+    val compact = c.screenWidthDp < 360 || c.screenHeightDp < 680
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Surface(
-            modifier = modifier.fillMaxWidth(),
-            color = Color(0xFFFAF7FB),
-            shape = RoundedCornerShape(if (compact) 30.dp else 34.dp),
-            border = BorderStroke(1.dp, SoftLavenderBorder)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+            color = Color(0xFFF8F4FA),
+            shape = RoundedCornerShape(29.dp),
+            border = BorderStroke(1.dp, LavenderStrong)
         ) {
             Row(
-                modifier = Modifier.padding(
-                    horizontal = 7.dp,
-                    vertical = if (compact) 5.dp else 6.dp
-                ),
+                Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FilledIconButton(
                     onClick = onSend,
                     enabled = enabled && value.isNotBlank(),
-                    modifier = Modifier.size(buttonSize),
+                    modifier = Modifier.size(if (compact) 40.dp else 42.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = if (value.isNotBlank() && enabled) Color(0xFF5A5864) else Color(0xFFE6E1E8),
+                        containerColor = Color(0xFF66616A),
                         contentColor = Color.White,
-                        disabledContainerColor = Color(0xFFE6E1E8),
-                        disabledContentColor = Color(0xFF98939C)
+                        disabledContainerColor = Color(0xFFE7E1E9),
+                        disabledContentColor = Color(0xFF9C96A0)
                     )
                 ) {
-                    Icon(
-                        Icons.Outlined.ArrowUpward,
-                        "إرسال",
-                        modifier = Modifier.size(if (compact) 23.dp else 25.dp)
-                    )
+                    Icon(Icons.Outlined.ArrowUpward, "إرسال", Modifier.size(22.dp))
                 }
 
                 Spacer(Modifier.width(6.dp))
-
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     BasicTextField(
                         value = value,
                         onValueChange = onValueChange,
                         enabled = enabled,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 7.dp, vertical = 7.dp),
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 6.dp),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = Ink,
-                            fontSize = inputFont
+                            fontSize = if (compact) 16.sp else 17.sp
                         ),
-                        cursorBrush = SolidColor(RailBlue),
-                        maxLines = if (compact) 3 else 5,
+                        cursorBrush = SolidColor(Blue),
+                        maxLines = 4,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(
-                            onSend = {
-                                if (value.isNotBlank() && enabled) onSend()
-                            }
+                            onSend = { if (value.isNotBlank() && enabled) onSend() }
                         ),
                         decorationBox = { inner ->
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (value.isBlank()) {
                                     Text(
-                                        "اطرح سؤالاً…",
-                                        color = MutedText,
-                                        fontSize = inputFont
+                                        "اكتب هنا…",
+                                        color = Muted,
+                                        fontSize = if (compact) 16.sp else 17.sp
                                     )
                                 }
                                 inner()
@@ -725,25 +537,19 @@ private fun Composer(
                         }
                     )
                 }
-
                 Spacer(Modifier.width(6.dp))
-
                 FilledIconButton(
-                    onClick = onPickMedia,
+                    onClick = onMedia,
                     enabled = enabled,
-                    modifier = Modifier.size(buttonSize),
+                    modifier = Modifier.size(if (compact) 40.dp else 42.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = RailBlue,
+                        containerColor = Blue,
                         contentColor = Color.White,
-                        disabledContainerColor = RailBlue.copy(alpha = 0.4f),
+                        disabledContainerColor = Blue.copy(alpha = 0.38f),
                         disabledContentColor = Color.White.copy(alpha = 0.7f)
                     )
                 ) {
-                    Icon(
-                        Icons.Outlined.Add,
-                        "إدراج وسائط",
-                        modifier = Modifier.size(if (compact) 25.dp else 27.dp)
-                    )
+                    Icon(Icons.Outlined.Add, "إدراج وسائط", Modifier.size(24.dp))
                 }
             }
         }
@@ -751,72 +557,53 @@ private fun Composer(
 }
 
 @Composable
-private fun MediaRow(
-    item: PickedMedia,
-    onRemove: (PickedMedia) -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = SoftLavender,
-        shape = RoundedCornerShape(16.dp)
+private fun MediaStrip(media: List<PickedMedia>, onRemove: (PickedMedia) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "مرفق: " + item.name,
+        media.take(2).forEach { item ->
+            Surface(
                 modifier = Modifier.weight(1f),
-                color = Color(0xFF5F5864),
-                maxLines = 1
-            )
-            IconButton(
-                onClick = { onRemove(item) },
-                modifier = Modifier.size(36.dp)
+                color = BlueSoft,
+                shape = RoundedCornerShape(13.dp)
             ) {
-                Icon(
-                    Icons.Outlined.Close,
-                    "إزالة",
-                    tint = Color(0xFF6A626D)
-                )
+                Row(
+                    Modifier.padding(start = 10.dp, end = 3.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        item.name,
+                        Modifier.weight(1f),
+                        color = Color(0xFF5D6270),
+                        fontSize = 11.sp,
+                        maxLines = 1
+                    )
+                    IconButton(onClick = { onRemove(item) }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Outlined.Close, "إزالة", Modifier.size(16.dp), tint = Color(0xFF666B76))
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RailHandle(
-    modifier: Modifier,
-    onClick: () -> Unit
-) {
-    val configuration = LocalConfiguration.current
-    val short = configuration.screenHeightDp < 700
-    val narrow = configuration.screenWidthDp < 360
-    val handleWidth = if (narrow) 21.dp else 23.dp
-    val handleHeight = if (short) 70.dp else 82.dp
-
+private fun DockHandle(modifier: Modifier, onClick: () -> Unit) {
     Surface(
-        modifier = modifier
-            .width(handleWidth)
-            .height(handleHeight)
-            .clickable(onClick = onClick),
-        color = RailBlue,
+        modifier = modifier.width(19.dp).height(76.dp).clickable(onClick = onClick),
+        color = Blue,
         shape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp),
         shadowElevation = 2.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(
-                Icons.Outlined.MoreVert,
-                "فتح الأدوات",
-                tint = Color.White,
-                modifier = Modifier.size(19.dp)
-            )
+            Icon(Icons.Outlined.MoreVert, "الأدوات", tint = Color.White, modifier = Modifier.size(16.dp))
         }
     }
 }
 
 @Composable
-private fun SideRail(
+private fun ToolDock(
     modifier: Modifier,
     connected: Boolean,
     onClose: () -> Unit,
@@ -826,197 +613,170 @@ private fun SideRail(
     onModels: () -> Unit,
     onSettings: () -> Unit
 ) {
-    val configuration = LocalConfiguration.current
-    val screenHeight = configuration.screenHeightDp
-    val screenWidth = configuration.screenWidthDp
-    val narrow = screenWidth < 360
-    val railWidth = if (narrow) 70.dp else 76.dp
-    val railHeight = (screenHeight * 0.50f).dp.coerceIn(300.dp, 410.dp)
-    val handleWidth = if (narrow) 21.dp else 23.dp
-    val handleHeight = if (screenHeight < 700) 70.dp else 82.dp
-
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Surface(
-            modifier = Modifier
-                .width(railWidth)
-                .height(railHeight),
-            color = Color(0xFFFFFBFF),
-            shape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
-            border = BorderStroke(1.dp, Color(0xFFE4DEE7)),
-            shadowElevation = 7.dp
+            modifier = Modifier.width(66.dp),
+            color = SurfaceSoft,
+            shape = RoundedCornerShape(topEnd = 32.dp, bottomEnd = 32.dp),
+            border = BorderStroke(1.dp, Line),
+            shadowElevation = 8.dp
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(vertical = if (screenHeight < 700) 8.dp else 12.dp),
+                Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceEvenly
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                RailIconButton(
-                    icon = Icons.Outlined.ChatBubbleOutline,
-                    label = "دردشة جديدة",
-                    onClick = onNewChat
-                )
-                RailIconButton(
-                    icon = Icons.Outlined.FolderOpen,
-                    label = "المشاريع",
-                    onClick = onProjects
-                )
-                RailIconButton(
-                    icon = Icons.Outlined.History,
-                    label = "السجل والتعديلات",
-                    onClick = onHistory
-                )
-                RailIconButton(
-                    icon = Icons.Outlined.AutoAwesome,
-                    label = "النماذج",
-                    onClick = onModels
-                )
-                Box(
-                    modifier = Modifier
-                        .width(if (narrow) 42.dp else 48.dp)
-                        .height(1.dp)
-                        .background(Color(0xFFDAD3DD))
-                )
-                RailIconButton(
-                    icon = Icons.Outlined.Settings,
-                    label = if (connected) "الإعدادات" else "الربط والإعدادات",
-                    onClick = onSettings
-                )
+                DockIcon(Icons.Outlined.ChatBubbleOutline, "دردشة جديدة", onNewChat)
+                DockIcon(Icons.Outlined.FolderOpen, "المشاريع", onProjects)
+                DockIcon(Icons.Outlined.History, "السجل", onHistory)
+                DockIcon(Icons.Outlined.AutoAwesome, "النماذج", onModels)
+                HorizontalDivider(Modifier.width(34.dp), color = Line)
+                DockIcon(Icons.Outlined.Settings, if (connected) "الإعدادات" else "الربط", onSettings)
             }
         }
-
         Surface(
-            modifier = Modifier
-                .width(handleWidth)
-                .height(handleHeight)
-                .clickable(onClick = onClose),
-            color = RailBlue,
-            shape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp)
+            modifier = Modifier.width(18.dp).height(70.dp).clickable(onClick = onClose),
+            color = Blue,
+            shape = RoundedCornerShape(topEnd = 11.dp, bottomEnd = 11.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Outlined.MoreVert,
-                    "إغلاق الأدوات",
-                    tint = Color.White,
-                    modifier = Modifier.size(19.dp)
-                )
+                Icon(Icons.Outlined.MoreVert, "إغلاق", tint = Color.White, modifier = Modifier.size(15.dp))
             }
         }
     }
 }
 
 @Composable
-private fun RailIconButton(
+private fun DockIcon(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     onClick: () -> Unit
 ) {
-    val configuration = LocalConfiguration.current
-    val compact = configuration.screenHeightDp < 700 || configuration.screenWidthDp < 360
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier.size(if (compact) 45.dp else 50.dp)
+    Surface(
+        modifier = Modifier.size(43.dp),
+        color = Color.White,
+        shape = CircleShape,
+        border = BorderStroke(1.dp, Line)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = Ink,
-            modifier = Modifier.size(if (compact) 25.dp else 28.dp)
-        )
+        IconButton(onClick = onClick) {
+            Icon(icon, label, tint = Ink, modifier = Modifier.size(23.dp))
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProjectsSheet(
+private fun ToolScreen(
+    panel: ToolPanel,
+    repositories: List<GitHubRepository>,
+    selectedRepo: GitHubRepository?,
+    connected: Boolean,
+    login: String,
+    linking: Boolean,
+    logs: List<String>,
+    answer: String?,
+    prUrl: String?,
+    models: List<String>,
+    omniReady: Boolean,
+    checkingUpdate: Boolean,
+    onBack: () -> Unit,
+    onSelectRepo: (GitHubRepository) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    onOpenPr: (String) -> Unit
+) {
+    Column(
+        Modifier.fillMaxSize().background(Canvas)
+            .statusBarsPadding().navigationBarsPadding()
+            .padding(horizontal = 18.dp)
+    ) {
+        ToolHeader(
+            when (panel) {
+                ToolPanel.PROJECTS -> "المشاريع"
+                ToolPanel.HISTORY -> "السجل والتعديلات"
+                ToolPanel.MODELS -> "النماذج"
+                ToolPanel.SETTINGS -> "الإعدادات"
+            },
+            onBack
+        )
+        Spacer(Modifier.height(18.dp))
+        when (panel) {
+            ToolPanel.PROJECTS -> ProjectsContent(
+                repositories, selectedRepo, connected, linking, onSelectRepo, onConnect
+            )
+            ToolPanel.HISTORY -> HistoryContent(logs, answer, prUrl, onOpenPr)
+            ToolPanel.MODELS -> ModelsContent(models, omniReady)
+            ToolPanel.SETTINGS -> SettingsContent(
+                connected, login, linking, checkingUpdate,
+                onConnect, onDisconnect, onCheckUpdate
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolHeader(title: String, onBack: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBack, modifier = Modifier.size(42.dp)) {
+            Icon(Icons.Outlined.ArrowBack, "رجوع", tint = Ink)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(title, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun ProjectsContent(
     repositories: List<GitHubRepository>,
     selectedRepo: GitHubRepository?,
     connected: Boolean,
     linking: Boolean,
-    onDismiss: () -> Unit,
     onSelect: (GitHubRepository) -> Unit,
     onConnect: () -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFFFFFBFF)
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
+    if (!connected) {
+        EmptyToolCard("GitHub غير مربوط", "اربط حسابك حتى تظهر المشاريع هنا.")
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = onConnect,
+            enabled = !linking,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
         ) {
-            Text(
-                "المشاريع",
-                fontSize = 23.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-            Spacer(Modifier.height(12.dp))
-
-            if (!connected) {
-                Text(
-                    "اربط GitHub حتى تظهر مشاريعك هنا.",
-                    color = MutedText
-                )
-                Spacer(Modifier.height(14.dp))
-                Button(
-                    onClick = onConnect,
-                    enabled = !linking,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Icon(Icons.Outlined.Link, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (linking) "بانتظار الموافقة…" else "ربط GitHub")
-                }
-            } else if (repositories.isEmpty()) {
-                SheetMessage("لا توجد مشاريع ظاهرة حاليًا.")
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(420.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(repositories.take(50)) { repo ->
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelect(repo) },
-                            color = if (selectedRepo?.fullName == repo.fullName) SoftLavender else Color.White,
-                            shape = RoundedCornerShape(18.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE8E2EA))
-                        ) {
-                            Row(
-                                Modifier.padding(15.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Outlined.FolderOpen,
-                                    null,
-                                    tint = RailBlue
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    repo.fullName.substringAfter('/'),
-                                    modifier = Modifier.weight(1f),
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                if (selectedRepo?.fullName == repo.fullName) {
-                                    Icon(
-                                        Icons.Outlined.CheckCircle,
-                                        null,
-                                        tint = RailBlue
-                                    )
-                                }
-                            }
-                        }
+            Icon(Icons.Outlined.Link, null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (linking) "بانتظار الموافقة…" else "ربط GitHub")
+        }
+        return
+    }
+    if (repositories.isEmpty()) {
+        EmptyToolCard("لا توجد مشاريع", "لا توجد مستودعات ظاهرة حاليًا.")
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        items(repositories.take(60)) { repo ->
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { onSelect(repo) },
+                color = if (selectedRepo?.fullName == repo.fullName) Lavender else Color.White,
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, Line)
+            ) {
+                Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.FolderOpen, null, tint = Blue)
+                    Spacer(Modifier.width(11.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(repo.fullName.substringAfter('/'), color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text(repo.fullName.substringBefore('/'), color = Muted, fontSize = 11.sp)
+                    }
+                    if (selectedRepo?.fullName == repo.fullName) {
+                        Icon(Icons.Outlined.CheckCircle, null, tint = Blue)
                     }
                 }
             }
@@ -1024,284 +784,164 @@ private fun ProjectsSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HistorySheet(
+private fun HistoryContent(
     logs: List<String>,
-    running: Boolean,
     answer: String?,
     prUrl: String?,
-    onDismiss: () -> Unit,
     onOpenPr: (String) -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFFFFFBFF)
+    if (logs.isEmpty() && answer.isNullOrBlank()) {
+        EmptyToolCard("السجل فارغ", "ستظهر هنا خطوات التنفيذ والتعديلات.")
+        return
+    }
+    LazyColumn(
+        modifier = Modifier.weight(1f),
+        contentPadding = PaddingValues(bottom = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
-        ) {
-            Text(
-                "السجل والتعديلات",
-                fontSize = 23.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-            Spacer(Modifier.height(10.dp))
-
-            if (logs.isEmpty() && answer.isNullOrBlank()) {
-                SheetMessage("لا توجد مهام سابقة في هذه الجلسة.")
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(360.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp)
-                ) {
-                    items(logs.reversed()) { log ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(if (running) RailBlue else Color(0xFFA7A1AA))
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                log,
-                                modifier = Modifier.weight(1f),
-                                color = Ink
-                            )
-                        }
-                        HorizontalDivider(color = Color(0xFFEDE8EF))
-                    }
-                    answer?.takeIf { it.isNotBlank() }?.let {
-                        item {
-                            Surface(
-                                color = SoftLavender,
-                                shape = RoundedCornerShape(18.dp)
-                            ) {
-                                Text(
-                                    it,
-                                    modifier = Modifier.padding(15.dp),
-                                    color = Ink
-                                )
-                            }
-                        }
-                    }
+        items(logs.reversed()) { log ->
+            Surface(
+                Modifier.fillMaxWidth(),
+                color = Color.White,
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Line)
+            ) {
+                Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(Blue))
+                    Spacer(Modifier.width(10.dp))
+                    Text(log, color = Ink, fontSize = 13.sp)
                 }
             }
-
-            if (!prUrl.isNullOrBlank()) {
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = { onOpenPr(prUrl) },
-                    modifier = Modifier.fillMaxWidth(),
+        }
+        answer?.takeIf { it.isNotBlank() }?.let { text ->
+            item {
+                Surface(
+                    Modifier.fillMaxWidth(),
+                    color = Lavender,
                     shape = RoundedCornerShape(18.dp)
                 ) {
-                    Icon(Icons.Outlined.Code, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("فتح آخر تعديل")
+                    Text(text, Modifier.padding(15.dp), color = Ink, fontSize = 14.sp)
                 }
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ModelsSheet(
-    models: List<String>,
-    ready: Boolean,
-    onDismiss: () -> Unit
-) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFFFFFBFF)
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
+    if (!prUrl.isNullOrBlank()) {
+        OutlinedButton(
+            onClick = { onOpenPr(prUrl) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
         ) {
-            Text(
-                "النماذج",
-                fontSize = 23.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (ready) "المسار المجاني جاهز." else "المسار المجاني غير جاهز بعد.",
-                color = MutedText
-            )
-            Spacer(Modifier.height(14.dp))
+            Icon(Icons.Outlined.Code, null)
+            Spacer(Modifier.width(8.dp))
+            Text("فتح آخر تعديل")
+        }
+        Spacer(Modifier.height(10.dp))
+    }
+}
 
-            if (models.isEmpty()) {
-                SheetMessage("يتم اختيار النموذج المجاني تلقائيًا حسب التوفر.")
-            } else {
-                models.take(12).forEachIndexed { index, name ->
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp),
-                        color = Color.White,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Color(0xFFEAE5EC))
-                    ) {
-                        Row(
-                            Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Outlined.AutoAwesome,
-                                null,
-                                tint = RailBlue
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                name,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                "#" + (index + 1),
-                                color = MutedText
-                            )
-                        }
-                    }
+@Composable
+private fun ModelsContent(models: List<String>, ready: Boolean) {
+    EmptyToolCard(
+        if (ready) "المسار المجاني جاهز" else "المسار غير جاهز",
+        "اختيار النموذج يتم تلقائيًا حسب التوفر."
+    )
+    if (models.isNotEmpty()) {
+        Spacer(Modifier.height(12.dp))
+        models.take(12).forEachIndexed { index, model ->
+            Surface(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                color = Color.White,
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Line)
+            ) {
+                Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.AutoAwesome, null, tint = Blue)
+                    Spacer(Modifier.width(10.dp))
+                    Text(model, Modifier.weight(1f), color = Ink)
+                    Text("#" + (index + 1), color = Muted, fontSize = 11.sp)
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsSheet(
+private fun SettingsContent(
     connected: Boolean,
     login: String,
     linking: Boolean,
     checkingUpdate: Boolean,
-    onDismiss: () -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFFFFFBFF)
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
-        ) {
-            Text(
-                "الإعدادات",
-                fontSize = 23.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-            Spacer(Modifier.height(16.dp))
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = SoftLavender,
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Row(
-                    Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Outlined.AccountCircle,
-                        null,
-                        tint = RailBlue,
-                        modifier = Modifier.size(30.dp)
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (connected) login.ifBlank { "GitHub" } else "GitHub غير مربوط",
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            if (connected) "المشاريع متاحة للتنفيذ" else "اربط الحساب لاستخدام البرمجة",
-                            color = MutedText,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            if (connected) {
-                OutlinedButton(
-                    onClick = onDisconnect,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Icon(Icons.Outlined.Logout, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("فصل GitHub")
-                }
-            } else {
-                Button(
-                    onClick = onConnect,
-                    enabled = !linking,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Icon(Icons.Outlined.Link, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (linking) "بانتظار الموافقة…" else "ربط GitHub")
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            OutlinedButton(
-                onClick = onCheckUpdate,
-                enabled = !checkingUpdate,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                if (checkingUpdate) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Icon(Icons.Outlined.Refresh, null)
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(if (checkingUpdate) "جاري البحث…" else "البحث عن تحديث")
+    Surface(Modifier.fillMaxWidth(), color = Lavender, shape = RoundedCornerShape(20.dp)) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.AccountCircle, null, tint = Blue, modifier = Modifier.size(30.dp))
+            Spacer(Modifier.width(11.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (connected) login.ifBlank { "GitHub" } else "GitHub غير مربوط",
+                    color = Ink,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    if (connected) "المشاريع متاحة للتنفيذ" else "الربط مطلوب للبرمجة",
+                    color = Muted,
+                    fontSize = 12.sp
+                )
             }
         }
+    }
+    Spacer(Modifier.height(12.dp))
+    if (connected) {
+        OutlinedButton(
+            onClick = onDisconnect,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Icon(Icons.Outlined.Logout, null)
+            Spacer(Modifier.width(8.dp))
+            Text("فصل GitHub")
+        }
+    } else {
+        Button(
+            onClick = onConnect,
+            enabled = !linking,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Icon(Icons.Outlined.Link, null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (linking) "بانتظار الموافقة…" else "ربط GitHub")
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    OutlinedButton(
+        onClick = onCheckUpdate,
+        enabled = !checkingUpdate,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        if (checkingUpdate) {
+            CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
+        } else {
+            Icon(Icons.Outlined.Refresh, null)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(if (checkingUpdate) "جاري البحث…" else "البحث عن تحديث")
     }
 }
 
 @Composable
-private fun SheetMessage(text: String) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = SoftLavender,
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(16.dp),
-            color = Color(0xFF615A65)
-        )
+private fun EmptyToolCard(title: String, subtitle: String) {
+    Surface(Modifier.fillMaxWidth(), color = Lavender, shape = RoundedCornerShape(20.dp)) {
+        Column(Modifier.padding(17.dp)) {
+            Text(title, color = Ink, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(subtitle, color = Muted, fontSize = 12.sp)
+        }
     }
 }
 
@@ -1316,12 +956,8 @@ private fun UpdateDialog(
     onInstall: (String) -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = {
-            if (!downloading) onDismiss()
-        },
-        title = {
-            Text(if (installUri == null) "تحديث جديد" else "جاهز للتثبيت")
-        },
+        onDismissRequest = { if (!downloading) onDismiss() },
+        title = { Text(if (installUri == null) "تحديث جديد" else "جاهز للتثبيت") },
         text = {
             Text(
                 when {
@@ -1334,9 +970,7 @@ private fun UpdateDialog(
         confirmButton = {
             TextButton(
                 enabled = !downloading,
-                onClick = {
-                    if (installUri == null) onDownload() else onInstall(installUri)
-                }
+                onClick = { if (installUri == null) onDownload() else onInstall(installUri) }
             ) {
                 Text(
                     when {
@@ -1349,9 +983,7 @@ private fun UpdateDialog(
         },
         dismissButton = {
             if (!downloading) {
-                TextButton(onClick = onDismiss) {
-                    Text("لاحقًا")
-                }
+                TextButton(onClick = onDismiss) { Text("لاحقًا") }
             }
         }
     )
@@ -1370,6 +1002,5 @@ private fun displayName(context: Context, uri: Uri): String {
             if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
         }
     }.getOrNull()
-
     return name?.takeIf { it.isNotBlank() } ?: "وسائط"
 }
