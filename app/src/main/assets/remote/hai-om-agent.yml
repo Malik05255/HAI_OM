@@ -3,26 +3,51 @@ name: HAI OM Agent
 on:
   push:
     branches:
-      - "hai-agent/**"
+      - "hai-om/runtime"
 
 permissions:
   contents: write
 
+concurrency:
+  group: hai-om-runtime
+  cancel-in-progress: false
+
 jobs:
   agent:
-    if: contains(github.event.head_commit.message, 'agent(remote-bootstrap):')
+    if: startsWith(github.event.head_commit.message, 'agent(task):')
     runs-on: ubuntu-latest
     timeout-minutes: 55
 
     steps:
+      - name: Checkout HAI OM runtime
+        uses: actions/checkout@v5
+        with:
+          ref: hai-om/runtime
+          path: runtime
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Read task
+        id: task
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="$GITHUB_WORKSPACE/runtime/.hai-om/task.json"
+          test -s "$FILE"
+          echo "task_id=$(jq -r '.taskId' "$FILE")" >> "$GITHUB_OUTPUT"
+          echo "target_branch=$(jq -r '.targetBranch' "$FILE")" >> "$GITHUB_OUTPUT"
+          echo "edit_allowed=$(jq -r '.editAllowed' "$FILE")" >> "$GITHUB_OUTPUT"
+
       - name: Checkout project
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ steps.task.outputs.target_branch }}
+          path: work
           fetch-depth: 0
           persist-credentials: false
 
       - name: Java
+        if: steps.task.outputs.edit_allowed == 'true'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -33,11 +58,28 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Restore OmniRoute runtime
+        id: omni-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.hai-om/omniroute
+          key: hai-om-omniroute-3.8.50-node22-linux
+
+      - name: Install OmniRoute runtime
+        if: steps.omni-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.hai-om/omniroute"
+          npm install --prefix "$HOME/.hai-om/omniroute" omniroute@3.8.50 --no-fund --no-audit
+
       - name: Start free AI engine
         shell: bash
         run: |
           set -euo pipefail
-          npm install -g omniroute@latest --no-fund --no-audit
+          export PATH="$HOME/.hai-om/omniroute/node_modules/.bin:$PATH"
+          export OMNIROOT="$HOME/.hai-om/omniroute/node_modules/omniroute"
+
           OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/omniroute.pid"
 
@@ -55,10 +97,6 @@ jobs:
             exit 1
           fi
 
-          # Configure OmniRoute through its own authenticated local CLI transport.
-          # Routing is fail-closed to zero-cost sources and token compression is on.
-          OMNIROOT="$(npm root -g)/omniroute"
-          export OMNIROOT
           node --input-type=module <<'NODE'
           import fs from "node:fs";
           import path from "node:path";
@@ -77,8 +115,6 @@ jobs:
           });
           if (!settings.ok) throw new Error("Unable to enable strict free-only routing: " + settings.status);
 
-          // Compression's write endpoint requires dashboard auth. This runner is
-          // local and ephemeral, so persist through OmniRoute's own SQLite helper.
           const { db } = await openOmniRouteDb();
           try {
             const put = db.prepare(
@@ -100,10 +136,7 @@ jobs:
                 applyToCodeBlocks: false,
                 applyToAssistantMessages: false
               },
-              cavemanConfig: {
-                enabled: true,
-                intensity: "full"
-              }
+              cavemanConfig: { enabled: true, intensity: "full" }
             };
             const tx = db.transaction(() => {
               for (const [key, value] of Object.entries(compression)) {
@@ -115,8 +148,6 @@ jobs:
             db.close();
           }
 
-          // Dahl intentionally offers a no-signup temporary token endpoint.
-          // Keep the token only in the ephemeral runner temp directory.
           try {
             const tokenRes = await apiFetch("/api/dahl/tokens", { method: "POST", retry: false });
             if (tokenRes.ok) {
@@ -128,8 +159,7 @@ jobs:
           } catch {}
           NODE
 
-          # Compression settings are cached for up to five seconds by OmniRoute.
-          sleep 6
+          sleep 1
 
           if [ -s "$RUNNER_TEMP/dahl-token" ]; then
             export HAI_DAHL_TOKEN="$(cat "$RUNNER_TEMP/dahl-token")"
@@ -142,13 +172,37 @@ jobs:
             rm -f "$RUNNER_TEMP/dahl-token"
           fi
 
-      - name: Build, test, and repair
+      - name: Answer or program
+        working-directory: work
         env:
           GITHUB_TOKEN: ${{ github.token }}
           HAI_OMNIROUTE_URL: http://127.0.0.1:20128
-          HAI_BRANCH: ${{ github.ref_name }}
+          HAI_BRANCH: ${{ steps.task.outputs.target_branch }}
           HAI_REPOSITORY: ${{ github.repository }}
-        run: node .hai-om/agent.mjs
+          HAI_TASK_PATH: ${{ github.workspace }}/runtime/.hai-om/task.json
+          HAI_RESULT_PATH: ${{ runner.temp }}/hai-om-result.json
+        run: node "$GITHUB_WORKSPACE/runtime/.hai-om/agent.mjs"
+
+      - name: Publish result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TASK_ID: ${{ steps.task.outputs.task_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="$RUNNER_TEMP/hai-om-result.json"
+          test -s "$FILE"
+          CONTENT="$(base64 -w 0 "$FILE")"
+          jq -n \
+            --arg message "runtime-result: $TASK_ID" \
+            --arg content "$CONTENT" \
+            --arg branch "hai-om/runtime" \
+            '{message:$message,content:$content,branch:$branch}' \
+            | gh api \
+                --method PUT \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/$GITHUB_REPOSITORY/contents/.hai-om/results/$TASK_ID.json" \
+                --input - >/dev/null
 
       - name: Stop AI engine
         if: always()
