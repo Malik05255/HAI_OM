@@ -722,7 +722,13 @@ private fun ToolScreen(
             ToolPanel.PROJECTS -> ProjectsContent(
                 repositories, selectedRepo, connected, linking, onSelectRepo, onConnect
             )
-            ToolPanel.HISTORY -> HistoryContent(logs, answer, prUrl, onOpenPr)
+            ToolPanel.HISTORY -> HistoryContent(
+                logs = logs,
+                answer = answer,
+                prUrl = prUrl,
+                onOpenPr = onOpenPr,
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            )
             ToolPanel.MODELS -> ModelsContent(models, omniReady)
             ToolPanel.SETTINGS -> SettingsContent(
                 connected, login, linking, checkingUpdate,
@@ -807,14 +813,15 @@ private fun HistoryContent(
     logs: List<String>,
     answer: String?,
     prUrl: String?,
-    onOpenPr: (String) -> Unit
+    onOpenPr: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     if (logs.isEmpty() && answer.isNullOrBlank()) {
         EmptyToolCard("السجل فارغ", "ستظهر هنا خطوات التنفيذ والتعديلات.")
         return
     }
     LazyColumn(
-        modifier = Modifier.weight(1f),
+        modifier = modifier,
         contentPadding = PaddingValues(bottom = 18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
