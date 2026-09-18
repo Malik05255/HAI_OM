@@ -203,8 +203,13 @@ class GitHubClient(
             if (matching.isNotEmpty()) {
                 val pending = matching.filter { it["status"]?.jsonPrimitive?.content != "completed" }
                 if (pending.isNotEmpty()) {
-                    val events = pending.mapNotNull { it["event"]?.jsonPrimitive?.contentOrNull }.distinct().joinToString("+")
-                    onEvent("CI${if (events.isNotBlank()) " [$events]" else ""}: يعمل (${pending.size}/${matching.size})")
+                    val activeRunId = pending.first()["id"]?.jsonPrimitive?.longOrNull
+                    val stage = activeRunId?.let { currentRunStage(repo, it) }
+                    if (!stage.isNullOrBlank()) {
+                        onEvent(stage)
+                    } else {
+                        onEvent("جاري التنفيذ")
+                    }
                 } else {
                     val failed = matching.filter {
                         it["conclusion"]?.jsonPrimitive?.contentOrNull !in setOf("success", "neutral", "skipped")
@@ -224,9 +229,34 @@ class GitHubClient(
             } else if (attempt == 8) {
                 onEvent("لم يظهر CI بعد؛ سأواصل الانتظار")
             }
-            delay(12_000)
+            delay(if (attempt < 15) 4_000 else 8_000)
         }
         return CiResult(CiState.NOT_FOUND)
+    }
+
+
+    private suspend fun currentRunStage(repo: RepoRef, runId: Long): String? {
+        return runCatching {
+            val root = getJson("/repos/${repo.owner}/${repo.repo}/actions/runs/$runId/jobs?per_page=20")
+            val jobs = root["jobs"]?.jsonArray.orEmpty().map { it.jsonObject }
+            val runningJob = jobs.firstOrNull {
+                it["status"]?.jsonPrimitive?.contentOrNull == "in_progress"
+            } ?: jobs.firstOrNull()
+
+            val steps = runningJob?.get("steps")?.jsonArray.orEmpty().map { it.jsonObject }
+            val current = steps.firstOrNull {
+                it["status"]?.jsonPrimitive?.contentOrNull == "in_progress"
+            } ?: return@runCatching null
+
+            when (current["name"]?.jsonPrimitive?.contentOrNull.orEmpty()) {
+                "Checkout project" -> "فتح المشروع"
+                "Java", "Node" -> "تجهيز العمل"
+                "Start free AI engine" -> "تجهيز الذكاء"
+                "Build, test, and repair" -> "قراءة المشروع وتنفيذ المطلوب"
+                "Stop AI engine" -> "إنهاء المهمة"
+                else -> "جاري التنفيذ"
+            }
+        }.getOrNull()
     }
 
     suspend fun deleteBranch(repo: RepoRef, branch: String) = withContext(Dispatchers.IO) {
