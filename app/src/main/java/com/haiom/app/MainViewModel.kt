@@ -37,6 +37,7 @@ data class MainUiState(
     val githubLinking: Boolean = false,
     val githubLaunchUrl: String? = null,
     val githubLinkStatus: String = "",
+    val githubJustLinked: Boolean = false,
     val omniReady: Boolean = false,
     val strictFreeVerified: Boolean = false,
     val compressionEnabled: Boolean = false,
@@ -87,7 +88,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 githubLaunchUrl = GITHUB_TOKEN_TEMPLATE_URL,
-                githubLinkStatus = "أنشئ الرمز في GitHub، انسخه، ثم ارجع واضغط لصق وربط",
+                githubLinkStatus = "في GitHub اختر Repository access → All repositories، أنشئ الرمز وانسخه، ثم ارجع واضغط لصق وربط",
+                githubJustLinked = false,
                 error = null,
                 message = null
             )
@@ -137,7 +139,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         hasGitHubToken = true,
                         githubLogin = login,
                         repositories = repositories,
-                        message = "تم ربط GitHub وتحميل مشاريعك"
+                        githubJustLinked = true,
+                        message = "تم ربط GitHub. اختر المشروع الذي تريد العمل عليه"
                     )
                 }
             } catch (_: CancellationException) {
@@ -181,6 +184,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(githubLaunchUrl = null) }
     }
 
+    fun consumeGitHubJustLinked() {
+        _state.update { it.copy(githubJustLinked = false) }
+    }
+
     fun disconnectGitHub() {
         if (_state.value.running) return
         githubLinkJob?.cancel()
@@ -195,6 +202,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 githubLinking = false,
                 githubLaunchUrl = null,
                 githubLinkStatus = "",
+                githubJustLinked = false,
                 message = "تم فصل GitHub"
             )
         }
