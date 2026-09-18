@@ -1,0 +1,37 @@
+name: OmniRoute startup benchmark
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  docker-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Measure Docker startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          START="$(date +%s)"
+          docker pull diegosouzapw/omniroute:latest >/dev/null
+          PULLED="$(date +%s)"
+          docker run -d --name omniroute-fast             -p 127.0.0.1:20128:20128             diegosouzapw/omniroute:latest >/dev/null
+          READY=0
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:20128/api/health/ping >/dev/null 2>&1; then
+              READY=1
+              break
+            fi
+            sleep 1
+          done
+          END="$(date +%s)"
+          echo "docker_pull_seconds=$((PULLED-START))"
+          echo "docker_ready_seconds=$((END-START))"
+          if [ "$READY" != "1" ]; then
+            docker logs omniroute-fast || true
+            exit 1
+          fi
