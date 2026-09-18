@@ -1,6 +1,6 @@
 {
-  "taskId": "smoke-chat-002",
-  "requirements": "وش أهم 3 أشياء في هذا المشروع؟ جاوبني باختصار ولا تعدل أي ملف.",
+  "taskId": "smoke-chat-lite-001",
+  "requirements": "اشرح هذا المشروع في سطرين فقط، ولا تعدل أي ملف.",
   "baseBranch": "main",
   "targetBranch": "main",
   "editAllowed": false,
