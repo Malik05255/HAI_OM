@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -185,6 +186,7 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                         .fillMaxWidth()
                         .background(Canvas)
                         .navigationBarsPadding()
+                        .imePadding()
                 ) {
                     if (media.isNotEmpty()) {
                         MediaStrip(media) { media.remove(it) }
@@ -224,8 +226,7 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                     standaloneAnswer = state.result?.answer,
                     running = state.running,
                     programming = state.programming,
-                    progressText = state.logs.lastOrNull(),
-                    selectedRepo = selectedRepo
+                    progressText = state.logs.lastOrNull()
                 )
             } else {
                 ToolScreen(
@@ -256,46 +257,61 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
             }
 
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                if (dockOpen) {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.025f))
-                            .clickable { dockOpen = false }
-                    )
-                    ToolDock(
-                        modifier = Modifier.align(Alignment.CenterStart),
-                        connected = state.hasGitHubToken,
-                        onClose = { dockOpen = false },
-                        onNewChat = {
-                            vm.clearChat()
-                            draft = ""
-                            media.clear()
-                            panel = null
-                            dockOpen = false
-                        },
-                        onProjects = {
-                            panel = ToolPanel.PROJECTS
-                            dockOpen = false
-                        },
-                        onHistory = {
-                            panel = ToolPanel.HISTORY
-                            dockOpen = false
-                        },
-                        onModels = {
-                            panel = ToolPanel.MODELS
-                            dockOpen = false
-                        },
-                        onSettings = {
-                            panel = ToolPanel.SETTINGS
-                            dockOpen = false
-                        }
-                    )
-                } else {
-                    DockHandle(
-                        Modifier.align(Alignment.CenterStart),
-                        onClick = { dockOpen = true }
-                    )
+                val screenHeight = LocalConfiguration.current.screenHeightDp
+                val railTop = when {
+                    screenHeight < 650 -> 92.dp
+                    screenHeight < 780 -> 122.dp
+                    else -> 150.dp
+                }
+
+                Box(Modifier.fillMaxSize()) {
+                    if (dockOpen) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.025f))
+                                .clickable { dockOpen = false }
+                        )
+                        ToolDock(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .statusBarsPadding()
+                                .padding(top = railTop),
+                            connected = state.hasGitHubToken,
+                            onClose = { dockOpen = false },
+                            onNewChat = {
+                                vm.clearChat()
+                                draft = ""
+                                media.clear()
+                                panel = null
+                                dockOpen = false
+                            },
+                            onProjects = {
+                                panel = ToolPanel.PROJECTS
+                                dockOpen = false
+                            },
+                            onHistory = {
+                                panel = ToolPanel.HISTORY
+                                dockOpen = false
+                            },
+                            onModels = {
+                                panel = ToolPanel.MODELS
+                                dockOpen = false
+                            },
+                            onSettings = {
+                                panel = ToolPanel.SETTINGS
+                                dockOpen = false
+                            }
+                        )
+                    } else {
+                        DockHandle(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .statusBarsPadding()
+                                .padding(top = railTop),
+                            onClick = { dockOpen = true }
+                        )
+                    }
                 }
             }
         }
@@ -309,8 +325,7 @@ private fun ChatCanvas(
     standaloneAnswer: String?,
     running: Boolean,
     programming: Boolean,
-    progressText: String?,
-    selectedRepo: GitHubRepository?
+    progressText: String?
 ) {
     val lastAnswer = history.lastOrNull { it.role == "assistant" }?.text
     val extraAnswer = standaloneAnswer?.takeIf { it.isNotBlank() && it != lastAnswer }
@@ -321,8 +336,6 @@ private fun ChatCanvas(
             .statusBarsPadding()
             .padding(horizontal = 18.dp)
     ) {
-        Spacer(Modifier.height(14.dp))
-        MinimalHeader(selectedRepo)
         Spacer(Modifier.height(8.dp))
 
         if (empty) {
@@ -348,38 +361,11 @@ private fun ChatCanvas(
 }
 
 @Composable
-private fun MinimalHeader(selectedRepo: GitHubRepository?) {
-    Surface(
-        modifier = Modifier.widthIn(min = 96.dp, max = 210.dp),
-        color = SurfaceSoft,
-        shape = RoundedCornerShape(24.dp),
-        border = BorderStroke(1.dp, Line)
-    ) {
-        Column(
-            Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("H AI", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            selectedRepo?.let {
-                Text(
-                    it.fullName.substringAfter('/'),
-                    color = Muted,
-                    fontSize = 10.sp,
-                    maxLines = 1
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun EmptyState(modifier: Modifier = Modifier) {
     Column(
         modifier.padding(horizontal = 26.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("H · AI", color = Color(0xFFE1E7F7), fontSize = 34.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(22.dp))
         Text("كيف أساعدك؟", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Medium)
         Spacer(Modifier.height(7.dp))
         Text("ابدأ من شريط الكتابة بالأسفل", color = Muted, fontSize = 13.sp)
@@ -410,8 +396,6 @@ private fun MessageBlock(turn: ChatTurn) {
         }
     } else {
         Column(Modifier.fillMaxWidth()) {
-            Text("H AI", color = Blue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(5.dp))
             if (codeLike) {
                 Surface(
                     Modifier.fillMaxWidth(),
