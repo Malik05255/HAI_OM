@@ -8,6 +8,12 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -272,46 +278,40 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                                 .background(Color.Black.copy(alpha = 0.025f))
                                 .clickable { dockOpen = false }
                         )
-                        ToolDock(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .statusBarsPadding()
-                                .padding(top = railTop),
-                            connected = state.hasGitHubToken,
-                            onClose = { dockOpen = false },
-                            onNewChat = {
-                                vm.clearChat()
-                                draft = ""
-                                media.clear()
-                                panel = null
-                                dockOpen = false
-                            },
-                            onProjects = {
-                                panel = ToolPanel.PROJECTS
-                                dockOpen = false
-                            },
-                            onHistory = {
-                                panel = ToolPanel.HISTORY
-                                dockOpen = false
-                            },
-                            onModels = {
-                                panel = ToolPanel.MODELS
-                                dockOpen = false
-                            },
-                            onSettings = {
-                                panel = ToolPanel.SETTINGS
-                                dockOpen = false
-                            }
-                        )
-                    } else {
-                        DockHandle(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .statusBarsPadding()
-                                .padding(top = railTop),
-                            onClick = { dockOpen = true }
-                        )
                     }
+
+                    AnimatedToolDock(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .statusBarsPadding()
+                            .padding(top = railTop),
+                        open = dockOpen,
+                        connected = state.hasGitHubToken,
+                        onToggle = { dockOpen = !dockOpen },
+                        onNewChat = {
+                            vm.clearChat()
+                            draft = ""
+                            media.clear()
+                            panel = null
+                            dockOpen = false
+                        },
+                        onProjects = {
+                            panel = ToolPanel.PROJECTS
+                            dockOpen = false
+                        },
+                        onHistory = {
+                            panel = ToolPanel.HISTORY
+                            dockOpen = false
+                        },
+                        onModels = {
+                            panel = ToolPanel.MODELS
+                            dockOpen = false
+                        },
+                        onSettings = {
+                            panel = ToolPanel.SETTINGS
+                            dockOpen = false
+                        }
+                    )
                 }
             }
         }
@@ -377,17 +377,34 @@ private fun MessageBlock(turn: ChatTurn) {
     val user = turn.role == "user"
     val fence = 96.toChar().toString().repeat(3)
     val codeLike = turn.text.contains(fence)
+    val messageText = if (codeLike) turn.text.replace(fence, "") else turn.text
 
     if (user) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.End
+        ) {
+            Text(
+                "أنا",
+                color = Color(0xFF7A6D82),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(5.dp))
             Surface(
                 modifier = Modifier.fillMaxWidth(0.82f),
                 color = Lavender,
-                shape = RoundedCornerShape(20.dp, 20.dp, 7.dp, 20.dp)
+                shape = RoundedCornerShape(
+                    topStart = 20.dp,
+                    topEnd = 20.dp,
+                    bottomStart = 20.dp,
+                    bottomEnd = 7.dp
+                ),
+                border = BorderStroke(1.dp, LavenderStrong)
             ) {
                 Text(
-                    turn.text,
-                    Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                    messageText,
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
                     color = Ink,
                     fontSize = 15.sp,
                     lineHeight = 23.sp
@@ -395,30 +412,43 @@ private fun MessageBlock(turn: ChatTurn) {
             }
         }
     } else {
-        Column(Modifier.fillMaxWidth()) {
-            if (codeLike) {
-                Surface(
-                    Modifier.fillMaxWidth(),
-                    color = Color(0xFFF7F5F8),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Line)
-                ) {
-                    Text(
-                        turn.text.replace(fence, ""),
-                        Modifier.padding(14.dp),
-                        color = Color(0xFF3B3840),
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            } else {
-                Text(turn.text, color = Ink, fontSize = 15.sp, lineHeight = 24.sp)
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                "HAI",
+                color = Blue,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(5.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.90f),
+                color = if (codeLike) Color(0xFFF6F5F8) else Color(0xFFF8FAFF),
+                shape = RoundedCornerShape(
+                    topStart = 20.dp,
+                    topEnd = 20.dp,
+                    bottomStart = 7.dp,
+                    bottomEnd = 20.dp
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (codeLike) Line else Color(0xFFE3E9F8)
+                )
+            ) {
+                Text(
+                    messageText,
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                    color = if (codeLike) Color(0xFF3B3840) else Ink,
+                    fontSize = if (codeLike) 13.sp else 15.sp,
+                    lineHeight = if (codeLike) 20.sp else 24.sp,
+                    fontFamily = if (codeLike) FontFamily.Monospace else FontFamily.Default
+                )
             }
         }
     }
 }
-
 @Composable
 private fun RunningLine(programming: Boolean, progressText: String?) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -570,63 +600,106 @@ private fun MediaStrip(
 }
 
 @Composable
-private fun DockHandle(modifier: Modifier, onClick: () -> Unit) {
-    Surface(
-        modifier = modifier.width(19.dp).height(76.dp).clickable(onClick = onClick),
-        color = Blue,
-        shape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp),
-        shadowElevation = 2.dp
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(Icons.Outlined.MoreVert, "الأدوات", tint = Color.White, modifier = Modifier.size(16.dp))
-        }
-    }
-}
-
-@Composable
-private fun ToolDock(
+private fun AnimatedToolDock(
     modifier: Modifier,
+    open: Boolean,
     connected: Boolean,
-    onClose: () -> Unit,
+    onToggle: () -> Unit,
     onNewChat: () -> Unit,
     onProjects: () -> Unit,
     onHistory: () -> Unit,
     onModels: () -> Unit,
     onSettings: () -> Unit
 ) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Surface(
-            modifier = Modifier.width(66.dp),
-            color = SurfaceSoft,
-            shape = RoundedCornerShape(topEnd = 32.dp, bottomEnd = 32.dp),
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 8.dp
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AnimatedVisibility(
+            visible = open,
+            enter = expandHorizontally(
+                expandFrom = Alignment.Start,
+                animationSpec = tween(durationMillis = 280)
+            ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+            exit = shrinkHorizontally(
+                shrinkTowards = Alignment.Start,
+                animationSpec = tween(durationMillis = 230)
+            ) + fadeOut(animationSpec = tween(durationMillis = 140))
         ) {
-            Column(
-                Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(7.dp)
+            Surface(
+                modifier = Modifier.width(66.dp),
+                color = SurfaceSoft,
+                shape = RoundedCornerShape(
+                    topEnd = 30.dp,
+                    bottomEnd = 30.dp
+                ),
+                border = BorderStroke(1.dp, Line),
+                shadowElevation = 8.dp
             ) {
-                DockIcon(Icons.Outlined.ChatBubbleOutline, "دردشة جديدة", onNewChat)
-                DockIcon(Icons.Outlined.FolderOpen, "المشاريع", onProjects)
-                DockIcon(Icons.Outlined.History, "السجل", onHistory)
-                DockIcon(Icons.Outlined.AutoAwesome, "النماذج", onModels)
-                HorizontalDivider(Modifier.width(34.dp), color = Line)
-                DockIcon(Icons.Outlined.Settings, if (connected) "الإعدادات" else "الربط", onSettings)
+                Column(
+                    modifier = Modifier.padding(
+                        vertical = 12.dp,
+                        horizontal = 8.dp
+                    ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    DockIcon(
+                        Icons.Outlined.ChatBubbleOutline,
+                        "دردشة جديدة",
+                        onNewChat
+                    )
+                    DockIcon(
+                        Icons.Outlined.FolderOpen,
+                        "المشاريع",
+                        onProjects
+                    )
+                    DockIcon(
+                        Icons.Outlined.History,
+                        "السجل",
+                        onHistory
+                    )
+                    DockIcon(
+                        Icons.Outlined.AutoAwesome,
+                        "النماذج",
+                        onModels
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.width(34.dp),
+                        color = Line
+                    )
+                    DockIcon(
+                        Icons.Outlined.Settings,
+                        if (connected) "الإعدادات" else "الربط",
+                        onSettings
+                    )
+                }
             }
         }
+
         Surface(
-            modifier = Modifier.width(18.dp).height(70.dp).clickable(onClick = onClose),
+            modifier = Modifier
+                .width(19.dp)
+                .height(if (open) 86.dp else 76.dp)
+                .clickable(onClick = onToggle),
             color = Blue,
-            shape = RoundedCornerShape(topEnd = 11.dp, bottomEnd = 11.dp)
+            shape = RoundedCornerShape(
+                topEnd = 12.dp,
+                bottomEnd = 12.dp
+            ),
+            shadowElevation = 2.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.MoreVert, "إغلاق", tint = Color.White, modifier = Modifier.size(15.dp))
+                Icon(
+                    Icons.Outlined.MoreVert,
+                    if (open) "إغلاق الأدوات" else "فتح الأدوات",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     }
 }
-
 @Composable
 private fun DockIcon(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
