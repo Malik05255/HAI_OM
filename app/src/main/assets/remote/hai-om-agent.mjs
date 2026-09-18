@@ -3,8 +3,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const ROOT = process.cwd();
-const TASK_PATH = path.join(ROOT, ".hai-om", "task.json");
-const RESULT_PATH = path.join(ROOT, ".hai-om", "result.json");
+const TASK_PATH = process.env.HAI_TASK_PATH || path.join(ROOT, ".hai-om", "task.json");
+const RESULT_PATH = process.env.HAI_RESULT_PATH || path.join(ROOT, ".hai-om", "result.json");
 const OMNI = (process.env.HAI_OMNIROUTE_URL || "http://127.0.0.1:20128").replace(/\/$/, "");
 const BRANCH = process.env.HAI_BRANCH || "";
 const REPOSITORY = process.env.HAI_REPOSITORY || "";
@@ -386,7 +386,6 @@ function writeResult(mode, answer, tasks = []) {
     }, null, 2),
     "utf8"
   );
-  commitPaths([".hai-om/result.json"], mode === "answer" ? "HAI OM: analysis result" : "HAI OM: task result");
 }
 
 
