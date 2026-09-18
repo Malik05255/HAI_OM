@@ -436,11 +436,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearError() = _state.update { it.copy(error = null) }
 
     companion object {
+        private val EXPLICIT_PROGRAMMING_PHRASES = listOf(
+            "ابدأ البرمجة", "ابدأ تنفيذ", "نفذ الآن", "نفّذ الآن",
+            "كمل البرمجة", "كمل التنفيذ", "اتصل بالمستودع ونفذ",
+            "اتصل بالمستودع وكمل"
+        )
+
         private val PROGRAMMING_PATTERNS = listOf(
-            Regex("""(^|\\s)(برمج|نفذ|نفّذ|عدل|عدّل|اصلح|أصلح|صحح|صحّح|اضف|أضف|احذف|حذف|غير|غيّر|انشئ|أنشئ|طور|طوّر|طبق|طبّق|استبدل|ادمج|اربط)(\\s|$)"""),
-            Regex("""(اكتب|سو|سوي)\\s+(لي\\s+)?(الكود|كود|ملف|ميزة|شاشة|صفحة|تطبيق)"""),
-            Regex("""(^|\\s)(implement|fix|modify|edit|add|delete|remove|refactor|build|code)(\\s|$)""", RegexOption.IGNORE_CASE),
-            Regex("""اتصل\\s+بالمستودع.*(نفذ|عدل|اصلح|اضف|احذف|كمل)""")
+            Regex("""(^|\s)(برمج|نفذ|نفّذ|عدل|عدّل|اصلح|أصلح|صحح|صحّح|اضف|أضف|احذف|انشئ|أنشئ|طور|طوّر|طبق|طبّق|استبدل|ادمج|اربط)(\s|$)"""),
+            Regex("""(^|\s)(غير|غيّر)\s+(ال|هذا|هذه|اسم|لون|شكل|تصميم|واجهة|شاشة|صفحة|ملف|كود|زر|ميزة)"""),
+            Regex("""(اكتب|سو|سوي)\s+(لي\s+)?(الكود|كود|ملف|ميزة|شاشة|صفحة|تطبيق)"""),
+            Regex("""(^|\s)(implement|fix|modify|edit|add|delete|remove|refactor|build|code)(\s|$)""", RegexOption.IGNORE_CASE),
+            Regex("""اتصل\s+بالمستودع.*(نفذ|نفّذ|عدل|اصلح|أصلح|اضف|أضف|احذف|كمل)"""),
+            Regex("""كمل\s+(البرمجة|التنفيذ|التعديل)""")
         )
 
         private val REPOSITORY_CONTEXT_WORDS = listOf(
