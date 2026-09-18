@@ -335,7 +335,12 @@ private fun ChatCanvas(
             if (extraAnswer != null) 1 else 0 +
             if (running) 1 else 0
 
-    LaunchedEffect(renderedItemCount) {
+    LaunchedEffect(
+        history.size,
+        extraAnswer,
+        running,
+        progressText
+    ) {
         if (renderedItemCount > 0) {
             listState.animateScrollToItem(renderedItemCount - 1)
         }
