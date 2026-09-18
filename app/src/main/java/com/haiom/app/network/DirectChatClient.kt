@@ -126,7 +126,7 @@ class DirectChatClient(
         put("model", model)
         put("stream", false)
         put("temperature", 0.35)
-        put("max_tokens", LIGHT_CHAT_MAX_TOKENS)
+        put("max_tokens", 4096)
         put("messages", buildJsonArray {
             add(buildJsonObject {
                 put("role", "system")
@@ -248,8 +248,6 @@ class DirectChatClient(
     companion object {
         private const val KILO_GATEWAY_URL = "https://api.kilo.ai/api/gateway/chat/completions"
         private const val KILO_LEGACY_URL = "https://api.kilo.ai/api/openrouter/chat/completions"
-        private const val LIGHT_CHAT_MAX_TOKENS = 2048
-
         private val KILO_LIGHT_ROUTES = listOf(
             KiloRoute(KILO_GATEWAY_URL, "kilo-auto/small"),
             KiloRoute(KILO_GATEWAY_URL, "kilo-auto/free"),
