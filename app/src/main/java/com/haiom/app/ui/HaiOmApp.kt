@@ -25,11 +25,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -264,7 +266,15 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
 
     Scaffold(
         containerColor = PageBackground,
-        snackbarHost = { SnackbarHost(snackbar) }
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbar,
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .imePadding()
+            )
+        }
     ) { scaffoldPadding ->
         Box(
             modifier = Modifier
@@ -376,42 +386,45 @@ private fun ChatHome(
     val extraAnswer = standaloneAnswer?.takeIf {
         it.isNotBlank() && it != lastHistoryAnswer
     }
+
     val density = LocalDensity.current
-    val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val imeVisible = imeBottom > 0
 
     BoxWithConstraints(
         modifier = modifier
-            .statusBarsPadding()
-            .navigationBarsPadding()
+            .fillMaxSize()
+            .background(PageBackground)
     ) {
         val availableWidth = maxWidth
         val availableHeight = maxHeight
         val narrow = availableWidth < 360.dp
-        val veryWide = availableWidth >= 520.dp
-        val short = availableHeight < 680.dp
-        val keyboardLayout = imeVisible || availableHeight < 460.dp
+        val wide = availableWidth >= 520.dp
+        val short = availableHeight < 700.dp
+
         val horizontalPadding = when {
             narrow -> 10.dp
-            veryWide -> 26.dp
-            else -> 16.dp
+            wide -> 24.dp
+            else -> 14.dp
         }
-        val showTitle = !keyboardLayout && availableHeight >= 560.dp
-        val showEmptyHero = stateHistory.isEmpty() &&
-            extraAnswer == null &&
-            !running &&
-            !keyboardLayout
+        val composerReserve = if (narrow || short) 64.dp else 70.dp
+        val empty = stateHistory.isEmpty() && extraAnswer == null && !running
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = horizontalPadding)
-        ) {
-            if (showTitle) {
-                Spacer(Modifier.height(if (short) 10.dp else 16.dp))
+        if (empty && !imeVisible) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = horizontalPadding)
+                    .padding(bottom = composerReserve + 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(Modifier.height(if (short) 10.dp else 18.dp))
+
                 Surface(
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
                     color = Color(0xFFFFFCFF),
-                    shape = RoundedCornerShape(25.dp),
+                    shape = RoundedCornerShape(26.dp),
                     border = BorderStroke(1.dp, SoftLavenderBorder)
                 ) {
                     Text(
@@ -425,73 +438,84 @@ private fun ChatHome(
                         fontWeight = FontWeight.Bold
                     )
                 }
-            }
 
-            Box(
+                Spacer(Modifier.weight(if (short) 0.62f else 0.78f))
+
+                EmptyConversation(
+                    availableWidth = availableWidth,
+                    availableHeight = availableHeight
+                )
+
+                Spacer(Modifier.weight(if (short) 0.34f else 0.46f))
+            }
+        } else if (!empty || running) {
+            LazyColumn(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .imePadding()
+                    .padding(horizontal = horizontalPadding)
+                    .padding(top = 12.dp, bottom = composerReserve + 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (showEmptyHero) {
-                    EmptyConversation(
-                        modifier = Modifier.align(Alignment.Center),
-                        availableWidth = availableWidth,
-                        availableHeight = availableHeight
-                    )
-                } else if (stateHistory.isNotEmpty() || extraAnswer != null || running) {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(
-                                top = if (keyboardLayout) 4.dp else 14.dp,
-                                bottom = 8.dp
-                            ),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(stateHistory) { turn ->
-                            ChatBubble(turn)
-                        }
-                        extraAnswer?.let { answer ->
-                            item {
-                                ChatBubble(ChatTurn(role = "assistant", text = answer))
-                            }
-                        }
-                        if (running) {
-                            item {
-                                WorkingBubble(
-                                    programming = programming,
-                                    progressText = progressText
-                                )
-                            }
-                        }
+                items(stateHistory) { turn ->
+                    ChatBubble(turn)
+                }
+                extraAnswer?.let { answer ->
+                    item {
+                        ChatBubble(ChatTurn(role = "assistant", text = answer))
+                    }
+                }
+                if (running) {
+                    item {
+                        WorkingBubble(
+                            programming = programming,
+                            progressText = progressText
+                        )
                     }
                 }
             }
-
-            if (media.isNotEmpty()) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height((media.size.coerceAtMost(if (keyboardLayout) 1 else 2) * 42).dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    items(media) { item ->
-                        MediaRow(item, onRemoveMedia)
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-            }
-
-            Composer(
-                value = draft,
-                onValueChange = onDraftChange,
-                enabled = !running,
-                compact = narrow || short || keyboardLayout,
-                onPickMedia = onPickMedia,
-                onSend = onSend
-            )
-            Spacer(Modifier.height(if (keyboardLayout) 4.dp else 8.dp))
         }
+
+        if (media.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(
+                        start = horizontalPadding,
+                        end = horizontalPadding,
+                        bottom = composerReserve + 14.dp
+                    )
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                media.take(if (imeVisible) 1 else 2).forEach { item ->
+                    MediaRow(item, onRemoveMedia)
+                }
+            }
+        }
+
+        Composer(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    bottom = 8.dp
+                )
+                .widthIn(max = 720.dp),
+            value = draft,
+            onValueChange = onDraftChange,
+            enabled = !running,
+            compact = narrow || short || imeVisible,
+            onPickMedia = onPickMedia,
+            onSend = onSend
+        )
     }
 }
 
@@ -622,6 +646,7 @@ private fun WorkingBubble(
 
 @Composable
 private fun Composer(
+    modifier: Modifier = Modifier,
     value: String,
     onValueChange: (String) -> Unit,
     enabled: Boolean,
@@ -630,18 +655,20 @@ private fun Composer(
     onSend: () -> Unit
 ) {
     val buttonSize = if (compact) 42.dp else 46.dp
-    val verticalPadding = if (compact) 5.dp else 6.dp
     val inputFont = if (compact) 17.sp else 18.sp
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth(),
             color = Color(0xFFFAF7FB),
             shape = RoundedCornerShape(if (compact) 30.dp else 34.dp),
             border = BorderStroke(1.dp, SoftLavenderBorder)
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 7.dp, vertical = verticalPadding),
+                modifier = Modifier.padding(
+                    horizontal = 7.dp,
+                    vertical = if (compact) 5.dp else 6.dp
+                ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FilledIconButton(
@@ -662,7 +689,7 @@ private fun Composer(
                     )
                 }
 
-                Spacer(Modifier.width(if (compact) 5.dp else 7.dp))
+                Spacer(Modifier.width(6.dp))
 
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     BasicTextField(
@@ -671,7 +698,7 @@ private fun Composer(
                         enabled = enabled,
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 7.dp, vertical = if (compact) 7.dp else 8.dp),
+                            .padding(horizontal = 7.dp, vertical = 7.dp),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = Ink,
                             fontSize = inputFont
@@ -699,7 +726,7 @@ private fun Composer(
                     )
                 }
 
-                Spacer(Modifier.width(if (compact) 5.dp else 7.dp))
+                Spacer(Modifier.width(6.dp))
 
                 FilledIconButton(
                     onClick = onPickMedia,
