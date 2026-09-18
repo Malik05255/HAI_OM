@@ -10,7 +10,6 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.GitHubAccountClient
 import com.haiom.app.network.GitHubClient
 import com.haiom.app.network.GitHubAppLinker
-import com.haiom.app.network.GitHubLinkStage
 import com.haiom.app.network.DirectChatClient
 import com.haiom.app.network.ChatTurn
 import com.haiom.app.security.SecretStore
@@ -84,14 +83,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startGitHubLink() {
-        if (_state.value.githubLinking || _state.value.running) return
+        if (_state.value.running || _state.value.githubLinking) return
+        _state.update {
+            it.copy(
+                githubLaunchUrl = GITHUB_TOKEN_TEMPLATE_URL,
+                githubLinkStatus = "أنشئ الرمز في GitHub، انسخه، ثم ارجع واضغط لصق وربط",
+                error = null,
+                message = null
+            )
+        }
+    }
+
+    fun connectGitHubToken(rawToken: String) {
+        if (_state.value.running || _state.value.githubLinking) return
+
+        val token = rawToken
+            .trim()
+            .removePrefix("Bearer ")
+            .trim()
+
+        if (token.isBlank()) {
+            _state.update {
+                it.copy(
+                    error = "انسخ رمز GitHub أولًا ثم اضغط لصق وربط"
+                )
+            }
+            return
+        }
 
         githubLinkJob?.cancel()
         _state.update {
             it.copy(
                 githubLinking = true,
-                githubLaunchUrl = null,
-                githubLinkStatus = "جاري تجهيز الربط…",
+                githubLinkStatus = "جاري التحقق من GitHub…",
                 error = null,
                 message = null
             )
@@ -99,47 +123,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         githubLinkJob = viewModelScope.launch {
             try {
-                val linked = githubAppLinker.link(
-                    onOpenUrl = { url ->
-                        _state.update { current ->
-                            current.copy(githubLaunchUrl = url)
-                        }
-                    },
-                    onStage = { stage ->
-                        _state.update { current ->
-                            current.copy(
-                                githubLinkStatus = when (stage) {
-                                    GitHubLinkStage.PREPARING ->
-                                        "جاري تجهيز الربط…"
-                                    GitHubLinkStage.APPROVE_APP ->
-                                        "وافق في GitHub للمتابعة"
-                                    GitHubLinkStage.CHOOSE_REPOSITORIES ->
-                                        "اختر المستودعات ثم اضغط Install"
-                                    GitHubLinkStage.LOADING_REPOSITORIES ->
-                                        "جاري تحميل مشاريعك…"
-                                }
-                            )
-                        }
-                    }
-                )
+                val account = GitHubAccountClient(token)
+                val login = account.login()
+                val repositories = account.repositories()
 
-                secrets.clearGitHubToken()
-                secrets.saveGitHubApp(
-                    appId = linked.appId,
-                    slug = linked.slug,
-                    privateKeyPem = linked.privateKeyPem,
-                    ownerLogin = linked.ownerLogin,
-                    installationId = linked.installationId
-                )
+                secrets.clearGitHubApp()
+                secrets.saveGitHubToken(token)
 
                 _state.update {
                     it.copy(
                         githubLinking = false,
-                        githubLaunchUrl = null,
                         githubLinkStatus = "",
                         hasGitHubToken = true,
-                        githubLogin = linked.ownerLogin.ifBlank { "GitHub" },
-                        repositories = linked.repositories,
+                        githubLogin = login,
+                        repositories = repositories,
                         message = "تم ربط GitHub وتحميل مشاريعك"
                     )
                 }
@@ -147,7 +144,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update {
                     it.copy(
                         githubLinking = false,
-                        githubLaunchUrl = null,
                         githubLinkStatus = ""
                     )
                 }
@@ -155,9 +151,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update {
                     it.copy(
                         githubLinking = false,
-                        githubLaunchUrl = null,
                         githubLinkStatus = "",
-                        error = friendlyLinkError(t)
+                        error = when {
+                            t.message.orEmpty().contains("401") ->
+                                "رمز GitHub غير صالح"
+                            else ->
+                                "تعذر التحقق من الرمز. تأكد من نسخه كاملًا ومن الصلاحيات"
+                        }
                     )
                 }
             } finally {
@@ -172,9 +172,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 githubLinking = false,
-                githubLaunchUrl = null,
-                githubLinkStatus = "",
-                message = "تم إلغاء الربط"
+                githubLinkStatus = ""
             )
         }
     }
@@ -492,6 +490,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearError() = _state.update { it.copy(error = null) }
 
     companion object {
+        private const val GITHUB_TOKEN_TEMPLATE_URL =
+            "https://github.com/settings/personal-access-tokens/new" +
+                "?name=OM-Mobile" +
+                "&description=OM+Android+coding+assistant" +
+                "&expires_in=366" +
+                "&contents=write" +
+                "&pull_requests=write" +
+                "&actions=read" +
+                "&workflows=write"
+
         private val EXPLICIT_PROGRAMMING_PHRASES = listOf(
             "ابدأ البرمجة", "ابدأ تنفيذ", "نفذ الآن", "نفّذ الآن",
             "كمل البرمجة", "كمل التنفيذ", "اتصل بالمستودع ونفذ",
