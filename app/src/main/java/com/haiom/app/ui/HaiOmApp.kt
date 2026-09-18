@@ -375,7 +375,7 @@ private fun HomeScreen(
                 if (state.running) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.size(10.dp))
-                    Text("جاري العمل…", fontWeight = FontWeight.Bold)
+                    Text(state.logs.lastOrNull() ?: "جاري العمل…", fontWeight = FontWeight.Bold)
                 } else {
                     Icon(Icons.Outlined.PlayArrow, null)
                     Spacer(Modifier.size(8.dp))
