@@ -12,6 +12,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * Uses one persistent runtime branch per repository.
@@ -82,17 +86,40 @@ class RemoteAgentRunner(
         val kickoffSha = github.headSha(repo, RUNTIME_BRANCH)
         onEvent(if (programming) "بدأ التنفيذ" else "جاري الرد")
 
-        val run = github.waitForCi(
-            repo = repo,
-            branch = RUNTIME_BRANCH,
-            headSha = kickoffSha,
-            onEvent = onEvent,
-            workflowName = WORKFLOW_NAME,
-            maxAttempts = 300,
-            onProgress = onCiProgress,
-            liveCodePath = "$LIVE_DIR/$taskId.txt",
-            onLiveCode = onLiveCode
-        )
+        val run = coroutineScope {
+            var lastLiveCode = ""
+            val liveJob = launch {
+                while (isActive) {
+                    val code = runCatching {
+                        github.readFile(
+                            repo,
+                            RUNTIME_BRANCH,
+                            "$LIVE_DIR/$taskId.txt"
+                        )?.text.orEmpty()
+                    }.getOrDefault("")
+
+                    if (code.isNotBlank() && code != lastLiveCode) {
+                        lastLiveCode = code
+                        onLiveCode(code)
+                    }
+                    delay(1_500)
+                }
+            }
+
+            try {
+                github.waitForCi(
+                    repo = repo,
+                    branch = RUNTIME_BRANCH,
+                    headSha = kickoffSha,
+                    onEvent = onEvent,
+                    workflowName = WORKFLOW_NAME,
+                    maxAttempts = 300,
+                    onProgress = onCiProgress
+                )
+            } finally {
+                liveJob.cancel()
+            }
+        }
 
         when (run.state) {
             CiState.SUCCESS -> Unit
