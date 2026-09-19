@@ -107,7 +107,7 @@ class RemoteAgentRunner(
             }
 
             try {
-                github.waitForCi(
+                val result = github.waitForCi(
                     repo = repo,
                     branch = RUNTIME_BRANCH,
                     headSha = kickoffSha,
@@ -116,6 +116,21 @@ class RemoteAgentRunner(
                     maxAttempts = 300,
                     onProgress = onCiProgress
                 )
+
+                val finalCode = runCatching {
+                    github.readFile(
+                        repo,
+                        RUNTIME_BRANCH,
+                        "$LIVE_DIR/$taskId.txt"
+                    )?.text.orEmpty()
+                }.getOrDefault("")
+
+                if (finalCode.isNotBlank() && finalCode != lastLiveCode) {
+                    lastLiveCode = finalCode
+                    onLiveCode(finalCode)
+                }
+
+                result
             } finally {
                 liveJob.cancel()
             }
