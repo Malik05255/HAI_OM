@@ -748,7 +748,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val answer = directChat.chat(
                     prompt = prompt,
                     history = existingHistory,
-                    repositoryContext = context
+                    repositoryContext = context,
+                    fast = true
                 )
 
                 val updatedHistory = (
