@@ -9,7 +9,11 @@ val signingStorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").or
 val signingStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
 val signingKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
 val signingKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
-val githubOAuthClientId = providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID").orNull.orEmpty()
+val githubOAuthClientId = providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID")
+    .orElse(providers.gradleProperty("GITHUB_OAUTH_CLIENT_ID"))
+    .orNull
+    .orEmpty()
+    .trim()
 
 fun buildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
