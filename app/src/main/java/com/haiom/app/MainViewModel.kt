@@ -35,6 +35,7 @@ data class MainUiState(
     val hasGitHubToken: Boolean = false,
     val githubLogin: String = "",
     val repositories: List<GitHubRepository> = emptyList(),
+    val selectedRepository: GitHubRepository? = null,
     val githubLinking: Boolean = false,
     val githubLaunchUrl: String? = null,
     val githubLinkStatus: String = "",
@@ -77,6 +78,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(connecting = true, error = null) }
         viewModelScope.launch {
             val account = loadGitHubAccount()
+            val selectedRepository = restoreSelectedRepository(account.repositories)
 
             _state.update {
                 it.copy(
@@ -87,7 +89,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     rankings = emptyList(),
                     hasGitHubToken = account.connected,
                     githubLogin = account.login,
-                    repositories = account.repositories
+                    repositories = account.repositories,
+                    selectedRepository = selectedRepository
                 )
             }
         }
@@ -147,6 +150,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val account = GitHubAccountClient(accessToken)
                 val login = account.login()
                 val repositories = account.repositories()
+                val selectedRepository = restoreSelectedRepository(repositories)
 
                 secrets.clearGitHubApp()
                 secrets.saveGitHubToken(accessToken)
@@ -161,6 +165,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         hasGitHubToken = true,
                         githubLogin = login,
                         repositories = repositories,
+                        selectedRepository = selectedRepository,
                         githubJustLinked = true,
                         message = "تم ربط GitHub. اختر المشروع الذي تريد العمل عليه"
                     )
@@ -229,11 +234,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         githubLinkJob = null
         secrets.clearGitHubToken()
         secrets.clearGitHubApp()
+        secrets.clearSelectedRepository()
         _state.update {
             it.copy(
                 hasGitHubToken = false,
                 githubLogin = "",
                 repositories = emptyList(),
+                selectedRepository = null,
                 githubLinking = false,
                 githubLaunchUrl = null,
                 githubLinkStatus = "",
@@ -262,7 +269,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return PROGRAMMING_PATTERNS.any { it.containsMatchIn(value) }
     }
 
-    fun runAgent(repositoryUrl: String, requirements: String) {
+    fun saveSelectedRepository(repository: GitHubRepository) {
+        if (_state.value.running || _state.value.connecting || _state.value.githubLinking) return
+        val available = _state.value.repositories.firstOrNull {
+            it.fullName == repository.fullName
+        } ?: run {
+            _state.update { it.copy(error = "هذا المشروع لم يعد متاحًا في حساب GitHub") }
+            return
+        }
+
+        secrets.saveSelectedRepositoryFullName(available.fullName)
+        _state.update {
+            it.copy(
+                selectedRepository = available,
+                message = "تم حفظ المشروع: ${available.fullName}"
+            )
+        }
+    }
+
+    fun runAgent(requirements: String) {
         if (_state.value.running || _state.value.connecting || _state.value.githubLinking) return
         if (requirements.isBlank()) {
             _state.update { it.copy(error = "اكتب رسالتك") }
@@ -270,13 +295,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         if (isProgrammingRequest(requirements)) {
-            runProgramming(repositoryUrl, requirements)
+            runProgramming(requirements)
         } else {
-            runChat(repositoryUrl, requirements)
+            runChat(requirements)
         }
     }
 
-    private fun runChat(repositoryUrl: String, prompt: String) {
+    private fun runChat(prompt: String) {
         val existingHistory = _state.value.chatHistory
         val visibleHistory = (
             existingHistory + ChatTurn("user", prompt)
@@ -296,6 +321,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val needsRepo = needsRepositoryContext(prompt)
+                val repositoryUrl = _state.value.selectedRepository?.htmlUrl.orEmpty()
                 val context = if (needsRepo) {
                     if (repositoryUrl.isBlank()) error("اختر المشروع عشان أقرأه")
                     val token = resolveGitHubToken() ?: error("اربط GitHub عشان أقرأ المشروع")
@@ -346,9 +372,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun runProgramming(repositoryUrl: String, requirements: String) {
+    private fun runProgramming(requirements: String) {
+        val repositoryUrl = _state.value.selectedRepository?.htmlUrl.orEmpty()
         if (repositoryUrl.isBlank()) {
-            _state.update { it.copy(error = "اختر المشروع أولًا") }
+            _state.update { it.copy(error = "اختر المشروع واحفظه أولًا") }
             return
         }
         if (!_state.value.hasGitHubToken) {
@@ -411,6 +438,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun needsRepositoryContext(text: String): Boolean {
         val value = text.lowercase()
         return REPOSITORY_CONTEXT_WORDS.any { value.contains(it) }
+    }
+
+    private fun restoreSelectedRepository(
+        repositories: List<GitHubRepository>
+    ): GitHubRepository? {
+        val savedFullName = secrets.selectedRepositoryFullName()
+        if (savedFullName.isBlank()) return null
+
+        val selected = repositories.firstOrNull {
+            it.fullName == savedFullName
+        }
+        if (selected == null) {
+            secrets.clearSelectedRepository()
+        }
+        return selected
     }
 
     private suspend fun loadGitHubAccount(): GitHubAccountState {
