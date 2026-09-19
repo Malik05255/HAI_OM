@@ -45,7 +45,8 @@ data class AutoQueueSnapshot(
     val remoteRunId: Long = 0L,
     val remoteRunUrl: String = "",
     val remoteState: String = "",
-    val remoteStage: String = ""
+    val remoteStage: String = "",
+    val liveCode: String = ""
 )
 
 class AutoTaskStore(context: Context) {
@@ -131,6 +132,13 @@ class AutoTaskStore(context: Context) {
         )
     }
 
+    fun setLiveCode(value: String) {
+        val clean = value.takeLast(12_000)
+        val current = snapshot()
+        if (current.liveCode == clean) return
+        write(current.copy(liveCode = clean))
+    }
+
     fun clearRemoteExecution(repository: String = "") {
         val current = snapshot()
         write(
@@ -139,7 +147,8 @@ class AutoTaskStore(context: Context) {
                 remoteRunId = 0L,
                 remoteRunUrl = "",
                 remoteState = "waiting",
-                remoteStage = "بانتظار GitHub Actions"
+                remoteStage = "بانتظار GitHub Actions",
+                liveCode = ""
             )
         )
     }
