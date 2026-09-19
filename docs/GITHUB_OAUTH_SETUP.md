@@ -15,47 +15,24 @@ OM uses GitHub OAuth Device Flow for account linking.
 
 There is no manual Personal Access Token flow in the UI.
 
-## One-time developer setup
+## OAuth configuration
 
-GitHub Device Flow always requires a Client ID. A client secret is not required.
+The production Android build includes the public OAuth Client ID for the HAI OM OAuth App, so normal CI/release builds work without an Actions variable.
 
-Create one OAuth App or GitHub App for OM and enable **Device Flow** in its GitHub settings. Then copy its **Client ID**.
+A client secret is not embedded and is not required for GitHub Device Flow.
 
-For normal CI builds, configure the repository Actions variable:
+For testing or replacing the OAuth App later, the Client ID can still be overridden with either:
 
-- `GITHUB_OAUTH_CLIENT_ID`
-
-Path in GitHub:
-
-**Repository > Settings > Secrets and variables > Actions > Variables > New repository variable**
-
-Use:
-
-- Name: `GITHUB_OAUTH_CLIENT_ID`
-- Value: the Client ID from the GitHub app registration
-
-The workflow now refuses to publish an APK when this value is empty, so a broken build with a disabled GitHub button cannot be released again.
-
-## Manual build fallback
-
-The Android workflow also supports **Run workflow** and accepts `github_oauth_client_id` as an input. This can be used to build and publish from `main` without first storing the repository variable.
-
-## Local builds
-
-You can provide the Client ID either as an environment variable:
-
-`GITHUB_OAUTH_CLIENT_ID=...`
-
-or as a Gradle property:
-
-`-PGITHUB_OAUTH_CLIENT_ID=...`
+- environment variable: `GITHUB_OAUTH_CLIENT_ID`
+- Gradle property: `-PGITHUB_OAUTH_CLIENT_ID=...`
+- optional `github_oauth_client_id` input when manually running the Android workflow
 
 ## Requested OAuth scopes
 
-For the OAuth App Device Flow implementation OM requests:
+OM requests:
 
 - `repo`
 - `workflow`
 - `read:user`
 
-The access token returned by GitHub after approval is stored through the existing encrypted SecretStore. Users never create, paste, or manage the token manually.
+The access token returned by GitHub after approval is stored through the existing encrypted SecretStore. Users never create, paste, or manage a Personal Access Token manually.
