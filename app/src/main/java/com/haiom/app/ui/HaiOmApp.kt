@@ -2562,96 +2562,105 @@ private fun GitHubConnectCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = SurfaceElevated,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, Line)
+        shape = RoundedCornerShape(3.dp),
+        border = BorderStroke(2.dp, Ink)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
+        Column {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Ink)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    modifier = Modifier.size(44.dp),
-                    color = BlueSoft,
-                    shape = RoundedCornerShape(13.dp),
-                    border = BorderStroke(1.dp, Color(0xFFA9D8C9))
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            "@",
-                            color = Blue,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Spacer(Modifier.width(12.dp))
-
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "GitHub",
-                        color = Ink,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                    Text(
-                        if (linking) {
-                            status.ifBlank { "جاري الربط" }
-                        } else if (oauthAvailable) {
-                            "ربط مساحة العمل"
-                        } else {
-                            "غير متاح"
-                        },
-                        color = Muted,
-                        fontSize = 11.sp
-                    )
-                }
+                Icon(
+                    Icons.Outlined.Link,
+                    contentDescription = null,
+                    tint = Signal,
+                    modifier = Modifier.size(19.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "GITHUB / CONNECT",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.2.sp
+                )
             }
 
-            Spacer(Modifier.height(14.dp))
+            Column(Modifier.padding(14.dp)) {
+                Text(
+                    if (linking) {
+                        status.ifBlank { "جاري الربط" }
+                    } else if (oauthAvailable) {
+                        "اربط حسابك لبدء العمل على المشاريع"
+                    } else {
+                        "الربط غير متاح"
+                    },
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
 
-            if (linking) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = Blue
-                    )
-                    Spacer(Modifier.width(9.dp))
-                    Text(
-                        status.ifBlank { "بانتظار الموافقة" },
-                        modifier = Modifier.weight(1f),
-                        color = Ink,
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        "×",
-                        modifier = Modifier.clickable(onClick = onCancel),
-                        color = Muted,
-                        fontSize = 18.sp
-                    )
-                }
-            } else {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = oauthAvailable, onClick = onConnect),
-                    color = if (oauthAvailable) Blue else Line,
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        "ربط الحساب",
-                        modifier = Modifier.padding(vertical = 11.dp),
-                        color = if (oauthAvailable) Canvas else Muted,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
+                Spacer(Modifier.height(12.dp))
+
+                if (linking) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(17.dp),
+                            strokeWidth = 2.dp,
+                            color = Blue
+                        )
+                        Spacer(Modifier.width(9.dp))
+                        Text(
+                            "بانتظار GitHub",
+                            modifier = Modifier.weight(1f),
+                            color = Muted,
+                            fontSize = 11.sp
+                        )
+                        Surface(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clickable(onClick = onCancel),
+                            color = Signal,
+                            shape = RoundedCornerShape(2.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("×", color = Color.White, fontSize = 18.sp)
+                            }
+                        }
+                    }
+                } else {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = oauthAvailable, onClick = onConnect),
+                        color = if (oauthAvailable) Blue else LavenderStrong,
+                        shape = RoundedCornerShape(2.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(11.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "ربط الحساب",
+                                color = if (oauthAvailable) Color.White else Muted,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                "OPEN",
+                                color = if (oauthAvailable) Color.White.copy(alpha = 0.72f) else Muted,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 1.2.sp
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2660,12 +2669,41 @@ private fun GitHubConnectCard(
 
 @Composable
 private fun EmptyToolCard(title: String, subtitle: String) {
-    Surface(Modifier.fillMaxWidth(), color = Lavender, shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(15.dp)) {
-            Text(title, color = Ink, fontWeight = FontWeight.SemiBold)
-            if (subtitle.isNotBlank()) {
-                Spacer(Modifier.height(3.dp))
-                Text(subtitle, color = Muted, fontSize = 12.sp)
+    Surface(
+        Modifier.fillMaxWidth(),
+        color = SurfaceElevated,
+        shape = RoundedCornerShape(3.dp),
+        border = BorderStroke(1.dp, Ink.copy(alpha = 0.18f))
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(34.dp),
+                color = Lavender,
+                shape = RoundedCornerShape(2.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        "—",
+                        color = Blue,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    title,
+                    color = Ink,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                if (subtitle.isNotBlank()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(subtitle, color = Muted, fontSize = 11.sp)
+                }
             }
         }
     }
@@ -2683,7 +2721,7 @@ private fun GitHubLinkDialog(
     AlertDialog(
         modifier = Modifier.widthIn(max = 300.dp),
         onDismissRequest = {},
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(4.dp),
         title = {
             Text(
                 "GitHub",
@@ -2710,8 +2748,9 @@ private fun GitHubLinkDialog(
                     )
                 } else {
                     Surface(
-                        color = Lavender,
-                        shape = RoundedCornerShape(12.dp)
+                        color = BlueSoft,
+                        shape = RoundedCornerShape(3.dp),
+                        border = BorderStroke(1.dp, Blue.copy(alpha = 0.45f))
                     ) {
                         Text(
                             userCode,
