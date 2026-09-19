@@ -34,6 +34,7 @@ data class AutoTaskItem(
 data class AutoQueueSnapshot(
     val tasks: List<AutoTaskItem> = emptyList(),
     val started: Boolean = false,
+    val paused: Boolean = false,
     val awaitingConfirmation: Boolean = false,
     val events: List<String> = emptyList(),
     val workerActive: Boolean = false,
@@ -90,6 +91,17 @@ class AutoTaskStore(context: Context) {
 
     fun setAwaitingConfirmation(value: Boolean) {
         write(snapshot().copy(awaitingConfirmation = value))
+    }
+
+    fun setPaused(value: Boolean) {
+        val current = snapshot()
+        write(
+            current.copy(
+                paused = value,
+                workerMessage = if (value) "متوقف مؤقتًا" else "متابعة التنفيذ",
+                workerHeartbeatAt = System.currentTimeMillis()
+            )
+        )
     }
 
     fun updateRemoteExecution(
@@ -184,6 +196,7 @@ class AutoTaskStore(context: Context) {
         write(
             current.copy(
                 started = value,
+                paused = if (value) false else current.paused,
                 awaitingConfirmation = if (value) false else current.awaitingConfirmation,
                 workerError = if (value) "" else current.workerError
             )
