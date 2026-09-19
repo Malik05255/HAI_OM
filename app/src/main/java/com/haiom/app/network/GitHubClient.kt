@@ -336,6 +336,23 @@ class GitHubClient(
         return root["html_url"]?.jsonPrimitive?.contentOrNull
     }
 
+    suspend fun cancelWorkflowRun(
+        repo: RepoRef,
+        runId: Long
+    ) = withContext(Dispatchers.IO) {
+        if (runId <= 0L) return@withContext
+
+        request(
+            method = "POST",
+            path = "/repos/${repo.owner}/${repo.repo}/actions/runs/$runId/cancel",
+            allow404 = true
+        ).use { response ->
+            if (response.code !in setOf(202, 404, 409)) {
+                error("تعذر إيقاف التنفيذ: HTTP ${response.code}")
+            }
+        }
+    }
+
     suspend fun setRuntimePaused(
         repo: RepoRef,
         paused: Boolean
