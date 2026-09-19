@@ -82,7 +82,8 @@ class AutoTaskWorker(
                     val task = store.nextWaiting() ?: break
 
                     store.updateTask(task.id, AutoTaskStatus.RUNNING)
-                    store.addEvent("${task.order}. ${task.title} — قيد المعالجة")
+                    store.clearRemoteExecution(fullName)
+                    store.addEvent("${task.order}. ${task.title} — تجهيز التنفيذ")
                     store.heartbeat("${task.order}. ${task.title}")
                     setForeground(createForegroundInfo(task.title))
 
@@ -104,7 +105,21 @@ class AutoTaskWorker(
                                 store.addEvent("${task.order}. $clean")
                                 store.heartbeat(clean.take(100))
                             },
-                            baseBranchOverride = workingBranch
+                            baseBranchOverride = workingBranch,
+                            onCiProgress = { runId, state, stage ->
+                                store.updateRemoteExecution(
+                                    repository = fullName,
+                                    runId = runId,
+                                    state = state,
+                                    stage = stage
+                                )
+                                val visibleId =
+                                    runId?.takeIf { it > 0L }?.let { " #$it" }.orEmpty()
+                                store.addEvent(
+                                    "${task.order}. GitHub Actions$visibleId — $stage"
+                                )
+                                store.heartbeat(stage)
+                            }
                         )
 
                         workingBranch =
@@ -116,6 +131,12 @@ class AutoTaskWorker(
                             result = result.answer.orEmpty(),
                             branch = result.branch
                         )
+                        store.updateRemoteExecution(
+                            repository = fullName,
+                            runId = store.snapshot().remoteRunId.takeIf { it > 0L },
+                            state = "success",
+                            stage = "اكتمل GitHub Actions"
+                        )
                         store.addEvent("${task.order}. ${task.title} — تم")
                         store.heartbeat("تمت المهمة ${task.order}")
                     } catch (cancelled: CancellationException) {
@@ -126,6 +147,13 @@ class AutoTaskWorker(
                             id = task.id,
                             status = AutoTaskStatus.FAILED,
                             result = t.message.orEmpty()
+                        )
+                        store.updateRemoteExecution(
+                            repository = fullName,
+                            runId = store.snapshot().remoteRunId.takeIf { it > 0L },
+                            state = "failure",
+                            stage = t.message?.take(120).orEmpty()
+                                .ifBlank { "فشل التنفيذ" }
                         )
                         store.addEvent("${task.order}. ${task.title} — فشل")
                         store.heartbeat("فشل المهمة ${task.order}")
