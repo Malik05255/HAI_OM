@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       github_oauth_client_id:
-        description: "GitHub OAuth/GitHub App Client ID with Device Flow enabled"
+        description: "Optional GitHub OAuth Client ID override"
         required: false
         type: string
 
@@ -39,15 +39,7 @@ jobs:
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 
   publish:
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      (
-        (github.event_name == 'push' && vars.GITHUB_OAUTH_CLIENT_ID != '') ||
-        (
-          github.event_name == 'workflow_dispatch' &&
-          (inputs.github_oauth_client_id != '' || vars.GITHUB_OAUTH_CLIENT_ID != '')
-        )
-      )
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -65,15 +57,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-
-      - name: Validate GitHub Device Flow configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${GITHUB_OAUTH_CLIENT_ID:-}" ]; then
-            echo "::error::GITHUB_OAUTH_CLIENT_ID is empty; refusing to publish an APK with a disabled GitHub link button."
-            exit 1
-          fi
 
       - name: Get or create stable signing key
         shell: bash
@@ -135,6 +118,6 @@ jobs:
           else
             gh release create "$TAG" HAI-OM.apk \
               --title "HAI OM $TAG" \
-              --notes "تحديث HAI OM" \
+              --notes "تحديث HAI OM: تفعيل ربط GitHub بالكود" \
               --latest
           fi
