@@ -7,7 +7,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -18,28 +18,30 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(
+            statusBarStyle = SystemBarStyle.light(
+                AndroidColor.TRANSPARENT,
                 AndroidColor.TRANSPARENT
             ),
-            navigationBarStyle = SystemBarStyle.dark(
+            navigationBarStyle = SystemBarStyle.light(
+                AndroidColor.TRANSPARENT,
                 AndroidColor.TRANSPARENT
             )
         )
         setContent {
-            val colors = darkColorScheme(
-                primary = Color(0xFF68E1FF),
-                onPrimary = Color(0xFF071014),
-                primaryContainer = Color(0xFF102832),
-                onPrimaryContainer = Color(0xFFC9F5FF),
-                secondary = Color(0xFFA78BFA),
-                secondaryContainer = Color(0xFF241C3C),
-                background = Color(0xFF090C11),
-                surface = Color(0xFF10151D),
-                surfaceVariant = Color(0xFF151B25),
-                onSurface = Color(0xFFF3F7FB),
-                onSurfaceVariant = Color(0xFF9AA6B5),
-                outline = Color(0xFF25303E),
-                error = Color(0xFFFF6B7A)
+            val colors = lightColorScheme(
+                primary = Color(0xFF1F8A70),
+                onPrimary = Color.White,
+                primaryContainer = Color(0xFFE5F4EF),
+                onPrimaryContainer = Color(0xFF16362D),
+                secondary = Color(0xFFD97757),
+                secondaryContainer = Color(0xFFFFE9E2),
+                background = Color(0xFFF7F8F4),
+                surface = Color.White,
+                surfaceVariant = Color(0xFFEEF3EC),
+                onSurface = Color(0xFF17211D),
+                onSurfaceVariant = Color(0xFF66726C),
+                outline = Color(0xFFD9E2DD),
+                error = Color(0xFFD85F50)
             )
             MaterialTheme(colorScheme = colors) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
