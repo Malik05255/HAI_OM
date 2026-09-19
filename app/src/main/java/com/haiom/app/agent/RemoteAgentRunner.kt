@@ -30,7 +30,8 @@ class RemoteAgentRunner(
         requirements: String,
         onEvent: (String) -> Unit,
         baseBranchOverride: String? = null,
-        onCiProgress: (Long?, String, String) -> Unit = { _, _, _ -> }
+        onCiProgress: (Long?, String, String) -> Unit = { _, _, _ -> },
+        autoMerge: Boolean = false
     ): AgentRunResult {
         require(requirements.isNotBlank()) { "اكتب رسالتك" }
 
@@ -163,9 +164,26 @@ class RemoteAgentRunner(
             }
         )
 
+        val finalBranch = if (autoMerge && !pullRequestUrl.isNullOrBlank()) {
+            onEvent("دمج التعديل في المشروع")
+            val merged = github.mergePullRequest(
+                repo = repo,
+                pullRequestUrl = pullRequestUrl,
+                title = "HAI OM: $shortTitle"
+            )
+            if (!merged) {
+                throw IllegalStateException("تم تنفيذ التعديل لكن تعذر دمجه تلقائيًا")
+            }
+            runCatching { github.deleteBranch(repo, targetBranch) }
+            onEvent("✓ تم دمج التعديل")
+            base
+        } else {
+            targetBranch
+        }
+
         onEvent("✓ اكتملت البرمجة")
         return AgentRunResult(
-            branch = targetBranch,
+            branch = finalBranch,
             pullRequestUrl = pullRequestUrl,
             completedTasks = 1,
             totalTasks = 1,
