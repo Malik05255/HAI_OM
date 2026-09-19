@@ -1,6 +1,7 @@
 package com.haiom.app
 
 import android.app.Application
+import android.net.Uri
 import com.haiom.app.agent.RemoteAgentRunner
 import com.haiom.app.automation.AutoTaskItem
 import com.haiom.app.automation.AutoTaskStatus
@@ -476,10 +477,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         if (_state.value.running) return
 
-        if (isProgrammingRequest(requirements)) {
-            runProgramming(requirements)
-        } else {
-            runChat(requirements)
+        when {
+            isImageGenerationRequest(requirements) -> {
+                generateImage(requirements)
+            }
+
+            isRepositoryExecutionRequest(requirements) -> {
+                runProgramming(requirements)
+            }
+
+            else -> {
+                // Manual chat is intentionally repository-independent.
+                // Coding questions and code generation stay inside chat unless
+                // the user explicitly asks to modify/execute on a repository.
+                runChat(requirements)
+            }
         }
     }
 
@@ -717,6 +729,126 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun isNegativeStart(text: String): Boolean {
         val value = text.trim().lowercase()
         return value in setOf("لا", "لا تبدأ", "لاتبدأ", "الغ", "إلغاء", "الغي", "ألغ")
+    }
+
+    private fun isRepositoryExecutionRequest(text: String): Boolean {
+        val value = text.trim().lowercase()
+        if (value.isBlank()) return false
+
+        val repositoryCue = REPOSITORY_EXECUTION_WORDS.any {
+            value.contains(it)
+        }
+
+        return repositoryCue && isProgrammingRequest(text)
+    }
+
+    private fun isImageGenerationRequest(text: String): Boolean {
+        val value = text.trim().lowercase()
+        if (value.isBlank()) return false
+
+        return IMAGE_GENERATION_PATTERNS.any {
+            it.containsMatchIn(value)
+        }
+    }
+
+    private fun generateImage(prompt: String) {
+        manualChatJob?.cancel()
+        responseGeneration += 1L
+        val generation = responseGeneration
+
+        val existingHistory = _state.value.chatHistory
+        val visibleHistory = (
+            existingHistory + ChatTurn("user", prompt)
+            ).takeLast(20)
+
+        _state.update {
+            it.copy(
+                running = true,
+                programming = false,
+                result = null,
+                error = null,
+                logs = emptyList(),
+                chatHistory = visibleHistory
+            )
+        }
+
+        manualChatJob = viewModelScope.launch {
+            try {
+                val cleanPrompt = prompt
+                    .replace(
+                        Regex(
+                            """(?i)(صمم|صمّم|أنشئ|انشئ|ولد|ولّد|ارسم|اصنع|سوي|سو|generate|create|draw|make)\s+(لي\s+)?(صورة|صوره|image|picture)"""
+                        ),
+                        ""
+                    )
+                    .trim()
+                    .ifBlank { prompt.trim() }
+
+                val seed = (cleanPrompt.hashCode().toLong() and 0x7fffffffL)
+                val imageUrl =
+                    "https://image.pollinations.ai/prompt/" +
+                        Uri.encode(cleanPrompt) +
+                        "?width=1024&height=1024" +
+                        "&model=flux" +
+                        "&seed=$seed" +
+                        "&nologo=true" +
+                        "&safe=true" +
+                        "&enhance=true"
+
+                val imageTurn = ChatTurn(
+                    role = "assistant",
+                    text = "[[HAI_IMAGE]]$imageUrl"
+                )
+
+                if (generation != responseGeneration ||
+                    _state.value.autoExecuteEnabled
+                ) {
+                    return@launch
+                }
+
+                _state.update {
+                    it.copy(
+                        running = false,
+                        programming = false,
+                        chatHistory = (
+                            it.chatHistory + imageTurn
+                            ).takeLast(20),
+                        result = AgentRunResult(
+                            branch = "",
+                            pullRequestUrl = null,
+                            completedTasks = 1,
+                            totalTasks = 1,
+                            answer = "تم إنشاء الصورة"
+                        )
+                    )
+                }
+            } catch (_: CancellationException) {
+                if (generation == responseGeneration) {
+                    _state.update {
+                        it.copy(
+                            running = false,
+                            programming = false
+                        )
+                    }
+                }
+            } catch (t: Throwable) {
+                if (generation == responseGeneration) {
+                    _state.update {
+                        it.copy(
+                            running = false,
+                            programming = false,
+                            error = t.message?.takeIf { message ->
+                                message.isNotBlank()
+                            } ?: "تعذر إنشاء الصورة"
+                        )
+                    }
+                }
+            } finally {
+                if (generation == responseGeneration) {
+                    manualChatJob = null
+                }
+            }
+        }
     }
 
     private fun runChat(prompt: String) {
@@ -1074,8 +1206,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Regex("""كمل\s+(البرمجة|التنفيذ|التعديل)""")
         )
 
+        private val REPOSITORY_EXECUTION_WORDS = listOf(
+            "المشروع", "المستودع", "github", "جيت هب", "قيت هب",
+            "repo", "repository", "اتصل بالمستودع", "على المشروع",
+            "في المشروع", "داخل المشروع", "ملفات المشروع"
+        )
+
+        private val IMAGE_GENERATION_PATTERNS = listOf(
+            Regex("""(^|\s)(صمم|صمّم|أنشئ|انشئ|ولد|ولّد|ارسم|اصنع|سوي|سو)\s+(لي\s+)?(صورة|صوره|تصميم|رسمة|رسمه)(\s|$)"""),
+            Regex("""(^|\s)(توليد|إنشاء|انشاء|تصميم)\s+(صورة|صوره|صور)(\s|$)"""),
+            Regex("""(^|\s)(generate|create|draw|make)\s+(an?\s+)?(image|picture|illustration)(\s|$)""", RegexOption.IGNORE_CASE)
+        )
+
         private val REPOSITORY_CONTEXT_WORDS = listOf(
-            "المشروع", "المستودع", "الكود", "الملفات", "repo", "repository",
+            "المشروع", "المستودع", "الملفات", "repo", "repository",
             "اقرأه", "اقراه", "اقرأ", "اقرا", "راجعه", "راجع المشروع",
             "لخصه", "لخص المشروع", "وش لقيت", "وش فيه"
         )
