@@ -1831,40 +1831,36 @@ private fun AutoRuntimeStatusBar(
         ) {
             Row(
                 Modifier.padding(
-                    start = 8.dp,
-                    end = 12.dp,
-                    top = 9.dp,
-                    bottom = 9.dp
+                    start = 1.dp,
+                    end = 10.dp,
+                    top = 8.dp,
+                    bottom = 8.dp
                 ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (queueStarted) {
-                    Surface(
+                    Box(
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(26.dp)
                             .clickable(onClick = onTogglePause),
-                        color = Color.White,
-                        shape = CircleShape,
-                        border = BorderStroke(1.dp, Line)
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                if (paused) {
-                                    Icons.Outlined.PlayArrow
-                                } else {
-                                    Icons.Outlined.Pause
-                                },
-                                contentDescription = if (paused) {
-                                    "متابعة"
-                                } else {
-                                    "إيقاف مؤقت"
-                                },
-                                tint = Blue,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                        Icon(
+                            if (paused) {
+                                Icons.Outlined.PlayArrow
+                            } else {
+                                Icons.Outlined.Pause
+                            },
+                            contentDescription = if (paused) {
+                                "متابعة"
+                            } else {
+                                "إيقاف مؤقت"
+                            },
+                            tint = Blue,
+                            modifier = Modifier.size(17.dp)
+                        )
                     }
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(6.dp))
                 }
 
                 CompositionLocalProvider(
