@@ -9,6 +9,11 @@ val signingStorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").or
 val signingStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
 val signingKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
 val signingKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+val githubOAuthClientId = providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID").orNull.orEmpty()
+val githubOAuthClientSecret = providers.environmentVariable("GITHUB_OAUTH_CLIENT_SECRET").orNull.orEmpty()
+
+fun buildConfigString(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "com.haiom.app"
@@ -18,8 +23,19 @@ android {
         applicationId = "com.haiom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.9.0"
+        versionCode = 22
+        versionName = "0.9.1"
+
+        buildConfigField(
+            "String",
+            "GITHUB_OAUTH_CLIENT_ID",
+            buildConfigString(githubOAuthClientId)
+        )
+        buildConfigField(
+            "String",
+            "GITHUB_OAUTH_CLIENT_SECRET",
+            buildConfigString(githubOAuthClientSecret)
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
