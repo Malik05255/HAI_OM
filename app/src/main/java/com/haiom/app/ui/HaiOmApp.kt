@@ -496,8 +496,6 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("كيف أساعدك؟", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(7.dp))
-        Text("ابدأ من شريط الكتابة بالأسفل", color = Muted, fontSize = 13.sp)
     }
 }
 
@@ -1027,10 +1025,7 @@ private fun ProjectsContent(
     }
 
     if (repositories.isEmpty()) {
-        EmptyToolCard(
-            "لا توجد مشاريع",
-            "الربط ناجح، لكن لا توجد مستودعات متاحة لهذا الربط."
-        )
+        EmptyToolCard("لا توجد مشاريع", "")
         return
     }
 
@@ -1047,14 +1042,14 @@ private fun ProjectsContent(
 
     Column(Modifier.fillMaxSize()) {
         Text(
-            "اختر المشروع الذي تريد أن يعمل عليه HAI",
+            "اختر المشروع",
             color = Ink,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(3.dp))
         Text(
-            "${repositories.size} مشروع متاح • لن يتم تعديل أي مشروع آخر",
+            "${repositories.size} مشروع",
             color = Muted,
             fontSize = 12.sp
         )
@@ -1116,7 +1111,7 @@ private fun ProjectsContent(
 
         pendingRepository?.let { repo ->
             Text(
-                "المشروع المحدد: ${repo.fullName}",
+                "المحدد: ${repo.fullName.substringAfter('/')}",
                 modifier = Modifier.fillMaxWidth(),
                 color = Muted,
                 fontSize = 12.sp,
@@ -1135,7 +1130,7 @@ private fun ProjectsContent(
         ) {
             Icon(Icons.Outlined.CheckCircle, null)
             Spacer(Modifier.width(8.dp))
-            Text("حفظ المشروع")
+            Text("حفظ")
         }
         Spacer(Modifier.height(12.dp))
     }
@@ -1150,7 +1145,7 @@ private fun HistoryContent(
     modifier: Modifier = Modifier
 ) {
     if (logs.isEmpty() && answer.isNullOrBlank()) {
-        EmptyToolCard("السجل فارغ", "ستظهر هنا خطوات التنفيذ والتعديلات.")
+        EmptyToolCard("السجل فارغ", "")
         return
     }
     LazyColumn(
@@ -1201,8 +1196,8 @@ private fun HistoryContent(
 @Composable
 private fun ModelsContent(models: List<String>, ready: Boolean) {
     EmptyToolCard(
-        if (ready) "المسار المجاني جاهز" else "المسار غير جاهز",
-        "اختيار النموذج يتم تلقائيًا حسب التوفر."
+        if (ready) "النماذج جاهزة" else "النماذج غير جاهزة",
+        ""
     )
     if (models.isNotEmpty()) {
         Spacer(Modifier.height(12.dp))
@@ -1339,14 +1334,14 @@ private fun GitHubSettingsContent(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "$repositoryCount مشروع متاح",
+                        "$repositoryCount مشروع",
                         color = Muted,
                         fontSize = 12.sp
                     )
                     Text(
                         selectedRepo?.let {
-                            "المشروع الحالي: ${it.fullName.substringAfter('/')}"
-                        } ?: "لم يتم اختيار مشروع",
+                            "الحالي: ${it.fullName.substringAfter('/')}"
+                        } ?: "اختر مشروعًا",
                         color = if (selectedRepo == null) Muted else Blue,
                         fontSize = 12.sp,
                         fontWeight = if (selectedRepo == null) FontWeight.Normal else FontWeight.SemiBold
@@ -1377,7 +1372,7 @@ private fun GitHubSettingsContent(
                 if (selectedRepo == null) {
                     "المشاريع"
                 } else {
-                    "المشاريع / تغيير المشروع"
+                    "تغيير المشروع"
                 }
             )
         }
@@ -1559,9 +1554,9 @@ private fun GitHubConnectCard(
                         if (linking) {
                             status.ifBlank { "جاري تجهيز كود الربط…" }
                         } else if (oauthAvailable) {
-                            "سيعطيك OM كودًا قصيرًا. أدخله في GitHub ووافق على الصلاحيات فقط."
+                            "اربط حسابك للمتابعة"
                         } else {
-                            "ربط GitHub بالكود غير مهيأ في هذه النسخة."
+                            "الربط غير متاح"
                         },
                         color = Muted,
                         fontSize = 12.sp,
@@ -1602,7 +1597,7 @@ private fun GitHubConnectCard(
                 ) {
                     Icon(Icons.Outlined.Link, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("ربط GitHub بالكود")
+                    Text("ربط GitHub")
                 }
             }
         }
@@ -1612,10 +1607,12 @@ private fun GitHubConnectCard(
 @Composable
 private fun EmptyToolCard(title: String, subtitle: String) {
     Surface(Modifier.fillMaxWidth(), color = Lavender, shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(17.dp)) {
+        Column(Modifier.padding(15.dp)) {
             Text(title, color = Ink, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(4.dp))
-            Text(subtitle, color = Muted, fontSize = 12.sp)
+            if (subtitle.isNotBlank()) {
+                Spacer(Modifier.height(3.dp))
+                Text(subtitle, color = Muted, fontSize = 12.sp)
+            }
         }
     }
 }
@@ -1630,60 +1627,56 @@ private fun GitHubLinkDialog(
     val context = LocalContext.current
 
     AlertDialog(
+        modifier = Modifier.widthIn(max = 300.dp),
         onDismissRequest = {},
-        title = { Text("ربط GitHub") },
+        shape = RoundedCornerShape(20.dp),
+        title = {
+            Text(
+                "GitHub",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (userCode.isBlank()) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(24.dp),
                         strokeWidth = 2.dp,
                         color = Blue
                     )
-                    Spacer(Modifier.height(12.dp))
-                } else {
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "الكود",
+                        status.ifBlank { "جاري الربط…" },
                         color = Muted,
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(6.dp))
+                } else {
                     Surface(
                         color = Lavender,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, Line)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
                             userCode,
                             modifier = Modifier.padding(
-                                horizontal = 22.dp,
-                                vertical = 14.dp
+                                horizontal = 16.dp,
+                                vertical = 10.dp
                             ),
                             color = Ink,
-                            fontSize = 24.sp,
+                            fontSize = 21.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 2.sp
+                            letterSpacing = 1.5.sp
                         )
                     }
-                    Spacer(Modifier.height(12.dp))
-                }
-
-                Text(
-                    status.ifBlank { "بانتظار موافقتك في GitHub…" },
-                    color = Ink,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (userCode.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "اضغط الزر أدناه، ألصق الكود في GitHub، ثم وافق على الصلاحيات. OM سيتابع الربط تلقائيًا.",
-                        color = Muted,
-                        textAlign = TextAlign.Center,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp
+                        "أدخل الكود في GitHub",
+                        color = Ink,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -1702,15 +1695,16 @@ private fun GitHubLinkDialog(
                             )
                         )
                         onOpenGitHub()
-                    }
+                    },
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("نسخ الكود وفتح GitHub")
+                    Text("نسخ وفتح", fontSize = 13.sp)
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onCancel) {
-                Text("إلغاء")
+                Text("إلغاء", fontSize = 13.sp)
             }
         }
     )
@@ -1724,16 +1718,13 @@ private fun UpdateDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("تحديث جديد") },
+        title = { Text("تحديث") },
         text = {
-            Text(
-                "الإصدار " + versionName +
-                    " متوفر. سيتم فتح ملف الإصدار الموقّع في المتصفح، ولن يطلب التطبيق صلاحية تثبيت تطبيقات أخرى."
-            )
+            Text("الإصدار " + versionName + " متوفر.")
         },
         confirmButton = {
             TextButton(onClick = onOpenDownload) {
-                Text("فتح التنزيل")
+                Text("تنزيل")
             }
         },
         dismissButton = {
