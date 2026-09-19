@@ -368,29 +368,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val token = resolveGitHubToken()
             val repositoryUrl = _state.value.selectedRepository?.htmlUrl.orEmpty()
-            if (token.isNullOrBlank() || repositoryUrl.isBlank()) return@launch
+
+            if (token.isNullOrBlank() || repositoryUrl.isBlank()) {
+                autoTaskStore.setPaused(!paused)
+                _state.update { current ->
+                    current.copy(
+                        error = if (paused) {
+                            "تعذر إيقاف التنفيذ مؤقتًا"
+                        } else {
+                            "تعذر متابعة التنفيذ"
+                        }
+                    )
+                }
+                return@launch
+            }
 
             val github = GitHubClient(token)
             val repo = runCatching {
                 github.parseRepository(repositoryUrl)
-            }.getOrNull() ?: return@launch
+            }.getOrNull()
 
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    github.setRuntimePaused(repo, paused)
-                }
-            }.onFailure {
-                if (autoTaskStore.snapshot().remoteRunId > 0L) {
-                    autoTaskStore.setPaused(!paused)
-                    _state.update { current ->
-                        current.copy(
-                            error = if (paused) {
-                                "تعذر إيقاف التنفيذ مؤقتًا"
-                            } else {
-                                "تعذر متابعة التنفيذ"
-                            }
-                        )
+            if (repo == null) {
+                autoTaskStore.setPaused(!paused)
+                return@launch
+            }
+
+            var applied = false
+            repeat(3) { attempt ->
+                if (applied) return@repeat
+                applied = runCatching {
+                    withContext(Dispatchers.IO) {
+                        github.setRuntimePaused(repo, paused)
                     }
+                    true
+                }.getOrDefault(false)
+
+                if (!applied && attempt < 2) {
+                    kotlinx.coroutines.delay(500L)
+                }
+            }
+
+            if (!applied) {
+                autoTaskStore.setPaused(!paused)
+                _state.update { current ->
+                    current.copy(
+                        error = if (paused) {
+                            "تعذر إيقاف التنفيذ مؤقتًا"
+                        } else {
+                            "تعذر متابعة التنفيذ"
+                        }
+                    )
                 }
             }
         }
