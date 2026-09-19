@@ -709,69 +709,71 @@ private fun MessageBlock(turn: ChatTurn) {
     val codeLike = turn.text.contains(fence)
     val messageText = if (codeLike) turn.text.replace(fence, "") else turn.text
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = if (user) Arrangement.End else Arrangement.Start,
-            verticalAlignment = Alignment.Top
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = if (user) {
+            AbsoluteAlignment.CenterRight
+        } else {
+            AbsoluteAlignment.CenterLeft
+        }
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(
+                if (user) 0.82f else 0.88f
+            ),
+            color = if (user) Color(0xFFF1F4F1) else SurfaceElevated,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(
+                1.dp,
+                if (user) Color(0xFFD5E1DA) else Line
+            )
         ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(if (user) 0.84f else 0.92f),
-                color = if (user) Color(0xFFF1F4F1) else SurfaceElevated,
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(
-                    1.dp,
-                    if (user) Color(0xFFD5E1DA) else Line
-                )
+            Row(
+                Modifier.padding(vertical = 12.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Row(
-                    Modifier.padding(vertical = 12.dp),
-                    verticalAlignment = Alignment.Top
+                Box(
+                    Modifier
+                        .width(3.dp)
+                        .height(if (codeLike) 54.dp else 34.dp)
+                        .background(if (user) Violet else Blue)
+                )
+                Spacer(Modifier.width(11.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 13.dp),
+                    horizontalAlignment = Alignment.End
                 ) {
-                    Box(
-                        Modifier
-                            .width(3.dp)
-                            .height(if (codeLike) 54.dp else 34.dp)
-                            .background(if (user) Violet else Blue)
-                    )
-                    Spacer(Modifier.width(11.dp))
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .padding(end = 13.dp)
+                    CompositionLocalProvider(
+                        LocalLayoutDirection provides LayoutDirection.Rtl
                     ) {
                         Text(
                             if (user) "YOU" else "HAI",
-                            color = if (user) Violet else Blue,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.4.sp
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFF3F3A36),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 1.2.sp,
+                            textAlign = TextAlign.Right
                         )
-                        Spacer(Modifier.height(5.dp))
-                        CompositionLocalProvider(
-                            LocalLayoutDirection provides if (codeLike) {
-                                LayoutDirection.Ltr
+
+                        Spacer(Modifier.height(6.dp))
+
+                        Text(
+                            messageText,
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Ink,
+                            fontSize = if (codeLike) 12.sp else 15.sp,
+                            lineHeight = if (codeLike) 18.sp else 23.sp,
+                            fontFamily = if (codeLike) {
+                                FontFamily.Monospace
                             } else {
-                                LayoutDirection.Rtl
-                            }
-                        ) {
-                            Text(
-                                messageText,
-                                color = Ink,
-                                fontSize = if (codeLike) 12.sp else 15.sp,
-                                lineHeight = if (codeLike) 18.sp else 23.sp,
-                                fontFamily = if (codeLike) {
-                                    FontFamily.Monospace
-                                } else {
-                                    FontFamily.Default
-                                },
-                                textAlign = if (codeLike) {
-                                    TextAlign.Left
-                                } else {
-                                    TextAlign.Right
-                                }
-                            )
-                        }
+                                FontFamily.Default
+                            },
+                            textAlign = TextAlign.Right
+                        )
                     }
                 }
             }
@@ -1061,7 +1063,7 @@ private fun AnimatedToolDock(
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     if (open) "‹" else "›",
-                    color = Blue,
+                    color = Color(0xFF6A5145),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
