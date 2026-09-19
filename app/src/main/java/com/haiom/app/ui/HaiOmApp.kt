@@ -2120,30 +2120,36 @@ private fun AutomaticTasksContent(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                color = SurfaceElevated,
-                shape = RoundedCornerShape(3.dp),
-                border = BorderStroke(1.dp, Ink.copy(alpha = 0.16f))
+                color = Lavender,
+                shape = RoundedCornerShape(28.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Outlined.AutoAwesome,
-                            contentDescription = null,
-                            tint = Blue,
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Spacer(Modifier.height(8.dp))
+                        Surface(
+                            modifier = Modifier.size(56.dp),
+                            color = Color.White,
+                            shape = CircleShape
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Outlined.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Violet,
+                                    modifier = Modifier.size(25.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
                         Text(
                             "لا توجد مهام",
                             color = Ink,
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.ExtraBold
                         )
                         Text(
-                            "AUTO QUEUE / EMPTY",
+                            "ستظهر المهام هنا عند بدء التنفيذ التلقائي",
                             color = Muted,
-                            fontSize = 8.sp,
-                            letterSpacing = 1.2.sp
+                            fontSize = 10.sp
                         )
                     }
                 }
@@ -2156,7 +2162,7 @@ private fun AutomaticTasksContent(
                 .weight(1f)
                 .fillMaxWidth(),
             contentPadding = PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(tasks.sortedBy { it.order }, key = { it.id }) { task ->
                 val staleRunning =
@@ -2166,70 +2172,65 @@ private fun AutomaticTasksContent(
                         !controllerLive
 
                 val statusText = when {
-                    staleRunning -> "STOP"
-                    task.status == AutoTaskStatus.WAITING -> "WAIT"
-                    task.status == AutoTaskStatus.RUNNING && paused -> "PAUSE"
-                    task.status == AutoTaskStatus.RUNNING -> "RUN"
-                    task.status == AutoTaskStatus.SUCCESS -> "DONE"
-                    else -> "FAIL"
+                    staleRunning -> "متوقف"
+                    task.status == AutoTaskStatus.WAITING -> "في الانتظار"
+                    task.status == AutoTaskStatus.RUNNING && paused -> "متوقف مؤقتًا"
+                    task.status == AutoTaskStatus.RUNNING -> "يعمل"
+                    task.status == AutoTaskStatus.SUCCESS -> "تم"
+                    else -> "فشل"
                 }
 
                 val statusColor = when {
                     staleRunning -> Muted
                     task.status == AutoTaskStatus.RUNNING -> Blue
                     task.status == AutoTaskStatus.SUCCESS -> Moss
-                    task.status == AutoTaskStatus.FAILED -> Signal
-                    else -> Color(0xFF9A7B2E)
+                    task.status == AutoTaskStatus.FAILED -> Color(0xFFDB5D6A)
+                    else -> Violet
+                }
+
+                val cardColor = when {
+                    task.status == AutoTaskStatus.RUNNING -> BlueSoft
+                    task.status == AutoTaskStatus.SUCCESS -> Color(0xFFE9F8F3)
+                    task.status == AutoTaskStatus.FAILED -> Peach
+                    else -> SurfaceElevated
                 }
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = SurfaceElevated,
-                    shape = RoundedCornerShape(3.dp),
+                    color = cardColor,
+                    shape = RoundedCornerShape(22.dp),
                     border = BorderStroke(
-                        if (task.status == AutoTaskStatus.RUNNING && remoteLive) 2.dp else 1.dp,
-                        if (task.status == AutoTaskStatus.RUNNING && remoteLive) Blue
-                        else Ink.copy(alpha = 0.16f)
-                    )
+                        1.dp,
+                        if (task.status == AutoTaskStatus.RUNNING && remoteLive) {
+                            Color(0xFFCBD5FF)
+                        } else {
+                            Line
+                        }
+                    ),
+                    shadowElevation = if (
+                        task.status == AutoTaskStatus.RUNNING && remoteLive
+                    ) 6.dp else 2.dp
                 ) {
                     Row(
-                        Modifier.padding(11.dp),
+                        Modifier.padding(13.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
-                            modifier = Modifier
-                                .width(38.dp)
-                                .height(46.dp),
-                            color = if (
-                                task.status == AutoTaskStatus.RUNNING && remoteLive
-                            ) Blue else Lavender,
-                            shape = RoundedCornerShape(2.dp)
+                            modifier = Modifier.size(42.dp),
+                            color = Color.White,
+                            shape = CircleShape
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
+                            Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    "${task.order.toString().padStart(2, '0')}",
-                                    color = if (
-                                        task.status == AutoTaskStatus.RUNNING && remoteLive
-                                    ) Color.White else Ink,
+                                    task.order.toString(),
+                                    color = statusColor,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Black
-                                )
-                                Text(
-                                    statusText,
-                                    color = if (
-                                        task.status == AutoTaskStatus.RUNNING && remoteLive
-                                    ) Color.White.copy(alpha = 0.75f) else statusColor,
-                                    fontSize = 7.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.8.sp
                                 )
                             }
                         }
 
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(11.dp))
 
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -2239,33 +2240,34 @@ private fun AutomaticTasksContent(
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Spacer(Modifier.height(3.dp))
-                            Box(
-                                Modifier
-                                    .width(
-                                        when (statusText) {
-                                            "DONE" -> 70.dp
-                                            "RUN" -> 52.dp
-                                            "FAIL" -> 38.dp
-                                            else -> 28.dp
-                                        }
-                                    )
-                                    .height(3.dp)
-                                    .background(statusColor)
+                            Text(
+                                statusText,
+                                color = statusColor,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
 
-                        Text(
-                            when (statusText) {
-                                "RUN" -> "↻"
-                                "DONE" -> "✓"
-                                "FAIL" -> "×"
-                                "PAUSE" -> "Ⅱ"
-                                else -> "·"
-                            },
-                            color = statusColor,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Surface(
+                            modifier = Modifier.size(30.dp),
+                            color = Color.White.copy(alpha = 0.8f),
+                            shape = CircleShape
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    when {
+                                        task.status == AutoTaskStatus.RUNNING && paused -> "Ⅱ"
+                                        task.status == AutoTaskStatus.RUNNING -> "●"
+                                        task.status == AutoTaskStatus.SUCCESS -> "✓"
+                                        task.status == AutoTaskStatus.FAILED -> "×"
+                                        else -> "○"
+                                    },
+                                    color = statusColor,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -2309,79 +2311,78 @@ private fun AutoRuntimeStatusBar(
     }
 
     val status = when {
-        paused -> "PAUSED"
-        remoteState == "failure" -> "ERROR"
-        remoteState == "success" -> "DONE"
-        remoteState == "queued" || remoteState == "waiting" -> "QUEUED"
-        remoteState == "not_found" -> "IDLE"
-        workerError.isNotBlank() -> "STOPPED"
-        remoteStage.contains("يصلح") || remoteStage.contains("إصلاح") -> "REPAIR"
-        remoteStage.contains("يفحص") -> "VERIFY"
-        remoteStage.contains("يحفظ") -> "SAVE"
-        remoteStage.contains("يجهز") -> "PREP"
-        queueStarted && (remoteLive || controllerLive) -> "RUN"
-        tasks.isNotEmpty() && doneCount == tasks.size -> "DONE"
-        else -> "IDLE"
+        paused -> "متوقف مؤقتًا"
+        remoteState == "failure" -> "حدث خطأ"
+        remoteState == "success" -> "تم"
+        remoteState == "queued" || remoteState == "waiting" -> "في الانتظار"
+        remoteState == "not_found" -> "لم يبدأ"
+        workerError.isNotBlank() -> "متوقف"
+        remoteStage.contains("يصلح") || remoteStage.contains("إصلاح") -> "يقوم بالإصلاح"
+        remoteStage.contains("يفحص") -> "يفحص"
+        remoteStage.contains("يحفظ") -> "يحفظ"
+        remoteStage.contains("يجهز") -> "يجهز"
+        queueStarted && (remoteLive || controllerLive) -> "يعمل"
+        tasks.isNotEmpty() && doneCount == tasks.size -> "تم"
+        else -> "جاهز"
     }
 
     val accent = when {
-        status == "ERROR" || status == "STOPPED" -> Signal
-        status == "DONE" -> Moss
-        paused -> Color(0xFF9A7B2E)
+        remoteState == "failure" || workerError.isNotBlank() -> Color(0xFFDB5D6A)
+        paused -> Violet
+        remoteState == "success" -> Moss
         else -> Blue
     }
 
     Surface(
         modifier = modifier.clickable(onClick = onOpenTasks),
-        color = Ink,
-        shape = RoundedCornerShape(3.dp),
-        shadowElevation = 5.dp
+        color = Color(0xF8FFFFFF),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, Line),
+        shadowElevation = 10.dp
     ) {
         Row(
-            Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
+            Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (queueStarted) {
                 Surface(
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(36.dp)
                         .clickable(onClick = onTogglePause),
-                    color = accent,
-                    shape = RoundedCornerShape(2.dp)
+                    color = if (paused) Lavender else BlueSoft,
+                    shape = CircleShape
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
                             contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(17.dp)
+                            tint = accent,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(9.dp))
             }
 
             Column(Modifier.weight(1f)) {
                 Text(
                     status,
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.3.sp
+                    color = Ink,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
                 )
 
                 val detail = when {
-                    paused -> "متوقف مؤقتًا"
                     workerError.isNotBlank() -> workerError
                     remoteStage.isNotBlank() -> remoteStage
-                    queueStarted -> "المهمة قيد التنفيذ"
+                    queueStarted -> "التنفيذ مستمر"
                     else -> ""
                 }
 
                 if (detail.isNotBlank()) {
                     Text(
                         detail,
-                        color = Color.White.copy(alpha = 0.68f),
+                        color = Muted,
                         fontSize = 9.sp,
                         maxLines = 1
                     )
@@ -2390,8 +2391,8 @@ private fun AutoRuntimeStatusBar(
 
             Box(
                 Modifier
-                    .width(4.dp)
-                    .height(34.dp)
+                    .size(9.dp)
+                    .clip(CircleShape)
                     .background(accent)
             )
         }
@@ -2409,8 +2410,10 @@ private fun LiveCodePreview(
 
     LaunchedEffect(preview, paused) {
         if (paused) return@LaunchedEffect
+
         var index = if (preview.startsWith(typed)) typed.length else 0
         if (index == 0) typed = ""
+
         while (index < preview.length) {
             index = (index + 36).coerceAtMost(preview.length)
             typed = preview.take(index)
@@ -2423,45 +2426,57 @@ private fun LiveCodePreview(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFF17181B),
-            shape = RoundedCornerShape(3.dp),
-            border = BorderStroke(2.dp, Blue)
+            color = Color(0xFFFDFEFF),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, Color(0xFFDDE5FF)),
+            shadowElevation = 5.dp
         ) {
             Column {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Blue)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                        .background(BlueSoft)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Outlined.Code,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "LIVE CODE",
+                    Surface(
+                        modifier = Modifier.size(28.dp),
                         color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.5.sp
-                    )
-                    Spacer(Modifier.weight(1f))
+                        shape = CircleShape
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.Code,
+                                contentDescription = null,
+                                tint = Blue,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
                     Text(
-                        if (paused) "PAUSE" else "STREAM",
-                        color = Color.White.copy(alpha = 0.75f),
-                        fontSize = 8.sp,
+                        "الكود المباشر",
+                        color = Ink,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+
+                    Spacer(Modifier.weight(1f))
+
+                    Text(
+                        if (paused) "متوقف" else "مباشر",
+                        color = if (paused) Violet else Moss,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
                 Text(
                     text = typed + cursor,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-                    color = Color(0xFFF0F3FF),
+                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
+                    color = Color(0xFF24304A),
                     fontSize = 11.sp,
                     lineHeight = 16.sp,
                     fontFamily = FontFamily.Monospace,
