@@ -69,7 +69,10 @@ class RemoteAgentRunner(
             branch = RUNTIME_BRANCH,
             batch = EditBatch(
                 summary = "تشغيل HAI OM",
-                files = listOf(FileEdit(TASK_PATH, taskJson))
+                files = listOf(
+                    FileEdit(TASK_PATH, taskJson),
+                    FileEdit(CONTROL_PATH, """{"paused":false}""")
+                )
             ),
             taskId = "task",
             onEvent = onEvent
@@ -283,6 +286,7 @@ class RemoteAgentRunner(
         private const val WORKFLOW_PATH = ".github/workflows/hai-om-agent.yml"
         private const val RUNNER_PATH = ".hai-om/agent.mjs"
         private const val TASK_PATH = ".hai-om/task.json"
+        private const val CONTROL_PATH = ".hai-om/control.json"
         private const val RESULTS_DIR = ".hai-om/results"
         private const val MAX_REQUIREMENTS_CHARS = 20_000
     }
