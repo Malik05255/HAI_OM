@@ -68,6 +68,12 @@ android {
             buildConfigString(imageApiKey)
         )
 
+        buildConfigField(
+            "String",
+            "AI_HORDE_API_KEY",
+            buildConfigString(aiHordeApiKey)
+        )
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
