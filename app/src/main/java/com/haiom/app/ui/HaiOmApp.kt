@@ -122,7 +122,7 @@ fun HaiOmApp(
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     var draft by remember { mutableStateOf("") }
-    var selectedRepo by remember { mutableStateOf<GitHubRepository?>(null) }
+    val selectedRepo = state.selectedRepository
     var dockOpen by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<ToolPanel?>(null) }
     val media = remember { mutableStateListOf<PickedMedia>() }
@@ -137,18 +137,8 @@ fun HaiOmApp(
         }
     }
 
-    LaunchedEffect(state.repositories) {
-        if (
-            selectedRepo != null &&
-            state.repositories.none { it.fullName == selectedRepo?.fullName }
-        ) {
-            selectedRepo = null
-        }
-    }
-
     LaunchedEffect(state.githubJustLinked) {
         if (state.githubJustLinked) {
-            selectedRepo = null
             dockOpen = false
             panel = ToolPanel.PROJECTS
             vm.consumeGitHubJustLinked()
@@ -230,7 +220,6 @@ fun HaiOmApp(
                             val attachmentNote = if (media.isEmpty()) "" else
                                 "\n\nالمرفقات المختارة: " + media.joinToString(", ") { it.name }
                             vm.runAgent(
-                                selectedRepo?.htmlUrl.orEmpty(),
                                 draft.trim() + attachmentNote
                             )
                             draft = ""
@@ -271,9 +260,12 @@ fun HaiOmApp(
                     omniReady = state.omniReady,
                     checkingUpdate = state.checkingUpdate,
                     onBack = { panel = null },
-                    onSelectRepo = {
-                        selectedRepo = it
+                    onSaveRepo = {
+                        vm.saveSelectedRepository(it)
                         panel = null
+                    },
+                    onOpenProjects = {
+                        panel = ToolPanel.PROJECTS
                     },
                     onConnect = vm::startGitHubLink,
                     onCancelLink = vm::cancelGitHubLink,
@@ -819,7 +811,8 @@ private fun ToolScreen(
     omniReady: Boolean,
     checkingUpdate: Boolean,
     onBack: () -> Unit,
-    onSelectRepo: (GitHubRepository) -> Unit,
+    onSaveRepo: (GitHubRepository) -> Unit,
+    onOpenProjects: () -> Unit,
     onConnect: () -> Unit,
     onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
@@ -849,7 +842,7 @@ private fun ToolScreen(
                 linking = linking,
                 linkingStatus = linkingStatus,
                 oauthAvailable = oauthAvailable,
-                onSelect = onSelectRepo,
+                onSave = onSaveRepo,
                 onConnect = onConnect,
                 onCancelLink = onCancelLink
             )
@@ -865,6 +858,7 @@ private fun ToolScreen(
                 connected = connected,
                 login = login,
                 repositoryCount = repositoryCount,
+                selectedRepo = selectedRepo,
                 linking = linking,
                 linkingStatus = linkingStatus,
                 oauthAvailable = oauthAvailable,
@@ -872,7 +866,8 @@ private fun ToolScreen(
                 onConnect = onConnect,
                 onCancelLink = onCancelLink,
                 onDisconnect = onDisconnect,
-                onCheckUpdate = onCheckUpdate
+                onCheckUpdate = onCheckUpdate,
+                onOpenProjects = onOpenProjects
             )
         }
     }
@@ -900,7 +895,7 @@ private fun ProjectsContent(
     linking: Boolean,
     linkingStatus: String,
     oauthAvailable: Boolean,
-    onSelect: (GitHubRepository) -> Unit,
+    onSave: (GitHubRepository) -> Unit,
     onConnect: () -> Unit,
     onCancelLink: () -> Unit
 ) {
@@ -923,70 +918,110 @@ private fun ProjectsContent(
         return
     }
 
-    Text(
-        "اختر المشروع الذي تريد العمل عليه",
-        color = Ink,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 15.sp
-    )
-    Spacer(Modifier.height(4.dp))
-    Text(
-        "${repositories.size} مشروع متاح",
-        color = Muted,
-        fontSize = 12.sp
-    )
-    Spacer(Modifier.height(12.dp))
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp)
+    var pendingFullName by remember(
+        selectedRepo?.fullName,
+        repositories.joinToString("|") { it.fullName }
     ) {
-        items(repositories) { repo ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSelect(repo) },
-                color = if (selectedRepo?.fullName == repo.fullName) {
-                    Lavender
-                } else {
-                    Color.White
-                },
-                shape = RoundedCornerShape(18.dp),
-                border = BorderStroke(1.dp, Line)
-            ) {
-                Row(
-                    Modifier.padding(15.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Outlined.FolderOpen,
-                        null,
-                        tint = Blue
+        mutableStateOf(selectedRepo?.fullName.orEmpty())
+    }
+
+    val pendingRepository = repositories.firstOrNull {
+        it.fullName == pendingFullName
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Text(
+            "اختر المشروع الذي تريد أن يعمل عليه HAI",
+            color = Ink,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "${repositories.size} مشروع متاح • لن يتم تعديل أي مشروع آخر",
+            color = Muted,
+            fontSize = 12.sp
+        )
+        Spacer(Modifier.height(12.dp))
+
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            items(repositories) { repo ->
+                val pending = pendingFullName == repo.fullName
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { pendingFullName = repo.fullName },
+                    color = if (pending) Lavender else Color.White,
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        if (pending) Blue.copy(alpha = 0.45f) else Line
                     )
-                    Spacer(Modifier.width(11.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            repo.fullName.substringAfter('/'),
-                            color = Ink,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            repo.fullName.substringBefore('/'),
-                            color = Muted,
-                            fontSize = 11.sp
-                        )
-                    }
-                    if (selectedRepo?.fullName == repo.fullName) {
+                ) {
+                    Row(
+                        Modifier.padding(15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
-                            Icons.Outlined.CheckCircle,
+                            Icons.Outlined.FolderOpen,
                             null,
                             tint = Blue
                         )
+                        Spacer(Modifier.width(11.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                repo.fullName.substringAfter('/'),
+                                color = Ink,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                repo.fullName,
+                                color = Muted,
+                                fontSize = 11.sp
+                            )
+                        }
+                        if (pending) {
+                            Icon(
+                                Icons.Outlined.CheckCircle,
+                                "محدد",
+                                tint = Blue
+                            )
+                        }
                     }
                 }
             }
         }
+
+        pendingRepository?.let { repo ->
+            Text(
+                "المشروع المحدد: ${repo.fullName}",
+                modifier = Modifier.fillMaxWidth(),
+                color = Muted,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+
+        Button(
+            onClick = {
+                pendingRepository?.let(onSave)
+            },
+            enabled = pendingRepository != null,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Icon(Icons.Outlined.CheckCircle, null)
+            Spacer(Modifier.width(8.dp))
+            Text("حفظ المشروع")
+        }
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -1078,6 +1113,7 @@ private fun SettingsContent(
     connected: Boolean,
     login: String,
     repositoryCount: Int,
+    selectedRepo: GitHubRepository?,
     linking: Boolean,
     linkingStatus: String,
     oauthAvailable: Boolean,
@@ -1085,11 +1121,14 @@ private fun SettingsContent(
     onConnect: () -> Unit,
     onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
-    onCheckUpdate: () -> Unit
+    onCheckUpdate: () -> Unit,
+    onOpenProjects: () -> Unit
 ) {
     if (connected) {
         Surface(
-            Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenProjects),
             color = Lavender,
             shape = RoundedCornerShape(20.dp)
         ) {
@@ -1111,13 +1150,26 @@ private fun SettingsContent(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "$repositoryCount مشروع متاح",
+                        "$repositoryCount مشروع متاح • اضغط لاختيار المشروع",
                         color = Muted,
                         fontSize = 12.sp
                     )
+                    selectedRepo?.let { repo ->
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "المشروع الحالي: ${repo.fullName.substringAfter('/')}",
+                            color = Blue,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
                 Icon(
-                    Icons.Outlined.CheckCircle,
+                    if (selectedRepo == null) {
+                        Icons.Outlined.FolderOpen
+                    } else {
+                        Icons.Outlined.CheckCircle
+                    },
                     null,
                     tint = Blue
                 )
@@ -1125,6 +1177,24 @@ private fun SettingsContent(
         }
 
         Spacer(Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onOpenProjects,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Icon(Icons.Outlined.FolderOpen, null)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (selectedRepo == null) {
+                    "اختيار مشروع"
+                } else {
+                    "تغيير المشروع"
+                }
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
 
         OutlinedButton(
             onClick = onDisconnect,
