@@ -2498,37 +2498,40 @@ private fun AutoExecuteTopControl(
         modifier = modifier
             .wrapContentWidth()
             .clickable { onToggle(!checked) },
-        color = if (checked) Ink else SurfaceElevated,
-        shape = RoundedCornerShape(3.dp),
-        border = BorderStroke(1.dp, Ink),
-        shadowElevation = 7.dp
+        color = Color(0xF8FFFFFF),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(
+            1.dp,
+            if (checked) Color(0xFFCBD5FF) else Line
+        ),
+        shadowElevation = 10.dp
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                modifier = Modifier.size(18.dp),
-                color = if (checked) Signal else Lavender,
-                shape = RoundedCornerShape(2.dp),
-                border = BorderStroke(1.dp, if (checked) Signal else Line)
+                modifier = Modifier.size(22.dp),
+                color = if (checked) BlueSoft else Lavender,
+                shape = CircleShape
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        if (checked) "✓" else "",
-                        color = Color.White,
+                        if (checked) "✓" else "○",
+                        color = if (checked) Blue else Muted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
+
             Spacer(Modifier.width(6.dp))
+
             Text(
-                "AUTO",
-                color = if (checked) Color.White else Ink,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 1.4.sp
+                "تلقائي",
+                color = if (checked) Blue else Ink,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold
             )
         }
     }
@@ -2561,9 +2564,10 @@ private fun AutoExecuteConfirmBanner(
 ) {
     Surface(
         modifier = modifier.wrapContentWidth(),
-        color = Ink,
-        shape = RoundedCornerShape(3.dp),
-        shadowElevation = 10.dp
+        color = Color(0xFAFFFFFF),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, Line),
+        shadowElevation = 12.dp
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
@@ -2571,35 +2575,39 @@ private fun AutoExecuteConfirmBanner(
         ) {
             Text(
                 "تفعيل التنفيذ التلقائي؟",
-                color = Color.White,
+                color = Ink,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.ExtraBold
             )
-            Spacer(Modifier.width(10.dp))
+
+            Spacer(Modifier.width(9.dp))
+
             Surface(
                 modifier = Modifier
-                    .size(27.dp)
+                    .size(28.dp)
                     .clickable(onClick = onCancel),
-                color = Color.White.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(2.dp)
+                color = Lavender,
+                shape = CircleShape
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text("×", color = Color.White, fontSize = 17.sp)
+                    Text("×", color = Muted, fontSize = 16.sp)
                 }
             }
+
             Spacer(Modifier.width(5.dp))
+
             Surface(
                 modifier = Modifier
-                    .size(27.dp)
+                    .size(28.dp)
                     .clickable(onClick = onConfirm),
-                color = Signal,
-                shape = RoundedCornerShape(2.dp)
+                color = Blue,
+                shape = CircleShape
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         "✓",
                         color = Color.White,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -2618,52 +2626,62 @@ private fun GitHubConnectCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = SurfaceElevated,
-        shape = RoundedCornerShape(3.dp),
-        border = BorderStroke(2.dp, Ink)
+        color = BlueSoft,
+        shape = RoundedCornerShape(28.dp)
     ) {
-        Column {
+        Column(
+            modifier = Modifier.padding(17.dp)
+        ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Ink)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Outlined.Link,
-                    contentDescription = null,
-                    tint = Signal,
-                    modifier = Modifier.size(19.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "GITHUB / CONNECT",
+                Surface(
+                    modifier = Modifier.size(52.dp),
                     color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.2.sp
-                )
+                    shape = CircleShape,
+                    shadowElevation = 5.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Outlined.Link,
+                            contentDescription = null,
+                            tint = Blue,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.width(12.dp))
+
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "ربط GitHub",
+                        color = Ink,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        if (linking) {
+                            status.ifBlank { "جاري الربط" }
+                        } else {
+                            "اربط حسابك واختر المشروع"
+                        },
+                        color = Muted,
+                        fontSize = 10.sp
+                    )
+                }
             }
 
-            Column(Modifier.padding(14.dp)) {
-                Text(
-                    if (linking) {
-                        status.ifBlank { "جاري الربط" }
-                    } else if (oauthAvailable) {
-                        "اربط حسابك لبدء العمل على المشاريع"
-                    } else {
-                        "الربط غير متاح"
-                    },
-                    color = Ink,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            Spacer(Modifier.height(15.dp))
 
-                Spacer(Modifier.height(12.dp))
-
-                if (linking) {
+            if (linking) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.White.copy(alpha = 0.82f),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
                     Row(
+                        Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         CircularProgressIndicator(
@@ -2673,51 +2691,44 @@ private fun GitHubConnectCard(
                         )
                         Spacer(Modifier.width(9.dp))
                         Text(
-                            "بانتظار GitHub",
+                            status.ifBlank { "بانتظار الموافقة" },
                             modifier = Modifier.weight(1f),
-                            color = Muted,
+                            color = Ink,
                             fontSize = 11.sp
                         )
                         Surface(
                             modifier = Modifier
                                 .size(28.dp)
                                 .clickable(onClick = onCancel),
-                            color = Signal,
-                            shape = RoundedCornerShape(2.dp)
+                            color = Peach,
+                            shape = CircleShape
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text("×", color = Color.White, fontSize = 18.sp)
+                                Text(
+                                    "×",
+                                    color = Color(0xFFB66A55),
+                                    fontSize = 16.sp
+                                )
                             }
                         }
                     }
-                } else {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = oauthAvailable, onClick = onConnect),
-                        color = if (oauthAvailable) Blue else LavenderStrong,
-                        shape = RoundedCornerShape(2.dp)
-                    ) {
-                        Row(
-                            Modifier.padding(11.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "ربط الحساب",
-                                color = if (oauthAvailable) Color.White else Muted,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.weight(1f))
-                            Text(
-                                "OPEN",
-                                color = if (oauthAvailable) Color.White.copy(alpha = 0.72f) else Muted,
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 1.2.sp
-                            )
-                        }
-                    }
+                }
+            } else {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = oauthAvailable, onClick = onConnect),
+                    color = if (oauthAvailable) Blue else LavenderStrong,
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Text(
+                        "ربط الحساب",
+                        modifier = Modifier.padding(vertical = 13.dp),
+                        color = if (oauthAvailable) Color.White else Muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
