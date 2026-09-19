@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -25,6 +26,7 @@ data class AutoTaskItem(
     val order: Int,
     val status: AutoTaskStatus = AutoTaskStatus.WAITING,
     val result: String = "",
+    val branch: String = "",
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -114,7 +116,8 @@ class AutoTaskStore(context: Context) {
     fun updateTask(
         id: String,
         status: AutoTaskStatus,
-        result: String = ""
+        result: String = "",
+        branch: String = ""
     ) {
         val current = snapshot()
         val updated = current.tasks.map { task ->
@@ -122,6 +125,7 @@ class AutoTaskStore(context: Context) {
                 task.copy(
                     status = status,
                     result = result.take(2_000),
+                    branch = branch.ifBlank { task.branch },
                     updatedAt = System.currentTimeMillis()
                 )
             } else {
