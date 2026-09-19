@@ -1,6 +1,7 @@
 package com.haiom.app.ui
 
 import android.app.Activity
+import android.content.ClipData
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
@@ -61,6 +62,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Link
@@ -675,16 +677,118 @@ private fun EmptyState(modifier: Modifier = Modifier) {
     }
 }
 
+private data class ChatRenderSegment(
+    val text: String,
+    val isCode: Boolean,
+    val language: String = ""
+)
+
+private fun parseChatSegments(raw: String): List<ChatRenderSegment> {
+    val fence = 96.toChar().toString().repeat(3)
+    val result = mutableListOf<ChatRenderSegment>()
+    var cursor = 0
+
+    while (cursor < raw.length) {
+        val open = raw.indexOf(fence, cursor)
+        if (open < 0) {
+            raw.substring(cursor)
+                .takeIf { it.isNotBlank() }
+                ?.let { result += ChatRenderSegment(it.trim(), false) }
+            break
+        }
+
+        if (open > cursor) {
+            raw.substring(cursor, open)
+                .takeIf { it.isNotBlank() }
+                ?.let { result += ChatRenderSegment(it.trim(), false) }
+        }
+
+        val afterFence = open + fence.length
+        val close = raw.indexOf(fence, afterFence)
+        if (close < 0) {
+            raw.substring(afterFence)
+                .takeIf { it.isNotBlank() }
+                ?.let { result += ChatRenderSegment(it.trim(), true) }
+            break
+        }
+
+        var codeBody = raw.substring(afterFence, close)
+            .trimStart('\n', '\r', ' ')
+        var language = ""
+
+        val firstBreak = codeBody.indexOf('\n')
+        if (firstBreak >= 0) {
+            val firstLine = codeBody.substring(0, firstBreak).trim()
+            if (
+                firstLine.length in 1..24 &&
+                firstLine.matches(Regex("[A-Za-z0-9_+.#-]+"))
+            ) {
+                language = firstLine
+                codeBody = codeBody.substring(firstBreak + 1)
+            }
+        }
+
+        result += ChatRenderSegment(
+            text = codeBody.trimEnd(),
+            isCode = true,
+            language = language
+        )
+        cursor = close + fence.length
+    }
+
+    if (result.isEmpty() && raw.isNotBlank()) {
+        result += ChatRenderSegment(raw.trim(), false)
+    }
+
+    return result
+}
+
+private fun containsArabic(text: String): Boolean =
+    text.any { ch ->
+        ch.code in 0x0600..0x06FF ||
+            ch.code in 0x0750..0x077F ||
+            ch.code in 0x08A0..0x08FF
+    }
+
+private fun cleanChatProse(text: String): String =
+    text
+        .replace("**", "")
+        .replace("__", "")
+        .trim()
+
+private fun copyCode(context: Context, code: String) {
+    val clipboard = context.getSystemService(
+        Context.CLIPBOARD_SERVICE
+    ) as ClipboardManager
+
+    clipboard.setPrimaryClip(
+        ClipData.newPlainText("HAI code", code)
+    )
+
+    Toast.makeText(
+        context,
+        "تم نسخ الكود",
+        Toast.LENGTH_SHORT
+    ).show()
+}
+
 @Composable
 private fun MessageBlock(turn: ChatTurn) {
     val user = turn.role == "user"
-    val fence = 96.toChar().toString().repeat(3)
-    val messageText = turn.text.replace(fence, "")
+    val context = LocalContext.current
+    val segments = remember(turn.text) {
+        parseChatSegments(turn.text)
+    }
+    val hasCode = segments.any { it.isCode }
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxWidth()
     ) {
-        val cardMaxWidth = maxWidth * if (user) 0.72f else 0.82f
+        val cardMaxWidth = maxWidth * when {
+            user -> 0.72f
+            hasCode -> 0.95f
+            else -> 0.82f
+        }
 
         Box(
             modifier = Modifier.fillMaxWidth(),
@@ -721,15 +825,14 @@ private fun MessageBlock(turn: ChatTurn) {
                 ),
                 shadowElevation = 3.dp
             ) {
-                CompositionLocalProvider(
-                    LocalLayoutDirection provides LayoutDirection.Rtl
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = 12.dp,
+                        vertical = 9.dp
+                    )
                 ) {
-                    Column(
-                        modifier = Modifier.padding(
-                            horizontal = 12.dp,
-                            vertical = 9.dp
-                        ),
-                        horizontalAlignment = Alignment.End
+                    CompositionLocalProvider(
+                        LocalLayoutDirection provides LayoutDirection.Rtl
                     ) {
                         Text(
                             if (user) "أنت" else "HAI",
@@ -739,21 +842,129 @@ private fun MessageBlock(turn: ChatTurn) {
                             fontWeight = FontWeight.ExtraBold,
                             textAlign = TextAlign.Right
                         )
+                    }
 
-                        Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(5.dp))
 
-                        Text(
-                            messageText,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .widthIn(
-                                    max = cardMaxWidth - 24.dp
-                                ),
-                            color = Ink,
-                            fontSize = 14.sp,
-                            lineHeight = 21.sp,
-                            textAlign = TextAlign.Right
-                        )
+                    segments.forEachIndexed { index, segment ->
+                        if (segment.isCode) {
+                            CompositionLocalProvider(
+                                LocalLayoutDirection provides LayoutDirection.Ltr
+                            ) {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Color(0xFFF5F7FC),
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        Color(0xFFDCE3F1)
+                                    )
+                                ) {
+                                    Column {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFFECF1FF))
+                                                .padding(
+                                                    horizontal = 9.dp,
+                                                    vertical = 6.dp
+                                                ),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                segment.language.ifBlank { "CODE" },
+                                                modifier = Modifier.weight(1f),
+                                                color = Blue,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                textAlign = TextAlign.Left
+                                            )
+
+                                            Surface(
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        copyCode(
+                                                            context,
+                                                            segment.text
+                                                        )
+                                                    },
+                                                color = Color.White,
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(
+                                                    1.dp,
+                                                    Color(0xFFDCE3F1)
+                                                )
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(
+                                                        horizontal = 8.dp,
+                                                        vertical = 4.dp
+                                                    ),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        Icons.Outlined.ContentCopy,
+                                                        contentDescription = "نسخ الكود",
+                                                        tint = Blue,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(
+                                                        "نسخ",
+                                                        color = Blue,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Text(
+                                            segment.text,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(
+                                                    horizontal = 11.dp,
+                                                    vertical = 10.dp
+                                                ),
+                                            color = Color(0xFF24304A),
+                                            fontSize = 12.sp,
+                                            lineHeight = 18.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            textAlign = TextAlign.Left
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            val prose = cleanChatProse(segment.text)
+                            val rtl = containsArabic(prose)
+
+                            CompositionLocalProvider(
+                                LocalLayoutDirection provides if (rtl) {
+                                    LayoutDirection.Rtl
+                                } else {
+                                    LayoutDirection.Ltr
+                                }
+                            ) {
+                                Text(
+                                    prose,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Ink,
+                                    fontSize = 14.sp,
+                                    lineHeight = 21.sp,
+                                    textAlign = if (rtl) {
+                                        TextAlign.Right
+                                    } else {
+                                        TextAlign.Left
+                                    }
+                                )
+                            }
+                        }
+
+                        if (index != segments.lastIndex) {
+                            Spacer(Modifier.height(9.dp))
+                        }
                     }
                 }
             }
