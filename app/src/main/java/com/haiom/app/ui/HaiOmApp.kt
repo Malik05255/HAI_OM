@@ -2074,16 +2074,36 @@ private fun AutomaticTasksContent(
         Spacer(Modifier.height(14.dp))
 
         if (tasks.isEmpty()) {
-            Box(
+            Surface(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentAlignment = Alignment.Center
+                color = SurfaceElevated,
+                shape = RoundedCornerShape(3.dp),
+                border = BorderStroke(1.dp, Ink.copy(alpha = 0.16f))
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("◇", color = Blue, fontSize = 30.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("لا توجد مهام", color = Muted, fontSize = 13.sp)
+                Box(contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Outlined.AutoAwesome,
+                            contentDescription = null,
+                            tint = Blue,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "لا توجد مهام",
+                            color = Ink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "AUTO QUEUE / EMPTY",
+                            color = Muted,
+                            fontSize = 8.sp,
+                            letterSpacing = 1.2.sp
+                        )
+                    }
                 }
             }
             return@Column
@@ -2094,7 +2114,7 @@ private fun AutomaticTasksContent(
                 .weight(1f)
                 .fillMaxWidth(),
             contentPadding = PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(tasks.sortedBy { it.order }, key = { it.id }) { task ->
                 val staleRunning =
@@ -2115,40 +2135,54 @@ private fun AutomaticTasksContent(
                 val statusColor = when {
                     staleRunning -> Muted
                     task.status == AutoTaskStatus.RUNNING -> Blue
-                    task.status == AutoTaskStatus.SUCCESS -> Color(0xFF28A47D)
-                    task.status == AutoTaskStatus.FAILED -> Color(0xFFD85F50)
-                    else -> Violet
+                    task.status == AutoTaskStatus.SUCCESS -> Moss
+                    task.status == AutoTaskStatus.FAILED -> Signal
+                    else -> Color(0xFF9A7B2E)
                 }
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = if (
-                        task.status == AutoTaskStatus.RUNNING && remoteLive
-                    ) BlueSoft else SurfaceElevated,
-                    shape = RoundedCornerShape(14.dp),
+                    color = SurfaceElevated,
+                    shape = RoundedCornerShape(3.dp),
                     border = BorderStroke(
-                        1.dp,
-                        if (
-                            task.status == AutoTaskStatus.RUNNING && remoteLive
-                        ) Blue.copy(alpha = 0.55f) else Line
+                        if (task.status == AutoTaskStatus.RUNNING && remoteLive) 2.dp else 1.dp,
+                        if (task.status == AutoTaskStatus.RUNNING && remoteLive) Blue
+                        else Ink.copy(alpha = 0.16f)
                     )
                 ) {
                     Row(
-                        Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                        Modifier.padding(11.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
-                            modifier = Modifier.size(34.dp),
-                            color = Color(0xFFF7FAF8),
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, Line)
+                            modifier = Modifier
+                                .width(38.dp)
+                                .height(46.dp),
+                            color = if (
+                                task.status == AutoTaskStatus.RUNNING && remoteLive
+                            ) Blue else Lavender,
+                            shape = RoundedCornerShape(2.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
                                 Text(
-                                    "${task.order}",
-                                    color = statusColor,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                    "${task.order.toString().padStart(2, '0')}",
+                                    color = if (
+                                        task.status == AutoTaskStatus.RUNNING && remoteLive
+                                    ) Color.White else Ink,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                Text(
+                                    statusText,
+                                    color = if (
+                                        task.status == AutoTaskStatus.RUNNING && remoteLive
+                                    ) Color.White.copy(alpha = 0.75f) else statusColor,
+                                    fontSize = 7.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp
                                 )
                             }
                         }
@@ -2160,28 +2194,35 @@ private fun AutomaticTasksContent(
                                 task.title,
                                 color = Ink,
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.ExtraBold
                             )
                             Spacer(Modifier.height(3.dp))
-                            Text(
-                                statusText,
-                                color = statusColor,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.1.sp
+                            Box(
+                                Modifier
+                                    .width(
+                                        when (statusText) {
+                                            "DONE" -> 70.dp
+                                            "RUN" -> 52.dp
+                                            "FAIL" -> 38.dp
+                                            else -> 28.dp
+                                        }
+                                    )
+                                    .height(3.dp)
+                                    .background(statusColor)
                             )
                         }
 
                         Text(
                             when (statusText) {
-                                "RUN" -> "●"
+                                "RUN" -> "↻"
                                 "DONE" -> "✓"
                                 "FAIL" -> "×"
                                 "PAUSE" -> "Ⅱ"
-                                else -> "○"
+                                else -> "·"
                             },
                             color = statusColor,
-                            fontSize = 16.sp
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -2241,49 +2282,52 @@ private fun AutoRuntimeStatusBar(
         else -> "IDLE"
     }
 
+    val accent = when {
+        status == "ERROR" || status == "STOPPED" -> Signal
+        status == "DONE" -> Moss
+        paused -> Color(0xFF9A7B2E)
+        else -> Blue
+    }
+
     Surface(
         modifier = modifier.clickable(onClick = onOpenTasks),
-        color = SurfaceElevated,
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(
-            1.dp,
-            if (remoteLive && !paused) Blue.copy(alpha = 0.55f) else Line
-        )
+        color = Ink,
+        shape = RoundedCornerShape(3.dp),
+        shadowElevation = 5.dp
     ) {
         Row(
-            Modifier.padding(
-                start = 5.dp,
-                end = 11.dp,
-                top = 7.dp,
-                bottom = 7.dp
-            ),
+            Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (queueStarted) {
-                Box(
+                Surface(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(30.dp)
                         .clickable(onClick = onTogglePause),
-                    contentAlignment = Alignment.Center
+                    color = accent,
+                    shape = RoundedCornerShape(2.dp)
                 ) {
-                    Text(
-                        if (paused) "▶" else "Ⅱ",
-                        color = Blue,
-                        fontSize = if (paused) 15.sp else 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
                 }
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
             }
 
             Column(Modifier.weight(1f)) {
                 Text(
                     status,
-                    color = if (remoteLive && !paused) Blue else Ink,
+                    color = Color.White,
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.3.sp
                 )
+
                 val detail = when {
                     paused -> "متوقف مؤقتًا"
                     workerError.isNotBlank() -> workerError
@@ -2291,11 +2335,12 @@ private fun AutoRuntimeStatusBar(
                     queueStarted -> "المهمة قيد التنفيذ"
                     else -> ""
                 }
+
                 if (detail.isNotBlank()) {
                     Text(
                         detail,
-                        color = Muted,
-                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.68f),
+                        fontSize = 9.sp,
                         maxLines = 1
                     )
                 }
@@ -2303,16 +2348,9 @@ private fun AutoRuntimeStatusBar(
 
             Box(
                 Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when {
-                            paused -> Violet
-                            remoteLive -> Blue
-                            status == "DONE" -> Color(0xFF28A47D)
-                            else -> Muted
-                        }
-                    )
+                    .width(4.dp)
+                    .height(34.dp)
+                    .background(accent)
             )
         }
     }
@@ -2329,10 +2367,8 @@ private fun LiveCodePreview(
 
     LaunchedEffect(preview, paused) {
         if (paused) return@LaunchedEffect
-
         var index = if (preview.startsWith(typed)) typed.length else 0
         if (index == 0) typed = ""
-
         while (index < preview.length) {
             index = (index + 36).coerceAtMost(preview.length)
             typed = preview.take(index)
@@ -2345,32 +2381,45 @@ private fun LiveCodePreview(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFFF5F8F6),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color(0xFFC4DCD3))
+            color = Color(0xFF17181B),
+            shape = RoundedCornerShape(3.dp),
+            border = BorderStroke(2.dp, Blue)
         ) {
             Column {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFEAF1ED))
-                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                        .background(Blue)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Icon(
+                        Icons.Outlined.Code,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        "LIVE",
-                        color = Blue,
+                        "LIVE CODE",
+                        color = Color.White,
                         fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.4.sp
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.5.sp
                     )
                     Spacer(Modifier.weight(1f))
-                    Text("●", color = Color(0xFF28A47D), fontSize = 9.sp)
+                    Text(
+                        if (paused) "PAUSE" else "STREAM",
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
+
                 Text(
                     text = typed + cursor,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-                    color = Color(0xFF16362D),
+                    color = Color(0xFFF0F3FF),
                     fontSize = 11.sp,
                     lineHeight = 16.sp,
                     fontFamily = FontFamily.Monospace,
@@ -2392,33 +2441,37 @@ private fun AutoExecuteTopControl(
         modifier = modifier
             .wrapContentWidth()
             .clickable { onToggle(!checked) },
-        color = Color(0xF2FFFFFF),
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(
-            1.dp,
-            if (checked) Blue.copy(alpha = 0.55f) else Line
-        ),
-        shadowElevation = 10.dp
+        color = if (checked) Ink else SurfaceElevated,
+        shape = RoundedCornerShape(3.dp),
+        border = BorderStroke(1.dp, Ink),
+        shadowElevation = 7.dp
     ) {
         Row(
-            modifier = Modifier.padding(
-                horizontal = 9.dp,
-                vertical = 6.dp
-            ),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                if (checked) "●" else "○",
-                color = if (checked) Blue else Muted,
-                fontSize = 12.sp
-            )
+            Surface(
+                modifier = Modifier.size(18.dp),
+                color = if (checked) Signal else Lavender,
+                shape = RoundedCornerShape(2.dp),
+                border = BorderStroke(1.dp, if (checked) Signal else Line)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        if (checked) "✓" else "",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             Spacer(Modifier.width(6.dp))
             Text(
                 "AUTO",
-                color = if (checked) Blue else Ink,
+                color = if (checked) Color.White else Ink,
                 fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.4.sp
             )
         }
     }
@@ -2451,36 +2504,49 @@ private fun AutoExecuteConfirmBanner(
 ) {
     Surface(
         modifier = modifier.wrapContentWidth(),
-        color = SurfaceElevated,
-        shape = RoundedCornerShape(13.dp),
-        border = BorderStroke(1.dp, Line),
-        shadowElevation = 12.dp
+        color = Ink,
+        shape = RoundedCornerShape(3.dp),
+        shadowElevation = 10.dp
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "تفعيل AUTO؟",
-                color = Ink,
+                "تفعيل التنفيذ التلقائي؟",
+                color = Color.White,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                "×",
-                modifier = Modifier.clickable(onClick = onCancel),
-                color = Muted,
-                fontSize = 18.sp
-            )
-            Spacer(Modifier.width(9.dp))
-            Text(
-                "✓",
-                modifier = Modifier.clickable(onClick = onConfirm),
-                color = Blue,
-                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
+            Spacer(Modifier.width(10.dp))
+            Surface(
+                modifier = Modifier
+                    .size(27.dp)
+                    .clickable(onClick = onCancel),
+                color = Color.White.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(2.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("×", color = Color.White, fontSize = 17.sp)
+                }
+            }
+            Spacer(Modifier.width(5.dp))
+            Surface(
+                modifier = Modifier
+                    .size(27.dp)
+                    .clickable(onClick = onConfirm),
+                color = Signal,
+                shape = RoundedCornerShape(2.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        "✓",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
 }
