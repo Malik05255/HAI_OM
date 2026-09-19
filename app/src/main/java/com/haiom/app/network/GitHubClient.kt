@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -333,6 +334,28 @@ class GitHubClient(
         return root["html_url"]?.jsonPrimitive?.contentOrNull
     }
 
+    suspend fun mergePullRequest(
+        repo: RepoRef,
+        pullRequestUrl: String,
+        title: String
+    ): Boolean {
+        val number = pullRequestUrl
+            .substringAfterLast('/')
+            .toLongOrNull()
+            ?: error("تعذر تحديد رقم Pull Request")
+
+        val root = requestJson(
+            "PUT",
+            "/repos/${repo.owner}/${repo.repo}/pulls/$number/merge",
+            buildJsonObject {
+                put("merge_method", "squash")
+                put("commit_title", title.take(120))
+            }
+        )
+
+        return root["merged"]?.jsonPrimitive?.booleanOrNull == true
+    }
+
     private suspend fun downloadRunLogs(repo: RepoRef, runId: Long): String = withContext(Dispatchers.IO) {
         request("GET", "/repos/${repo.owner}/${repo.repo}/actions/runs/$runId/logs").use { response ->
             if (!response.isSuccessful) return@withContext "تعذر تنزيل سجل CI: HTTP ${response.code}"
@@ -382,6 +405,7 @@ class GitHubClient(
             "GET" -> builder.get()
             "POST" -> builder.post(requestBody ?: "{}".toRequestBody(JSON))
             "PATCH" -> builder.patch(requestBody ?: "{}".toRequestBody(JSON))
+            "PUT" -> builder.put(requestBody ?: "{}".toRequestBody(JSON))
             "DELETE" -> builder.delete(requestBody)
             else -> error("Unsupported method")
         }
