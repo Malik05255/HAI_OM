@@ -274,6 +274,11 @@ fun HaiOmApp(
                     autoWorkerHeartbeatAt = state.autoWorkerHeartbeatAt,
                     autoWorkerMessage = state.autoWorkerMessage,
                     autoWorkerError = state.autoWorkerError,
+                    remoteRepository = state.autoRemoteRepository,
+                    remoteRunId = state.autoRemoteRunId,
+                    remoteRunUrl = state.autoRemoteRunUrl,
+                    remoteState = state.autoRemoteState,
+                    remoteStage = state.autoRemoteStage,
                     runtimeNow = runtimeNow
                 )
             } else {
@@ -300,6 +305,11 @@ fun HaiOmApp(
                     autoWorkerHeartbeatAt = state.autoWorkerHeartbeatAt,
                     autoWorkerMessage = state.autoWorkerMessage,
                     autoWorkerError = state.autoWorkerError,
+                    remoteRepository = state.autoRemoteRepository,
+                    remoteRunId = state.autoRemoteRunId,
+                    remoteRunUrl = state.autoRemoteRunUrl,
+                    remoteState = state.autoRemoteState,
+                    remoteStage = state.autoRemoteStage,
                     runtimeNow = runtimeNow,
                     onBack = { panel = null },
                     onSaveRepo = {
@@ -454,6 +464,11 @@ private fun ChatCanvas(
     autoWorkerHeartbeatAt: Long,
     autoWorkerMessage: String,
     autoWorkerError: String,
+    remoteRepository: String,
+    remoteRunId: Long,
+    remoteRunUrl: String,
+    remoteState: String,
+    remoteStage: String,
     runtimeNow: Long
 ) {
     val lastAnswer = history.lastOrNull { it.role == "assistant" }?.text
@@ -497,6 +512,11 @@ private fun ChatCanvas(
                 heartbeatAt = autoWorkerHeartbeatAt,
                 workerMessage = autoWorkerMessage,
                 workerError = autoWorkerError,
+                remoteRepository = remoteRepository,
+                remoteRunId = remoteRunId,
+                remoteRunUrl = remoteRunUrl,
+                remoteState = remoteState,
+                remoteStage = remoteStage,
                 now = runtimeNow
             )
             Spacer(Modifier.height(8.dp))
@@ -980,6 +1000,11 @@ private fun ToolScreen(
     autoWorkerHeartbeatAt: Long,
     autoWorkerMessage: String,
     autoWorkerError: String,
+    remoteRepository: String,
+    remoteRunId: Long,
+    remoteRunUrl: String,
+    remoteState: String,
+    remoteStage: String,
     runtimeNow: Long,
     onBack: () -> Unit,
     onSaveRepo: (GitHubRepository) -> Unit,
@@ -1077,6 +1102,11 @@ private fun ToolScreen(
                     heartbeatAt = autoWorkerHeartbeatAt,
                     workerMessage = autoWorkerMessage,
                     workerError = autoWorkerError,
+                    remoteRepository = remoteRepository,
+                    remoteRunId = remoteRunId,
+                    remoteRunUrl = remoteRunUrl,
+                    remoteState = remoteState,
+                    remoteStage = remoteStage,
                     now = runtimeNow,
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 )
@@ -1497,10 +1527,16 @@ private fun AutomaticTasksContent(
     heartbeatAt: Long,
     workerMessage: String,
     workerError: String,
+    remoteRepository: String,
+    remoteRunId: Long,
+    remoteRunUrl: String,
+    remoteState: String,
+    remoteStage: String,
     now: Long,
     modifier: Modifier = Modifier
 ) {
-    val live = workerIsLive(workerActive, heartbeatAt, now)
+    val controllerLive = workerIsLive(workerActive, heartbeatAt, now)
+    val remoteLive = remoteState == "queued" || remoteState == "in_progress"
 
     Column(modifier = modifier) {
         AutoRuntimeStatusBar(
@@ -1510,6 +1546,11 @@ private fun AutomaticTasksContent(
             heartbeatAt = heartbeatAt,
             workerMessage = workerMessage,
             workerError = workerError,
+            remoteRepository = remoteRepository,
+            remoteRunId = remoteRunId,
+            remoteRunUrl = remoteRunUrl,
+            remoteState = remoteState,
+            remoteStage = remoteStage,
             now = now
         )
 
@@ -1536,7 +1577,10 @@ private fun AutomaticTasksContent(
         ) {
             items(tasks.sortedBy { it.order }, key = { it.id }) { task ->
                 val staleRunning =
-                    task.status == AutoTaskStatus.RUNNING && !live
+                    task.status == AutoTaskStatus.RUNNING &&
+                        !remoteLive &&
+                        remoteState !in setOf("", "waiting") &&
+                        !controllerLive
 
                 val statusText = when {
                     staleRunning -> "متوقف"
@@ -1556,7 +1600,7 @@ private fun AutomaticTasksContent(
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = if (task.status == AutoTaskStatus.RUNNING && live) {
+                    color = if (task.status == AutoTaskStatus.RUNNING && remoteLive) {
                         BlueSoft
                     } else {
                         Color.White
@@ -1587,7 +1631,7 @@ private fun AutomaticTasksContent(
                                 statusText,
                                 color = if (
                                     task.status == AutoTaskStatus.RUNNING &&
-                                    live
+                                    remoteLive
                                 ) Blue else Muted,
                                 fontSize = 11.sp
                             )
@@ -1596,7 +1640,7 @@ private fun AutomaticTasksContent(
                             statusIcon,
                             statusText,
                             tint = if (
-                                (task.status == AutoTaskStatus.RUNNING && live) ||
+                                (task.status == AutoTaskStatus.RUNNING && remoteLive) ||
                                 task.status == AutoTaskStatus.SUCCESS
                             ) Blue else Muted,
                             modifier = Modifier.size(19.dp)
@@ -1625,9 +1669,15 @@ private fun AutoRuntimeStatusBar(
     heartbeatAt: Long,
     workerMessage: String,
     workerError: String,
+    remoteRepository: String,
+    remoteRunId: Long,
+    remoteRunUrl: String,
+    remoteState: String,
+    remoteStage: String,
     now: Long
 ) {
-    val live = workerIsLive(workerActive, heartbeatAt, now)
+    val controllerLive = workerIsLive(workerActive, heartbeatAt, now)
+    val remoteLive = remoteState == "queued" || remoteState == "in_progress"
     val runningTask = tasks.firstOrNull {
         it.status == AutoTaskStatus.RUNNING
     }
@@ -1637,17 +1687,21 @@ private fun AutoRuntimeStatusBar(
     }
 
     val status = when {
+        remoteState == "failure" -> "GitHub Actions فشل"
+        remoteState == "success" -> "GitHub Actions نجح"
+        remoteState == "in_progress" -> "GitHub Actions يعمل الآن"
+        remoteState == "queued" -> "GitHub Actions في الانتظار"
+        remoteState == "waiting" -> "بانتظار GitHub Actions"
+        remoteState == "not_found" -> "GitHub Actions لم يبدأ"
         workerError.isNotBlank() -> "متوقف"
-        live -> "يعمل الآن"
-        queueStarted && heartbeatAt == 0L -> "جاري البدء"
-        queueStarted -> "لا توجد استجابة"
+        queueStarted && controllerLive -> "جاري تجهيز التنفيذ"
         tasks.isNotEmpty() && doneCount == tasks.size -> "مكتمل"
         else -> "متوقف"
     }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = if (live) BlueSoft else Color.White,
+        color = if (remoteLive) BlueSoft else Color.White,
         shape = RoundedCornerShape(13.dp),
         border = BorderStroke(1.dp, Line)
     ) {
@@ -1655,7 +1709,7 @@ private fun AutoRuntimeStatusBar(
             Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (live) {
+            if (remoteLive) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
                     strokeWidth = 2.dp,
@@ -1675,28 +1729,54 @@ private fun AutoRuntimeStatusBar(
             Column(Modifier.weight(1f)) {
                 Text(
                     status,
-                    color = if (live) Blue else Ink,
+                    color = if (remoteLive) Blue else Ink,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
 
-                val detail = when {
-                    workerError.isNotBlank() -> workerError
-                    live && runningTask != null ->
-                        "${runningTask.order}/${tasks.size}  ${runningTask.title}"
-                    live && workerMessage.isNotBlank() -> workerMessage
-                    queueStarted && heartbeatAt > 0L ->
-                        "آخر نشاط قبل ${((now - heartbeatAt).coerceAtLeast(0L) / 1000L)} ث"
-                    else -> ""
+                val taskLabel = runningTask?.let {
+                    "${it.order}/${tasks.size}  ${it.title}"
+                }.orEmpty()
+                val runLabel = if (remoteRunId > 0L) {
+                    "Run #$remoteRunId"
+                } else {
+                    ""
                 }
+                val detail = listOf(
+                    remoteRepository,
+                    runLabel,
+                    remoteStage.ifBlank {
+                        if (remoteLive) taskLabel else ""
+                    },
+                    if (workerError.isNotBlank()) workerError else ""
+                ).filter { it.isNotBlank() }
+                    .joinToString(" • ")
 
                 if (detail.isNotBlank()) {
                     Text(
                         detail,
                         color = Muted,
                         fontSize = 10.sp,
-                        maxLines = 1
+                        maxLines = 2
                     )
+                }
+            }
+
+            if (remoteRunUrl.isNotBlank()) {
+                val context = LocalContext.current
+                TextButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(remoteRunUrl)
+                                )
+                            )
+                        }
+                    }
+                ) {
+                    Text("فتح GitHub", fontSize = 11.sp)
                 }
             }
         }
