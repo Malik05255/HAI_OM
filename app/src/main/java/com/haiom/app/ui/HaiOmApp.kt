@@ -733,6 +733,7 @@ private fun MessageBlock(turn: ChatTurn) {
                     ) {
                         Text(
                             if (user) "أنت" else "HAI",
+                            modifier = Modifier.fillMaxWidth(),
                             color = if (user) Color(0xFFB66A55) else Blue,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
@@ -743,9 +744,11 @@ private fun MessageBlock(turn: ChatTurn) {
 
                         Text(
                             messageText,
-                            modifier = Modifier.widthIn(
-                                max = cardMaxWidth - 24.dp
-                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .widthIn(
+                                    max = cardMaxWidth - 24.dp
+                                ),
                             color = Ink,
                             fontSize = 14.sp,
                             lineHeight = 21.sp,
