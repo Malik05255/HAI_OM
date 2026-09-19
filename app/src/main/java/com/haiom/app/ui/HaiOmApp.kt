@@ -120,17 +120,17 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
 import kotlinx.coroutines.delay
 
-private val Canvas = Color(0xFF090C11)
-private val SurfaceSoft = Color(0xFF10151D)
-private val Lavender = Color(0xFF151B25)
-private val LavenderStrong = Color(0xFF222C3A)
-private val Line = Color(0xFF25303E)
-private val Blue = Color(0xFF68E1FF)
-private val BlueSoft = Color(0xFF102832)
-private val Ink = Color(0xFFF3F7FB)
-private val Muted = Color(0xFF7F8B9B)
-private val Violet = Color(0xFFA78BFA)
-private val SurfaceElevated = Color(0xFF131A24)
+private val Canvas = Color(0xFFF7F8F4)
+private val SurfaceSoft = Color(0xFFFFFFFF)
+private val Lavender = Color(0xFFEEF3EC)
+private val LavenderStrong = Color(0xFFE3EBE5)
+private val Line = Color(0xFFD9E2DD)
+private val Blue = Color(0xFF1F8A70)
+private val BlueSoft = Color(0xFFE5F4EF)
+private val Ink = Color(0xFF17211D)
+private val Muted = Color(0xFF78837D)
+private val Violet = Color(0xFFD97757)
+private val SurfaceElevated = Color(0xFFFFFFFF)
 
 private enum class ToolPanel { PROJECTS, HISTORY, MODELS, SETTINGS }
 private enum class SettingsPage { ROOT, GITHUB, AUTOMATION }
@@ -717,11 +717,11 @@ private fun MessageBlock(turn: ChatTurn) {
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(if (user) 0.84f else 0.92f),
-                color = if (user) Color(0xFF171D27) else SurfaceElevated,
+                color = if (user) Color(0xFFF1F4F1) else SurfaceElevated,
                 shape = RoundedCornerShape(16.dp),
                 border = BorderStroke(
                     1.dp,
-                    if (user) Color(0xFF2D3B4F) else Line
+                    if (user) Color(0xFFD5E1DA) else Line
                 )
             ) {
                 Row(
@@ -910,7 +910,7 @@ private fun CompactComposer(
                         .clickable(enabled = enabled, onClick = onMedia),
                     color = BlueSoft,
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1D4654))
+                    border = BorderStroke(1.dp, Color(0xFFB9DED2))
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
@@ -953,7 +953,7 @@ private fun MediaStrip(
                         Modifier
                             .align(Alignment.CenterStart)
                             .padding(end = 36.dp),
-                        color = Color(0xFF5D6270),
+                        color = Color(0xFF7D8780),
                         fontSize = 11.sp,
                         maxLines = 1
                     )
@@ -967,7 +967,7 @@ private fun MediaStrip(
                             Icons.Outlined.Close,
                             "إزالة",
                             Modifier.size(16.dp),
-                            tint = Color(0xFF666B76)
+                            tint = Color(0xFF8A938D)
                         )
                     }
                 }
@@ -1010,7 +1010,7 @@ private fun AnimatedToolDock(
             modifier = Modifier
                 .width(panelWidth)
                 .offset(x = panelOffset),
-            color = Color(0xFF0D1219),
+            color = Color(0xFFF7FAF8),
             shape = RoundedCornerShape(
                 topEnd = 18.dp,
                 bottomEnd = 18.dp
@@ -1051,7 +1051,7 @@ private fun AnimatedToolDock(
                 .width(handleWidth)
                 .height(74.dp)
                 .clickable(onClick = onToggle),
-            color = Color(0xFF111923),
+            color = Color(0xFFEAF2ED),
             shape = RoundedCornerShape(
                 topEnd = 12.dp,
                 bottomEnd = 12.dp
@@ -1384,7 +1384,7 @@ private fun ProjectsContent(
                     ) {
                         Surface(
                             modifier = Modifier.size(36.dp),
-                            color = if (pending) Blue else Color(0xFF1B2430),
+                            color = if (pending) Blue else Color(0xFFE4ECE7),
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -1494,7 +1494,7 @@ private fun HistoryContent(
                     Modifier.fillMaxWidth(),
                     color = BlueSoft,
                     shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1D4654))
+                    border = BorderStroke(1.dp, Color(0xFFB9DED2))
                 ) {
                     Text(
                         text,
@@ -1534,7 +1534,7 @@ private fun ModelsContent(models: List<String>, ready: Boolean) {
         modifier = Modifier.fillMaxWidth(),
         color = if (ready) BlueSoft else SurfaceElevated,
         shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, if (ready) Color(0xFF1D4654) else Line)
+        border = BorderStroke(1.dp, if (ready) Color(0xFFB9DED2) else Line)
     ) {
         Row(
             Modifier.padding(14.dp),
@@ -1669,7 +1669,7 @@ private fun SettingsTile(
                 modifier = Modifier.size(44.dp),
                 color = BlueSoft,
                 shape = RoundedCornerShape(13.dp),
-                border = BorderStroke(1.dp, Color(0xFF1E4A58))
+                border = BorderStroke(1.dp, Color(0xFFA9D8C9))
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
@@ -1740,7 +1740,7 @@ private fun GitHubSettingsContent(
                         modifier = Modifier.size(46.dp),
                         color = BlueSoft,
                         shape = RoundedCornerShape(13.dp),
-                        border = BorderStroke(1.dp, Color(0xFF1E4A58))
+                        border = BorderStroke(1.dp, Color(0xFFA9D8C9))
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
@@ -1804,19 +1804,19 @@ private fun GitHubSettingsContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onDisconnect),
-            color = Color(0xFF1A1216),
+            color = Color(0xFFFFF1EF),
             shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color(0xFF4A2932))
+            border = BorderStroke(1.dp, Color(0xFFF4C5BD))
         ) {
             Row(
                 Modifier.padding(13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("×", color = Color(0xFFFF7588), fontSize = 20.sp)
+                Text("×", color = Color(0xFFD85F50), fontSize = 20.sp)
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "فصل الحساب",
-                    color = Color(0xFFFFA6B2),
+                    color = Color(0xFFB74E42),
                     fontSize = 13.sp
                 )
             }
@@ -1909,8 +1909,8 @@ private fun AutomaticTasksContent(
                 val statusColor = when {
                     staleRunning -> Muted
                     task.status == AutoTaskStatus.RUNNING -> Blue
-                    task.status == AutoTaskStatus.SUCCESS -> Color(0xFF68F0B5)
-                    task.status == AutoTaskStatus.FAILED -> Color(0xFFFF7588)
+                    task.status == AutoTaskStatus.SUCCESS -> Color(0xFF28A47D)
+                    task.status == AutoTaskStatus.FAILED -> Color(0xFFD85F50)
                     else -> Violet
                 }
 
@@ -1933,7 +1933,7 @@ private fun AutomaticTasksContent(
                     ) {
                         Surface(
                             modifier = Modifier.size(34.dp),
-                            color = Color(0xFF0D1219),
+                            color = Color(0xFFF7FAF8),
                             shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(1.dp, Line)
                         ) {
@@ -2103,7 +2103,7 @@ private fun AutoRuntimeStatusBar(
                         when {
                             paused -> Violet
                             remoteLive -> Blue
-                            status == "DONE" -> Color(0xFF68F0B5)
+                            status == "DONE" -> Color(0xFF28A47D)
                             else -> Muted
                         }
                     )
@@ -2139,15 +2139,15 @@ private fun LiveCodePreview(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFF070A0E),
+            color = Color(0xFFF5F8F6),
             shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color(0xFF1A3440))
+            border = BorderStroke(1.dp, Color(0xFFC4DCD3))
         ) {
             Column {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0D141C))
+                        .background(Color(0xFFEAF1ED))
                         .padding(horizontal = 11.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -2159,12 +2159,12 @@ private fun LiveCodePreview(
                         letterSpacing = 1.4.sp
                     )
                     Spacer(Modifier.weight(1f))
-                    Text("●", color = Color(0xFF68F0B5), fontSize = 9.sp)
+                    Text("●", color = Color(0xFF28A47D), fontSize = 9.sp)
                 }
                 Text(
                     text = typed + cursor,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-                    color = Color(0xFFD5F7FF),
+                    color = Color(0xFF16362D),
                     fontSize = 11.sp,
                     lineHeight = 16.sp,
                     fontFamily = FontFamily.Monospace,
@@ -2186,7 +2186,7 @@ private fun AutoExecuteTopControl(
         modifier = modifier
             .wrapContentWidth()
             .clickable { onToggle(!checked) },
-        color = Color(0xEE10151D),
+        color = Color(0xF2FFFFFF),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(
             1.dp,
@@ -2303,7 +2303,7 @@ private fun GitHubConnectCard(
                     modifier = Modifier.size(44.dp),
                     color = BlueSoft,
                     shape = RoundedCornerShape(13.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1E4A58))
+                    border = BorderStroke(1.dp, Color(0xFFA9D8C9))
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
