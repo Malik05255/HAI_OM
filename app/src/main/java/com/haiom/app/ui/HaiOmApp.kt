@@ -397,9 +397,9 @@ fun HaiOmApp(
                         showAutoExecuteConfirm = false
                     },
                     modifier = Modifier
-                        .align(AbsoluteAlignment.TopRight)
+                        .align(Alignment.TopCenter)
                         .statusBarsPadding()
-                        .padding(top = 46.dp, end = 8.dp)
+                        .padding(top = 0.dp)
                 )
             }
 
@@ -1008,10 +1008,8 @@ private fun AnimatedToolDock(
                 background = Color(0xFFF0F3F7),
                 onClick = onSettings
             )
-            PearlAction(
-                icon = Icons.Outlined.AutoAwesome,
-                tint = if (autoEnabled) Blue else Violet,
-                background = if (autoEnabled) BlueSoft else Lavender,
+            PearlAutoAction(
+                enabled = autoEnabled,
                 onClick = onAutoExecute
             )
         }
@@ -1062,6 +1060,36 @@ private fun PearlAction(
                 contentDescription = null,
                 tint = tint,
                 modifier = Modifier.size(21.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PearlAutoAction(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .width(58.dp)
+            .height(46.dp)
+            .clickable(onClick = onClick),
+        color = if (enabled) BlueSoft else Lavender,
+        shape = RoundedCornerShape(23.dp),
+        border = BorderStroke(
+            1.dp,
+            if (enabled) Color(0xFFCBD5FF) else Color.White
+        ),
+        shadowElevation = 7.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                "تلقائي",
+                color = if (enabled) Blue else Violet,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Center
             )
         }
     }
@@ -2489,12 +2517,12 @@ private fun AutoExecuteConfirmBanner(
     Surface(
         modifier = modifier.wrapContentWidth(),
         color = Color(0xFAFFFFFF),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.dp, Line),
-        shadowElevation = 12.dp
+        shadowElevation = 10.dp
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
