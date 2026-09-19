@@ -2,6 +2,7 @@ package com.haiom.app
 
 import android.app.Application
 import android.net.Uri
+import android.util.Base64
 import java.io.File
 import java.util.concurrent.TimeUnit
 import com.haiom.app.agent.RemoteAgentRunner
@@ -35,6 +36,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class MainUiState(
     val running: Boolean = false,
@@ -762,6 +767,367 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private data class ImagePayload(
+        val bytes: ByteArray,
+        val mimeType: String? = null
+    )
+
+    private class ImageProviderException(
+        message: String,
+        val allowFallback: Boolean
+    ) : Exception(message)
+
+    private fun requestConfiguredImage(
+        prompt: String,
+        seed: Long
+    ): ImagePayload? {
+        val endpoint = BuildConfig.IMAGE_API_URL.trim()
+        if (endpoint.isBlank()) return null
+
+        val bodyJson = JSONObject().apply {
+            put("prompt", prompt)
+            put("inputs", prompt)
+            put("negative_prompt", "low quality, distorted")
+            put("steps", 25)
+            put("seed", seed)
+        }
+
+        val builder = Request.Builder()
+            .url(endpoint)
+            .header(
+                "User-Agent",
+                "HAI-OM/${BuildConfig.VERSION_NAME}"
+            )
+            .header("Accept", "application/json,image/*")
+            .post(
+                bodyJson.toString()
+                    .toRequestBody(
+                        "application/json; charset=utf-8".toMediaType()
+                    )
+            )
+
+        BuildConfig.IMAGE_API_KEY
+            .trim()
+            .takeIf { it.isNotBlank() }
+            ?.let { key ->
+                builder.header(
+                    "Authorization",
+                    if (key.startsWith("Bearer ", true)) {
+                        key
+                    } else {
+                        "Bearer $key"
+                    }
+                )
+            }
+
+        imageClient.newCall(builder.build())
+            .execute()
+            .use { response ->
+                val code = response.code
+                if (!response.isSuccessful) {
+                    val message = when (code) {
+                        401, 403 -> "مفتاح خدمة الصور غير صالح أو غير مخول"
+                        429 -> "تم بلوغ حد خدمة الصور مؤقتًا"
+                        400, 422 -> "مزود الصور رفض صيغة الطلب"
+                        in 500..599 -> "مزود الصور متعطل مؤقتًا"
+                        else -> "فشل مزود الصور: HTTP $code"
+                    }
+                    throw ImageProviderException(
+                        message = message,
+                        allowFallback = code >= 500 || code == 408 || code == 429
+                    )
+                }
+
+                val responseBody = response.body
+                    ?: throw ImageProviderException(
+                        "استجابة خدمة الصور فارغة",
+                        true
+                    )
+
+                val mime = responseBody.contentType()
+                    ?.toString()
+                    ?.lowercase()
+                    .orEmpty()
+
+                if (mime.startsWith("image/")) {
+                    return ImagePayload(
+                        bytes = responseBody.bytes(),
+                        mimeType = mime
+                    )
+                }
+
+                val raw = responseBody.string()
+                if (raw.isBlank()) {
+                    throw ImageProviderException(
+                        "استجابة خدمة الصور فارغة",
+                        true
+                    )
+                }
+
+                return parseImageJson(raw)
+            }
+    }
+
+    private fun parseImageJson(raw: String): ImagePayload {
+        val root = runCatching { JSONObject(raw) }
+            .getOrElse {
+                throw ImageProviderException(
+                    "استجابة خدمة الصور غير مفهومة",
+                    true
+                )
+            }
+
+        val candidates = mutableListOf<Any?>()
+        listOf(
+            "url",
+            "image",
+            "image_url",
+            "b64_json",
+            "base64",
+            "image_base64",
+            "output",
+            "images",
+            "data"
+        ).forEach { key ->
+            if (root.has(key)) candidates += root.opt(key)
+        }
+
+        for (candidate in candidates) {
+            extractImageReference(candidate)?.let { reference ->
+                return resolveImageReference(reference)
+            }
+        }
+
+        throw ImageProviderException(
+            "لم يعثر HAI على صورة في استجابة المزود",
+            true
+        )
+    }
+
+    private fun extractImageReference(value: Any?): String? {
+        return when (value) {
+            null, JSONObject.NULL -> null
+            is String -> value.takeIf { it.isNotBlank() }
+            is JSONArray -> {
+                for (index in 0 until value.length()) {
+                    extractImageReference(value.opt(index))
+                        ?.let { return it }
+                }
+                null
+            }
+            is JSONObject -> {
+                listOf(
+                    "url",
+                    "b64_json",
+                    "base64",
+                    "image",
+                    "image_url"
+                ).firstNotNullOfOrNull { key ->
+                    extractImageReference(value.opt(key))
+                }
+            }
+            else -> null
+        }
+    }
+
+    private fun resolveImageReference(reference: String): ImagePayload {
+        val value = reference.trim()
+
+        if (value.startsWith("data:image/", true)) {
+            val comma = value.indexOf(',')
+            if (comma <= 0) {
+                throw ImageProviderException(
+                    "صيغة Base64 للصورة غير صالحة",
+                    true
+                )
+            }
+            val header = value.substring(0, comma)
+            val mime = header.substringAfter("data:")
+                .substringBefore(';')
+            val encoded = value.substring(comma + 1)
+            return ImagePayload(
+                bytes = decodeBase64Image(encoded),
+                mimeType = mime
+            )
+        }
+
+        if (
+            value.startsWith("http://", true) ||
+            value.startsWith("https://", true)
+        ) {
+            return downloadImage(value)
+        }
+
+        return ImagePayload(
+            bytes = decodeBase64Image(value),
+            mimeType = null
+        )
+    }
+
+    private fun decodeBase64Image(encoded: String): ByteArray {
+        return runCatching {
+            Base64.decode(
+                encoded.replace("\n", "").replace("\r", ""),
+                Base64.DEFAULT
+            )
+        }.getOrElse {
+            throw ImageProviderException(
+                "تعذر فك بيانات الصورة",
+                true
+            )
+        }
+    }
+
+    private fun downloadImage(url: String): ImagePayload {
+        val request = Request.Builder()
+            .url(url)
+            .header(
+                "User-Agent",
+                "HAI-OM/${BuildConfig.VERSION_NAME}"
+            )
+            .header("Accept", "image/*")
+            .build()
+
+        imageClient.newCall(request)
+            .execute()
+            .use { response ->
+                if (!response.isSuccessful) {
+                    throw ImageProviderException(
+                        "تعذر تحميل الصورة: HTTP ${response.code}",
+                        response.code >= 500 ||
+                            response.code == 408 ||
+                            response.code == 429
+                    )
+                }
+
+                val body = response.body
+                    ?: throw ImageProviderException(
+                        "ملف الصورة فارغ",
+                        true
+                    )
+                val mime = body.contentType()
+                    ?.toString()
+                    ?.lowercase()
+                    .orEmpty()
+
+                if (
+                    mime.isNotBlank() &&
+                    !mime.startsWith("image/")
+                ) {
+                    throw ImageProviderException(
+                        "الرابط لم يُرجع ملف صورة",
+                        true
+                    )
+                }
+
+                return ImagePayload(
+                    bytes = body.bytes(),
+                    mimeType = mime
+                )
+            }
+    }
+
+    private fun requestDefaultImage(
+        prompt: String,
+        seed: Long
+    ): ImagePayload {
+        val encoded = Uri.encode(prompt)
+        val urls = listOf(
+            "https://image.pollinations.ai/prompt/" +
+                encoded +
+                "?width=1024&height=1024" +
+                "&model=flux" +
+                "&seed=$seed" +
+                "&nologo=true" +
+                "&enhance=true",
+            "https://image.pollinations.ai/prompt/" +
+                encoded +
+                "?width=1024&height=1024" +
+                "&seed=$seed" +
+                "&nologo=true"
+        )
+
+        var lastError: Throwable? = null
+        for (url in urls) {
+            val result = runCatching {
+                downloadImage(url)
+            }
+            result.getOrNull()?.let { return it }
+            lastError = result.exceptionOrNull()
+        }
+
+        throw lastError
+            ?: ImageProviderException(
+                "تعذر توليد الصورة",
+                true
+            )
+    }
+
+    private fun imageExtension(
+        payload: ImagePayload
+    ): String {
+        val mime = payload.mimeType.orEmpty()
+        if (mime.contains("png")) return "png"
+        if (mime.contains("webp")) return "webp"
+        if (mime.contains("gif")) return "gif"
+        if (mime.contains("avif")) return "avif"
+        if (mime.contains("jpeg") || mime.contains("jpg")) return "jpg"
+
+        val bytes = payload.bytes
+        return when {
+            bytes.size >= 8 &&
+                bytes[0] == 0x89.toByte() &&
+                bytes[1] == 0x50.toByte() &&
+                bytes[2] == 0x4E.toByte() &&
+                bytes[3] == 0x47.toByte() -> "png"
+
+            bytes.size >= 12 &&
+                String(bytes, 0, 4) == "RIFF" &&
+                String(bytes, 8, 4) == "WEBP" -> "webp"
+
+            bytes.size >= 3 &&
+                bytes[0] == 0xFF.toByte() &&
+                bytes[1] == 0xD8.toByte() &&
+                bytes[2] == 0xFF.toByte() -> "jpg"
+
+            else -> "jpg"
+        }
+    }
+
+    private fun saveGeneratedImage(
+        payload: ImagePayload,
+        seed: Long
+    ): File {
+        if (payload.bytes.size < 1_024) {
+            throw ImageProviderException(
+                "بيانات الصورة الناتجة غير صالحة",
+                true
+            )
+        }
+
+        val directory = File(
+            getApplication<Application>().cacheDir,
+            "generated_images"
+        ).apply {
+            mkdirs()
+        }
+
+        directory.listFiles()
+            ?.sortedByDescending { it.lastModified() }
+            ?.drop(12)
+            ?.forEach {
+                runCatching { it.delete() }
+            }
+
+        val extension = imageExtension(payload)
+        return File(
+            directory,
+            "hai_${System.currentTimeMillis()}_$seed.$extension"
+        ).apply {
+            writeBytes(payload.bytes)
+        }
+    }
+
     private fun generateImage(prompt: String) {
         manualChatJob?.cancel()
         responseGeneration += 1L
@@ -799,112 +1165,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     cleanPrompt.hashCode().toLong() and 0x7fffffffL
                     )
 
-                val encodedPrompt = Uri.encode(cleanPrompt)
-                val candidateUrls = listOf(
-                    "https://image.pollinations.ai/prompt/" +
-                        encodedPrompt +
-                        "?width=1024&height=1024" +
-                        "&model=flux" +
-                        "&seed=${seed}" +
-                        "&nologo=true" +
-                        "&enhance=true",
-                    "https://image.pollinations.ai/prompt/" +
-                        encodedPrompt +
-                        "?width=1024&height=1024" +
-                        "&seed=${seed}" +
-                        "&nologo=true"
-                )
-
                 val imageFile = withContext(Dispatchers.IO) {
-                    var lastError = "تعذر توليد الصورة"
-
-                    for (url in candidateUrls) {
-                        val request = Request.Builder()
-                            .url(url)
-                            .header(
-                                "User-Agent",
-                                "HAI-OM/${BuildConfig.VERSION_NAME}"
+                    val configuredResult = if (
+                        BuildConfig.IMAGE_API_URL.isNotBlank()
+                    ) {
+                        runCatching {
+                            requestConfiguredImage(
+                                cleanPrompt,
+                                seed
                             )
-                            .header(
-                                "Accept",
-                                "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
-                            )
-                            .build()
-
-                        val result = runCatching {
-                            imageClient.newCall(request)
-                                .execute()
-                                .use { response ->
-                                    if (!response.isSuccessful) {
-                                        error(
-                                            "HTTP ${response.code}"
-                                        )
-                                    }
-
-                                    val body = response.body
-                                        ?: error("استجابة صورة فارغة")
-
-                                    val contentType = body.contentType()
-                                        ?.toString()
-                                        .orEmpty()
-
-                                    if (
-                                        contentType.isNotBlank() &&
-                                        !contentType.startsWith("image/")
-                                    ) {
-                                        error(
-                                            "الاستجابة ليست صورة"
-                                        )
-                                    }
-
-                                    val bytes = body.bytes()
-                                    if (bytes.size < 1_024) {
-                                        error("ملف الصورة غير صالح")
-                                    }
-
-                                    val extension = when {
-                                        contentType.contains("png") -> "png"
-                                        contentType.contains("webp") -> "webp"
-                                        else -> "jpg"
-                                    }
-
-                                    val directory = File(
-                                        getApplication<Application>().cacheDir,
-                                        "generated_images"
-                                    ).apply {
-                                        mkdirs()
-                                    }
-
-                                    directory.listFiles()
-                                        ?.sortedByDescending {
-                                            it.lastModified()
-                                        }
-                                        ?.drop(12)
-                                        ?.forEach {
-                                            runCatching { it.delete() }
-                                        }
-
-                                    File(
-                                        directory,
-                                        "hai_${System.currentTimeMillis()}_${seed}.${extension}"
-                                    ).apply {
-                                        writeBytes(bytes)
-                                    }
-                                }
                         }
-
-                        val file = result.getOrNull()
-                        if (file != null && file.exists()) {
-                            return@withContext file
-                        }
-
-                        lastError = result.exceptionOrNull()
-                            ?.message
-                            ?.takeIf { it.isNotBlank() }
-                            ?: lastError
+                    } else {
+                        null
                     }
 
-                    error(lastError)
+                    val configuredPayload =
+                        configuredResult?.getOrNull()
+
+                    val payload = when {
+                        configuredPayload != null -> configuredPayload
+
+                        configuredResult == null -> {
+                            requestDefaultImage(
+                                cleanPrompt,
+                                seed
+                            )
+                        }
+
+                        configuredResult.exceptionOrNull()
+                            is ImageProviderException -> {
+                            val error =
+                                configuredResult.exceptionOrNull()
+                                    as ImageProviderException
+                            if (!error.allowFallback) {
+                                throw error
+                            }
+                            requestDefaultImage(
+                                cleanPrompt,
+                                seed
+                            )
+                        }
+
+                        else -> {
+                            requestDefaultImage(
+                                cleanPrompt,
+                                seed
+                            )
+                        }
+                    }
+
+                    saveGeneratedImage(payload, seed)
                 }
 
                 if (
