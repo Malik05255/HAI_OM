@@ -613,7 +613,8 @@ private fun ChatCanvas(
                     item {
                         LiveCodePreview(
                             code = liveCode,
-                            now = runtimeNow
+                            now = runtimeNow,
+                            paused = autoQueueStarted && autoPaused
                         )
                     }
                 }
@@ -1844,12 +1845,15 @@ private fun AutoRuntimeStatusBar(
 @Composable
 private fun LiveCodePreview(
     code: String,
-    now: Long
+    now: Long,
+    paused: Boolean
 ) {
     val preview = code.takeLast(6_000)
     var typed by remember { mutableStateOf("") }
 
-    LaunchedEffect(preview) {
+    LaunchedEffect(preview, paused) {
+        if (paused) return@LaunchedEffect
+
         var index = if (preview.startsWith(typed)) typed.length else 0
         if (index == 0) typed = ""
 
@@ -1860,23 +1864,26 @@ private fun LiveCodePreview(
         }
     }
 
-    val cursor = if ((now / 500L) % 2L == 0L) "▌" else ""
+    val cursor = if (!paused && (now / 500L) % 2L == 0L) "▌" else ""
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFFFAFAFC),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, Line)
-    ) {
-        Text(
-            text = typed + cursor,
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
-            color = Ink,
-            fontSize = 11.sp,
-            lineHeight = 16.sp,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 22
-        )
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFFFAFAFC),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Line)
+        ) {
+            Text(
+                text = typed + cursor,
+                modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
+                color = Ink,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                fontFamily = FontFamily.Monospace,
+                textAlign = TextAlign.Left,
+                maxLines = 22
+            )
+        }
     }
 }
 
