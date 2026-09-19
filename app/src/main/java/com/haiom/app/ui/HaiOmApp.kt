@@ -1728,21 +1728,34 @@ private fun SettingsRootContent(
     onCheckUpdate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    Column(modifier = modifier) {
+        Text(
+            "CONTROL BOARD",
+            color = Signal,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 1.6.sp
+        )
+
+        Spacer(Modifier.height(10.dp))
+
         SettingsTile(
-            glyph = "◎",
+            index = "01",
+            icon = Icons.Outlined.Link,
             title = "GitHub",
             subtitle = "الحساب والمشروع النشط",
+            accent = Blue,
             onClick = onOpenGitHub
         )
 
+        Spacer(Modifier.height(10.dp))
+
         SettingsTile(
-            glyph = "⚡",
-            title = "التنفيذ",
-            subtitle = "المهام والحالة التلقائية",
+            index = "02",
+            icon = Icons.Outlined.AutoAwesome,
+            title = "التنفيذ التلقائي",
+            subtitle = "الطابور والحالة والتحكم",
+            accent = Signal,
             onClick = onOpenAutomation
         )
 
@@ -1752,36 +1765,48 @@ private fun SettingsRootContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(enabled = !checkingUpdate, onClick = onCheckUpdate),
-            color = SurfaceElevated,
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Line)
+            color = Ink,
+            shape = RoundedCornerShape(3.dp)
         ) {
             Row(
-                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    if (checkingUpdate) "…" else "↻",
-                    color = Blue,
-                    fontSize = 20.sp
+                Icon(
+                    Icons.Outlined.Refresh,
+                    contentDescription = null,
+                    tint = if (checkingUpdate) Muted else Color.White,
+                    modifier = Modifier.size(18.dp)
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(9.dp))
                 Text(
-                    if (checkingUpdate) "جاري البحث" else "البحث عن تحديث",
-                    color = Ink,
-                    fontSize = 14.sp
+                    if (checkingUpdate) "جاري البحث…" else "البحث عن تحديث",
+                    color = if (checkingUpdate) Muted else Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "UPDATE",
+                    color = Signal,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.2.sp
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
+
+        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
 private fun SettingsTile(
-    glyph: String,
+    index: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
+    accent: Color,
     onClick: () -> Unit
 ) {
     Surface(
@@ -1789,43 +1814,62 @@ private fun SettingsTile(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         color = SurfaceElevated,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, Line)
+        shape = RoundedCornerShape(3.dp),
+        border = BorderStroke(1.dp, Ink.copy(alpha = 0.18f)),
+        shadowElevation = 3.dp
     ) {
         Row(
-            Modifier.padding(16.dp),
+            Modifier.padding(13.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Text(
+                index,
+                color = accent,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.2.sp
+            )
+
+            Spacer(Modifier.width(9.dp))
+
             Surface(
-                modifier = Modifier.size(44.dp),
-                color = BlueSoft,
-                shape = RoundedCornerShape(13.dp),
-                border = BorderStroke(1.dp, Color(0xFFA9D8C9))
+                modifier = Modifier.size(40.dp),
+                color = accent,
+                shape = RoundedCornerShape(2.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        glyph,
-                        color = Blue,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
+                    Icon(
+                        icon,
+                        contentDescription = title,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
-            Spacer(Modifier.width(12.dp))
+
+            Spacer(Modifier.width(11.dp))
+
             Column(Modifier.weight(1f)) {
                 Text(
                     title,
                     color = Ink,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.ExtraBold
                 )
+                Spacer(Modifier.height(2.dp))
                 Text(
                     subtitle,
                     color = Muted,
-                    fontSize = 11.sp
+                    fontSize = 10.sp
                 )
             }
-            Text("›", color = Muted, fontSize = 20.sp)
+
+            Text(
+                "→",
+                color = Ink,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -1859,75 +1903,100 @@ private fun GitHubSettingsContent(
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = SurfaceElevated,
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, Line)
+            color = Ink,
+            shape = RoundedCornerShape(3.dp)
         ) {
-            Column(Modifier.padding(16.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        modifier = Modifier.size(46.dp),
-                        color = BlueSoft,
-                        shape = RoundedCornerShape(13.dp),
-                        border = BorderStroke(1.dp, Color(0xFFA9D8C9))
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                "@",
-                                color = Blue,
-                                fontSize = 21.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+            Column(Modifier.padding(15.dp)) {
+                Text(
+                    "GITHUB ID",
+                    color = Signal,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.4.sp
+                )
+                Spacer(Modifier.height(7.dp))
 
-                    Spacer(Modifier.width(12.dp))
-
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Outlined.AccountCircle,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
                             login.ifBlank { "GitHub" },
-                            color = Ink,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 19.sp
                         )
                         Text(
                             "${repositoryCount} مستودع",
-                            color = Muted,
-                            fontSize = 11.sp
+                            color = Color.White.copy(alpha = 0.68f),
+                            fontSize = 10.sp
                         )
                     }
-
-                    Text("●", color = Blue, fontSize = 13.sp)
+                    Text("●", color = Color(0xFF7FD6A6), fontSize = 12.sp)
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(15.dp))
+
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(Color.White.copy(alpha = 0.18f))
+                )
+
+                Spacer(Modifier.height(12.dp))
 
                 Text(
                     "المشروع النشط",
-                    color = Muted,
-                    fontSize = 10.sp,
-                    letterSpacing = 1.sp
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 9.sp
                 )
-                Spacer(Modifier.height(5.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     selectedRepo?.fullName ?: "لم يتم اختيار مشروع",
-                    color = if (selectedRepo == null) Muted else Ink,
+                    color = Color.White,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
 
         Spacer(Modifier.height(12.dp))
 
-        SettingsTile(
-            glyph = "□",
-            title = if (selectedRepo == null) "اختيار مشروع" else "تغيير المشروع",
-            subtitle = selectedRepo?.fullName?.substringAfter('/') ?: "حدد مساحة العمل",
-            onClick = onOpenProjects
-        )
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenProjects),
+            color = BlueSoft,
+            shape = RoundedCornerShape(3.dp),
+            border = BorderStroke(1.dp, Blue.copy(alpha = 0.45f))
+        ) {
+            Row(
+                Modifier.padding(13.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Outlined.FolderOpen,
+                    contentDescription = null,
+                    tint = Blue,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(9.dp))
+                Text(
+                    if (selectedRepo == null) "اختيار مشروع" else "تغيير المشروع",
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.weight(1f))
+                Text("→", color = Blue, fontSize = 18.sp)
+            }
+        }
 
         Spacer(Modifier.height(10.dp))
 
@@ -1935,20 +2004,26 @@ private fun GitHubSettingsContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onDisconnect),
-            color = Color(0xFFFFF1EF),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color(0xFFF4C5BD))
+            color = Color(0xFFFFECE7),
+            shape = RoundedCornerShape(3.dp),
+            border = BorderStroke(1.dp, Signal.copy(alpha = 0.42f))
         ) {
             Row(
                 Modifier.padding(13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("×", color = Color(0xFFD85F50), fontSize = 20.sp)
-                Spacer(Modifier.width(10.dp))
+                Icon(
+                    Icons.Outlined.Logout,
+                    contentDescription = null,
+                    tint = Signal,
+                    modifier = Modifier.size(19.dp)
+                )
+                Spacer(Modifier.width(9.dp))
                 Text(
                     "فصل الحساب",
-                    color = Color(0xFFB74E42),
-                    fontSize = 13.sp
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
