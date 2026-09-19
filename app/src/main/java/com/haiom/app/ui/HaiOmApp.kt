@@ -63,6 +63,8 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -563,24 +565,37 @@ private fun ChatCanvas(
         Spacer(Modifier.height(8.dp))
 
         if (autoQueueStarted || autoWorkerError.isNotBlank()) {
-            AutoRuntimeStatusBar(
-                tasks = autoTasks,
-                queueStarted = autoQueueStarted,
-                paused = autoPaused,
-                workerActive = autoWorkerActive,
-                heartbeatAt = autoWorkerHeartbeatAt,
-                workerMessage = autoWorkerMessage,
-                workerError = autoWorkerError,
-                remoteRepository = remoteRepository,
-                remoteRunId = remoteRunId,
-                remoteRunUrl = remoteRunUrl,
-                remoteState = remoteState,
-                remoteStage = remoteStage,
-                now = runtimeNow,
-                onTogglePause = onTogglePause,
-                onOpenTasks = onOpenTasks
-            )
-            Spacer(Modifier.height(8.dp))
+            CompositionLocalProvider(
+                LocalLayoutDirection provides LayoutDirection.Ltr
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.TopStart
+                ) {
+                    AutoRuntimeStatusBar(
+                        tasks = autoTasks,
+                        queueStarted = autoQueueStarted,
+                        paused = autoPaused,
+                        workerActive = autoWorkerActive,
+                        heartbeatAt = autoWorkerHeartbeatAt,
+                        workerMessage = autoWorkerMessage,
+                        workerError = autoWorkerError,
+                        remoteRepository = remoteRepository,
+                        remoteRunId = remoteRunId,
+                        remoteRunUrl = remoteRunUrl,
+                        remoteState = remoteState,
+                        remoteStage = remoteStage,
+                        now = runtimeNow,
+                        onTogglePause = onTogglePause,
+                        onOpenTasks = onOpenTasks,
+                        modifier = Modifier.widthIn(
+                            min = 150.dp,
+                            max = 220.dp
+                        )
+                    )
+                }
+            }
+            Spacer(Modifier.height(7.dp))
         }
 
         if (empty) {
@@ -1638,7 +1653,8 @@ private fun AutomaticTasksContent(
             remoteStage = remoteStage,
             now = now,
             onTogglePause = onTogglePause,
-            onOpenTasks = {}
+            onOpenTasks = {},
+            modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(Modifier.height(10.dp))
@@ -1765,7 +1781,8 @@ private fun AutoRuntimeStatusBar(
     remoteStage: String,
     now: Long,
     onTogglePause: () -> Unit,
-    onOpenTasks: () -> Unit
+    onOpenTasks: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val controllerLive = workerIsLive(workerActive, heartbeatAt, now)
     val remoteLive = remoteState == "queued" || remoteState == "in_progress"
@@ -1792,9 +1809,11 @@ private fun AutoRuntimeStatusBar(
         else -> "في الانتظار"
     }
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
+    CompositionLocalProvider(
+        LocalLayoutDirection provides LayoutDirection.Rtl
+    ) {
+        Surface(
+        modifier = modifier
             .clickable(onClick = onOpenTasks),
         color = if (paused) Color.White else BlueSoft,
         shape = RoundedCornerShape(16.dp),
@@ -1830,19 +1849,35 @@ private fun AutoRuntimeStatusBar(
             )
 
             if (queueStarted) {
-                OutlinedButton(
-                    onClick = onTogglePause,
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)
+                Surface(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clickable(onClick = onTogglePause),
+                    color = Color.White,
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, Line)
                 ) {
-                    Text(
-                        if (paused) "متابعة" else "إيقاف مؤقت",
-                        fontSize = 11.sp
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (paused) {
+                                Icons.Outlined.PlayArrow
+                            } else {
+                                Icons.Outlined.Pause
+                            },
+                            contentDescription = if (paused) {
+                                "متابعة"
+                            } else {
+                                "إيقاف مؤقت"
+                            },
+                            tint = Blue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
 
         }
+    }
     }
 }
 
