@@ -4,6 +4,7 @@ import android.util.Base64
 import com.haiom.app.model.CiResult
 import com.haiom.app.model.CiState
 import com.haiom.app.model.EditBatch
+import com.haiom.app.model.FileEdit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -332,6 +333,27 @@ class GitHubClient(
             }
         )
         return root["html_url"]?.jsonPrimitive?.contentOrNull
+    }
+
+    suspend fun setRuntimePaused(
+        repo: RepoRef,
+        paused: Boolean
+    ) {
+        applyBatch(
+            repo = repo,
+            branch = "hai-om/runtime",
+            batch = EditBatch(
+                summary = if (paused) "إيقاف مؤقت" else "متابعة التنفيذ",
+                files = listOf(
+                    FileEdit(
+                        path = ".hai-om/control.json",
+                        content = """{"paused":$paused}"""
+                    )
+                )
+            ),
+            taskId = "control",
+            onEvent = {}
+        )
     }
 
     suspend fun mergePullRequest(
