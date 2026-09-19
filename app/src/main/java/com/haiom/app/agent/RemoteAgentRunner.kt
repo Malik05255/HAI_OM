@@ -28,12 +28,16 @@ class RemoteAgentRunner(
     suspend fun run(
         repositoryUrl: String,
         requirements: String,
-        onEvent: (String) -> Unit
+        onEvent: (String) -> Unit,
+        baseBranchOverride: String? = null
     ): AgentRunResult {
         require(requirements.isNotBlank()) { "اكتب رسالتك" }
 
         val repo = github.parseRepository(repositoryUrl)
-        val base = github.defaultBranch(repo)
+        val defaultBase = github.defaultBranch(repo)
+        val base = baseBranchOverride
+            ?.takeIf { it.isNotBlank() }
+            ?: defaultBase
         val taskId = System.currentTimeMillis().toString()
         val programming = explicitProgrammingCommand(requirements)
 
