@@ -298,13 +298,14 @@ class GitHubClient(
             } ?: return@runCatching null
 
             when (current["name"]?.jsonPrimitive?.contentOrNull.orEmpty()) {
-                "Checkout project" -> "فتح المشروع"
-                "Java", "Node" -> "تجهيز العمل"
-                "Start free AI engine" -> "تجهيز الذكاء"
-                "Build, test, and repair", "Answer or program" -> "قراءة المشروع وتنفيذ المطلوب"
-                "Publish result" -> "تجهيز النتيجة"
-                "Stop AI engine" -> "إنهاء المهمة"
-                else -> "جاري التنفيذ"
+                "Checkout project" -> "يفتح المشروع"
+                "Java", "Node" -> "يجهز"
+                "Start free AI engine" -> "يجهز الذكاء"
+                "Build, test, and repair" -> "يفحص ويصلح"
+                "Answer or program" -> "يكتب الكود"
+                "Publish result" -> "يحفظ النتيجة"
+                "Stop AI engine" -> "ينهي المهمة"
+                else -> "يعمل"
             }
         }.getOrNull()
     }
