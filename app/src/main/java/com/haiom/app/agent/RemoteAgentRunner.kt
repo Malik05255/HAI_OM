@@ -29,7 +29,8 @@ class RemoteAgentRunner(
         repositoryUrl: String,
         requirements: String,
         onEvent: (String) -> Unit,
-        baseBranchOverride: String? = null
+        baseBranchOverride: String? = null,
+        onCiProgress: (Long?, String, String) -> Unit = { _, _, _ -> }
     ): AgentRunResult {
         require(requirements.isNotBlank()) { "اكتب رسالتك" }
 
@@ -82,7 +83,8 @@ class RemoteAgentRunner(
             headSha = kickoffSha,
             onEvent = onEvent,
             workflowName = WORKFLOW_NAME,
-            maxAttempts = 300
+            maxAttempts = 300,
+            onProgress = onCiProgress
         )
 
         when (run.state) {
