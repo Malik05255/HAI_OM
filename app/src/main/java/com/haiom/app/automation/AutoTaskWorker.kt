@@ -49,6 +49,10 @@ class AutoTaskWorker(
         val github = GitHubClient(token)
         val runner = RemoteAgentRunner(applicationContext, github)
         val repositoryUrl = "https://github.com/$fullName"
+        var workingBranch = store.snapshot().tasks
+            .filter { it.status == AutoTaskStatus.SUCCESS && it.branch.isNotBlank() }
+            .maxByOrNull { it.order }
+            ?.branch
 
         try {
             while (store.snapshot().started) {
@@ -69,13 +73,16 @@ class AutoTaskWorker(
                         },
                         onEvent = { event ->
                             store.addEvent("${task.order}. ${event.trim()}")
-                        }
+                        },
+                        baseBranchOverride = workingBranch
                     )
 
+                    workingBranch = result.branch.ifBlank { workingBranch.orEmpty() }
                     store.updateTask(
                         id = task.id,
                         status = AutoTaskStatus.SUCCESS,
-                        result = result.answer.orEmpty()
+                        result = result.answer.orEmpty(),
+                        branch = result.branch
                     )
                     store.addEvent("${task.order}. ${task.title} — تم")
                 } catch (cancelled: CancellationException) {
