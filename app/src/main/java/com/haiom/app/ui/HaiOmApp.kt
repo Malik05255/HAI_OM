@@ -669,38 +669,55 @@ private fun ChatCanvas(
 @Composable
 private fun EmptyState(modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier.padding(horizontal = 28.dp),
+        modifier = modifier.padding(horizontal = 30.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
-            modifier = Modifier.size(72.dp),
+            modifier = Modifier
+                .width(150.dp)
+                .height(84.dp),
             color = SurfaceElevated,
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 10.dp
+            shape = RoundedCornerShape(4.dp),
+            border = BorderStroke(2.dp, Ink),
+            shadowElevation = 8.dp
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
-                    "H",
+                    "HAI / 01",
                     color = Blue,
-                    fontSize = 30.sp,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.8.sp
+                )
+                Text(
+                    "واجهة عمل ذكية",
+                    color = Ink,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Black
+                )
+                Box(
+                    Modifier
+                        .width(54.dp)
+                        .height(4.dp)
+                        .background(Signal)
                 )
             }
         }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(20.dp))
         Text(
-            "HAI",
+            "ابدأ من هنا",
             color = Ink,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.sp
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
-            "اكتب أي شيء",
+            "محادثة، برمجة، أو تنفيذ مشروع",
             color = Muted,
-            fontSize = 13.sp
+            fontSize = 12.sp
         )
     }
 }
@@ -721,63 +738,71 @@ private fun MessageBlock(turn: ChatTurn) {
         }
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth(
-                if (user) 0.82f else 0.88f
-            ),
-            color = if (user) Color(0xFFF1F4F1) else SurfaceElevated,
-            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth(if (user) 0.80f else 0.90f),
+            color = if (user) Color(0xFFFFF3EE) else SurfaceElevated,
+            shape = RoundedCornerShape(4.dp),
             border = BorderStroke(
                 1.dp,
-                if (user) Color(0xFFD5E1DA) else Line
-            )
+                if (user) Signal.copy(alpha = 0.55f) else Ink.copy(alpha = 0.22f)
+            ),
+            shadowElevation = if (user) 2.dp else 5.dp
         ) {
-            Row(
-                Modifier.padding(vertical = 12.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Box(
-                    Modifier
-                        .width(3.dp)
-                        .height(if (codeLike) 54.dp else 34.dp)
-                        .background(if (user) Violet else Blue)
-                )
-                Spacer(Modifier.width(11.dp))
-
-                Column(
+            Column {
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 13.dp),
-                    horizontalAlignment = Alignment.End
+                        .fillMaxWidth()
+                        .background(if (user) Color(0xFFFFE7DF) else Color(0xFFE9EDFF))
+                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CompositionLocalProvider(
-                        LocalLayoutDirection provides LayoutDirection.Rtl
+                    Surface(
+                        modifier = Modifier.size(24.dp),
+                        color = if (user) Signal else Blue,
+                        shape = RoundedCornerShape(2.dp)
                     ) {
-                        Text(
-                            if (user) "YOU" else "HAI",
-                            modifier = Modifier.fillMaxWidth(),
-                            color = Color(0xFF3F3A36),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 1.2.sp,
-                            textAlign = TextAlign.Right
-                        )
-
-                        Spacer(Modifier.height(6.dp))
-
-                        Text(
-                            messageText,
-                            modifier = Modifier.fillMaxWidth(),
-                            color = Ink,
-                            fontSize = if (codeLike) 12.sp else 15.sp,
-                            lineHeight = if (codeLike) 18.sp else 23.sp,
-                            fontFamily = if (codeLike) {
-                                FontFamily.Monospace
-                            } else {
-                                FontFamily.Default
-                            },
-                            textAlign = TextAlign.Right
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                if (user) Icons.Outlined.AccountCircle else Icons.Outlined.AutoAwesome,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (user) "أنت" else "HAI",
+                        color = Ink,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        if (user) "USER" else "ASSISTANT",
+                        color = Muted,
+                        fontSize = 8.sp,
+                        letterSpacing = 1.2.sp
+                    )
+                }
+
+                CompositionLocalProvider(
+                    LocalLayoutDirection provides if (codeLike) {
+                        LayoutDirection.Ltr
+                    } else {
+                        LayoutDirection.Rtl
+                    }
+                ) {
+                    Text(
+                        messageText,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 13.dp, vertical = 12.dp),
+                        color = Ink,
+                        fontSize = if (codeLike) 12.sp else 15.sp,
+                        lineHeight = if (codeLike) 18.sp else 23.sp,
+                        fontFamily = if (codeLike) FontFamily.Monospace else FontFamily.Default,
+                        textAlign = if (codeLike) TextAlign.Left else TextAlign.Right
+                    )
                 }
             }
         }
@@ -833,56 +858,49 @@ private fun CompactComposer(
     onMedia: () -> Unit,
     onSend: () -> Unit
 ) {
-    val c = LocalConfiguration.current
-    val compact = c.screenWidthDp < 360 || c.screenHeightDp < 680
-
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        Surface(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            color = SurfaceElevated,
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 12.dp
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.Bottom
         ) {
-            Row(
-                Modifier.padding(horizontal = 7.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clickable(enabled = enabled && value.isNotBlank(), onClick = onSend),
+                color = if (enabled && value.isNotBlank()) Ink else LavenderStrong,
+                shape = RoundedCornerShape(4.dp),
+                border = BorderStroke(1.dp, Ink)
             ) {
-                Surface(
-                    modifier = Modifier
-                        .size(if (compact) 38.dp else 40.dp)
-                        .clickable(
-                            enabled = enabled && value.isNotBlank(),
-                            onClick = onSend
-                        ),
-                    color = if (enabled && value.isNotBlank()) Blue else Line,
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            "↑",
-                            color = if (enabled && value.isNotBlank()) Canvas else Muted,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.ArrowUpward,
+                        contentDescription = "إرسال",
+                        tint = if (enabled && value.isNotBlank()) Color.White else Muted,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
+            }
 
-                Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(8.dp))
 
+            Surface(
+                modifier = Modifier.weight(1f),
+                color = SurfaceElevated,
+                shape = RoundedCornerShape(4.dp),
+                border = BorderStroke(1.dp, Ink.copy(alpha = 0.28f)),
+                shadowElevation = 6.dp
+            ) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     BasicTextField(
                         value = value,
                         onValueChange = onValueChange,
                         enabled = enabled,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = Ink,
-                            fontSize = if (compact) 15.sp else 16.sp
+                            fontSize = 15.sp
                         ),
                         cursorBrush = SolidColor(Blue),
                         maxLines = 4,
@@ -893,12 +911,12 @@ private fun CompactComposer(
                             }
                         ),
                         decorationBox = { inner ->
-                            Box(contentAlignment = Alignment.CenterStart) {
+                            Box {
                                 if (value.isBlank()) {
                                     Text(
-                                        "رسالة إلى HAI",
+                                        "اكتب إلى HAI",
                                         color = Muted,
-                                        fontSize = if (compact) 14.sp else 15.sp
+                                        fontSize = 14.sp
                                     )
                                 }
                                 inner()
@@ -906,25 +924,24 @@ private fun CompactComposer(
                         }
                     )
                 }
+            }
 
-                Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
 
-                Surface(
-                    modifier = Modifier
-                        .size(if (compact) 38.dp else 40.dp)
-                        .clickable(enabled = enabled, onClick = onMedia),
-                    color = BlueSoft,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFFB9DED2))
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            "+",
-                            color = Blue,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+            Surface(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clickable(enabled = enabled, onClick = onMedia),
+                color = Signal,
+                shape = RoundedCornerShape(24.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.Add,
+                        contentDescription = "إضافة",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
         }
@@ -993,57 +1010,42 @@ private fun AnimatedToolDock(
     onModels: () -> Unit,
     onSettings: () -> Unit
 ) {
-    val panelWidth = 64.dp
-    val handleWidth = 22.dp
+    val panelWidth = 178.dp
+    val handleWidth = 28.dp
     val panelOffset by animateDpAsState(
         targetValue = if (open) 0.dp else -panelWidth,
-        animationSpec = tween(durationMillis = 240),
-        label = "commandRail"
+        animationSpec = tween(durationMillis = 260),
+        label = "editorialRail"
     )
     val handleOffset by animateDpAsState(
         targetValue = if (open) panelWidth else 0.dp,
-        animationSpec = tween(durationMillis = 240),
-        label = "commandHandle"
+        animationSpec = tween(durationMillis = 260),
+        label = "editorialHandle"
     )
 
     Box(
         modifier = modifier
             .width(panelWidth + handleWidth)
-            .height(310.dp)
+            .height(300.dp)
     ) {
         Surface(
             modifier = Modifier
                 .width(panelWidth)
                 .offset(x = panelOffset),
-            color = Color(0xFFF7FAF8),
-            shape = RoundedCornerShape(
-                topEnd = 18.dp,
-                bottomEnd = 18.dp
-            ),
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 16.dp
+            color = SurfaceElevated,
+            shape = RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp),
+            border = BorderStroke(1.dp, Ink.copy(alpha = 0.25f)),
+            shadowElevation = 12.dp
         ) {
-            Column(
-                modifier = Modifier.padding(
-                    vertical = 12.dp,
-                    horizontal = 8.dp
-                ),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                CommandGlyph("+", "دردشة جديدة", onNewChat)
-                CommandGlyph("□", "المشاريع", onProjects)
-                CommandGlyph("↺", "السجل", onHistory)
-                CommandGlyph("✦", "النماذج", onModels)
-                Box(
-                    Modifier
-                        .width(24.dp)
-                        .height(1.dp)
-                        .background(Line)
-                )
-                CommandGlyph(
-                    if (connected) "≡" else "◎",
-                    if (connected) "الإعدادات" else "الربط",
+            Column(Modifier.padding(10.dp)) {
+                EditorialDockItem("01", Icons.Outlined.ChatBubbleOutline, "محادثة جديدة", onNewChat)
+                EditorialDockItem("02", Icons.Outlined.FolderOpen, "المشاريع", onProjects)
+                EditorialDockItem("03", Icons.Outlined.History, "السجل", onHistory)
+                EditorialDockItem("04", Icons.Outlined.Code, "النماذج", onModels)
+                EditorialDockItem(
+                    "05",
+                    if (connected) Icons.Outlined.Settings else Icons.Outlined.Link,
+                    if (connected) "الإعدادات" else "ربط GitHub",
                     onSettings
                 )
             }
@@ -1054,21 +1056,18 @@ private fun AnimatedToolDock(
                 .align(Alignment.CenterStart)
                 .offset(x = handleOffset)
                 .width(handleWidth)
-                .height(74.dp)
+                .height(92.dp)
                 .clickable(onClick = onToggle),
-            color = Color(0xFFEAF2ED),
-            shape = RoundedCornerShape(
-                topEnd = 12.dp,
-                bottomEnd = 12.dp
-            ),
-            border = BorderStroke(1.dp, Line)
+            color = Ink,
+            shape = RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
-                    if (open) "‹" else "›",
-                    color = Color(0xFF6A5145),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    if (open) "×" else "MENU",
+                    color = Color.White,
+                    fontSize = if (open) 18.sp else 8.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.sp
                 )
             }
         }
@@ -1076,27 +1075,39 @@ private fun AnimatedToolDock(
 }
 
 @Composable
-private fun CommandGlyph(
-    glyph: String,
+private fun EditorialDockItem(
+    index: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     onClick: () -> Unit
 ) {
-    Surface(
+    Row(
         modifier = Modifier
-            .size(42.dp)
-            .clickable(onClick = onClick),
-        color = SurfaceElevated,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, Line)
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                glyph,
-                color = Ink,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
+        Text(
+            index,
+            color = Signal,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = Blue,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(9.dp))
+        Text(
+            label,
+            color = Ink,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
