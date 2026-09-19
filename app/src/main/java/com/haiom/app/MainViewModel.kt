@@ -793,7 +793,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         "&seed=$seed" +
                         "&nologo=true" +
                         "&private=true" +
-                        "&safe=true" +
                         "&enhance=true"
 
                 val imageTurn = ChatTurn(
