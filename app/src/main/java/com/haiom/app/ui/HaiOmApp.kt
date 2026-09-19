@@ -267,9 +267,9 @@ fun HaiOmApp(
                     running = state.running,
                     programming = state.programming,
                     progressText = state.logs.lastOrNull(),
-                    autoEvents = state.autoEvents,
                     autoTasks = state.autoTasks,
                     autoQueueStarted = state.autoQueueStarted,
+                    autoPaused = state.autoPaused,
                     autoWorkerActive = state.autoWorkerActive,
                     autoWorkerHeartbeatAt = state.autoWorkerHeartbeatAt,
                     autoWorkerMessage = state.autoWorkerMessage,
@@ -279,7 +279,8 @@ fun HaiOmApp(
                     remoteRunUrl = state.autoRemoteRunUrl,
                     remoteState = state.autoRemoteState,
                     remoteStage = state.autoRemoteStage,
-                    runtimeNow = runtimeNow
+                    runtimeNow = runtimeNow,
+                    onTogglePause = vm::toggleAutoPause
                 )
             } else {
                 ToolScreen(
@@ -301,6 +302,7 @@ fun HaiOmApp(
                     autoExecuteEnabled = state.autoExecuteEnabled,
                     autoTasks = state.autoTasks,
                     autoQueueStarted = state.autoQueueStarted,
+                    autoPaused = state.autoPaused,
                     autoWorkerActive = state.autoWorkerActive,
                     autoWorkerHeartbeatAt = state.autoWorkerHeartbeatAt,
                     autoWorkerMessage = state.autoWorkerMessage,
@@ -330,6 +332,7 @@ fun HaiOmApp(
                             vm.setAutoExecuteEnabled(false)
                         }
                     },
+                    onTogglePause = vm::toggleAutoPause,
                     onOpenPr = { url ->
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                     }
@@ -457,9 +460,9 @@ private fun ChatCanvas(
     running: Boolean,
     programming: Boolean,
     progressText: String?,
-    autoEvents: List<String>,
     autoTasks: List<AutoTaskItem>,
     autoQueueStarted: Boolean,
+    autoPaused: Boolean,
     autoWorkerActive: Boolean,
     autoWorkerHeartbeatAt: Long,
     autoWorkerMessage: String,
@@ -469,7 +472,8 @@ private fun ChatCanvas(
     remoteRunUrl: String,
     remoteState: String,
     remoteStage: String,
-    runtimeNow: Long
+    runtimeNow: Long,
+    onTogglePause: () -> Unit
 ) {
     val lastAnswer = history.lastOrNull { it.role == "assistant" }?.text
     val extraAnswer = standaloneAnswer?.takeIf { it.isNotBlank() && it != lastAnswer }
@@ -477,14 +481,26 @@ private fun ChatCanvas(
         history.isEmpty() &&
             extraAnswer == null &&
             !running &&
-            autoEvents.isEmpty() &&
             !autoQueueStarted
     val listState = rememberLazyListState()
+    val liveCoding =
+        !autoPaused &&
+            (
+                (autoQueueStarted &&
+                    remoteState == "in_progress" &&
+                    (
+                        remoteStage.contains("كود") ||
+                            remoteStage.contains("يكتب") ||
+                            remoteStage.contains("يصلح")
+                        )
+                    ) ||
+                    (running && programming)
+                )
     val renderedItemCount =
         history.size +
             if (extraAnswer != null) 1 else 0 +
-            autoEvents.takeLast(8).size +
-            if (running) 1 else 0
+            if (liveCoding) 1 else 0 +
+            if (running && !programming) 1 else 0
 
     LaunchedEffect(
         history.size,
@@ -508,6 +524,7 @@ private fun ChatCanvas(
             AutoRuntimeStatusBar(
                 tasks = autoTasks,
                 queueStarted = autoQueueStarted,
+                paused = autoPaused,
                 workerActive = autoWorkerActive,
                 heartbeatAt = autoWorkerHeartbeatAt,
                 workerMessage = autoWorkerMessage,
@@ -517,7 +534,8 @@ private fun ChatCanvas(
                 remoteRunUrl = remoteRunUrl,
                 remoteState = remoteState,
                 remoteStage = remoteStage,
-                now = runtimeNow
+                now = runtimeNow,
+                onTogglePause = onTogglePause
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -552,13 +570,18 @@ private fun ChatCanvas(
                     }
                 }
 
-                items(autoEvents.takeLast(8)) { event ->
-                    AutoEventLine(event)
+                if (liveCoding) {
+                    item {
+                        LiveCodingLine(
+                            now = runtimeNow,
+                            stage = remoteStage
+                        )
+                    }
                 }
 
-                if (running) {
+                if (running && !programming) {
                     item {
-                        RunningLine(programming, progressText)
+                        RunningLine(false, progressText)
                     }
                 }
             }
@@ -996,6 +1019,7 @@ private fun ToolScreen(
     autoExecuteEnabled: Boolean,
     autoTasks: List<AutoTaskItem>,
     autoQueueStarted: Boolean,
+    autoPaused: Boolean,
     autoWorkerActive: Boolean,
     autoWorkerHeartbeatAt: Long,
     autoWorkerMessage: String,
@@ -1014,6 +1038,7 @@ private fun ToolScreen(
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit,
     onRequestAutoExecute: (Boolean) -> Unit,
+    onTogglePause: () -> Unit,
     onOpenPr: (String) -> Unit
 ) {
     var settingsPage by remember(panel) { mutableStateOf(SettingsPage.ROOT) }
@@ -1098,6 +1123,7 @@ private fun ToolScreen(
                 SettingsPage.AUTOMATION -> AutomaticTasksContent(
                     tasks = autoTasks,
                     running = autoQueueStarted,
+                    paused = autoPaused,
                     workerActive = autoWorkerActive,
                     heartbeatAt = autoWorkerHeartbeatAt,
                     workerMessage = autoWorkerMessage,
@@ -1108,6 +1134,7 @@ private fun ToolScreen(
                     remoteState = remoteState,
                     remoteStage = remoteStage,
                     now = runtimeNow,
+                    onTogglePause = onTogglePause,
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 )
             }
@@ -1523,6 +1550,7 @@ private fun GitHubSettingsContent(
 private fun AutomaticTasksContent(
     tasks: List<AutoTaskItem>,
     running: Boolean,
+    paused: Boolean,
     workerActive: Boolean,
     heartbeatAt: Long,
     workerMessage: String,
@@ -1533,6 +1561,7 @@ private fun AutomaticTasksContent(
     remoteState: String,
     remoteStage: String,
     now: Long,
+    onTogglePause: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val controllerLive = workerIsLive(workerActive, heartbeatAt, now)
@@ -1542,6 +1571,7 @@ private fun AutomaticTasksContent(
         AutoRuntimeStatusBar(
             tasks = tasks,
             queueStarted = running,
+            paused = paused,
             workerActive = workerActive,
             heartbeatAt = heartbeatAt,
             workerMessage = workerMessage,
@@ -1551,7 +1581,8 @@ private fun AutomaticTasksContent(
             remoteRunUrl = remoteRunUrl,
             remoteState = remoteState,
             remoteStage = remoteStage,
-            now = now
+            now = now,
+            onTogglePause = onTogglePause
         )
 
         Spacer(Modifier.height(10.dp))
@@ -1585,7 +1616,8 @@ private fun AutomaticTasksContent(
                 val statusText = when {
                     staleRunning -> "متوقف"
                     task.status == AutoTaskStatus.WAITING -> "في الانتظار"
-                    task.status == AutoTaskStatus.RUNNING -> "قيد المعالجة"
+                    task.status == AutoTaskStatus.RUNNING && paused -> "متوقف مؤقتًا"
+                    task.status == AutoTaskStatus.RUNNING -> "يعمل"
                     task.status == AutoTaskStatus.SUCCESS -> "تم"
                     else -> "فشل"
                 }
@@ -1665,6 +1697,7 @@ private fun workerIsLive(
 private fun AutoRuntimeStatusBar(
     tasks: List<AutoTaskItem>,
     queueStarted: Boolean,
+    paused: Boolean,
     workerActive: Boolean,
     heartbeatAt: Long,
     workerMessage: String,
@@ -1674,42 +1707,45 @@ private fun AutoRuntimeStatusBar(
     remoteRunUrl: String,
     remoteState: String,
     remoteStage: String,
-    now: Long
+    now: Long,
+    onTogglePause: () -> Unit
 ) {
     val controllerLive = workerIsLive(workerActive, heartbeatAt, now)
     val remoteLive = remoteState == "queued" || remoteState == "in_progress"
-    val runningTask = tasks.firstOrNull {
-        it.status == AutoTaskStatus.RUNNING
-    }
     val doneCount = tasks.count {
         it.status == AutoTaskStatus.SUCCESS ||
             it.status == AutoTaskStatus.FAILED
     }
 
     val status = when {
-        remoteState == "failure" -> "GitHub Actions فشل"
-        remoteState == "success" -> "GitHub Actions نجح"
-        remoteState == "in_progress" -> "GitHub Actions يعمل الآن"
-        remoteState == "queued" -> "GitHub Actions في الانتظار"
-        remoteState == "waiting" -> "بانتظار GitHub Actions"
-        remoteState == "not_found" -> "GitHub Actions لم يبدأ"
+        paused -> "متوقف مؤقتًا"
+        remoteState == "failure" -> "حدث خطأ"
+        remoteState == "success" -> "تم"
+        remoteState == "queued" || remoteState == "waiting" -> "في الانتظار"
+        remoteState == "not_found" -> "لم يبدأ"
         workerError.isNotBlank() -> "متوقف"
-        queueStarted && controllerLive -> "جاري تجهيز التنفيذ"
-        tasks.isNotEmpty() && doneCount == tasks.size -> "مكتمل"
-        else -> "متوقف"
+        remoteStage.contains("يصلح") || remoteStage.contains("إصلاح") -> "يقوم بالإصلاح"
+        remoteStage.contains("كود") || remoteStage.contains("يكتب") -> "يكتب الكود"
+        remoteStage.contains("يفحص") -> "يفحص التغييرات"
+        remoteStage.contains("يحفظ") -> "يحفظ التغييرات"
+        remoteStage.contains("يجهز") -> "يجهز"
+        remoteStage.contains("يفتح") -> "يفتح المشروع"
+        queueStarted && (remoteLive || controllerLive) -> "يعمل"
+        tasks.isNotEmpty() && doneCount == tasks.size -> "تم"
+        else -> "في الانتظار"
     }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = if (remoteLive) BlueSoft else Color.White,
-        shape = RoundedCornerShape(13.dp),
+        color = if (paused) Color.White else BlueSoft,
+        shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, Line)
     ) {
         Row(
-            Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (remoteLive) {
+            if (!paused && (remoteLive || controllerLive)) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
                     strokeWidth = 2.dp,
@@ -1720,44 +1756,29 @@ private fun AutoRuntimeStatusBar(
                     Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(if (status == "مكتمل") Blue else Muted)
+                        .background(if (status == "تم") Blue else Muted)
                 )
             }
 
             Spacer(Modifier.width(9.dp))
 
-            Column(Modifier.weight(1f)) {
-                Text(
-                    status,
-                    color = if (remoteLive) Blue else Ink,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            Text(
+                status,
+                modifier = Modifier.weight(1f),
+                color = if (!paused && (remoteLive || controllerLive)) Blue else Ink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
 
-                val taskLabel = runningTask?.let {
-                    "${it.order}/${tasks.size}  ${it.title}"
-                }.orEmpty()
-                val runLabel = if (remoteRunId > 0L) {
-                    "Run #$remoteRunId"
-                } else {
-                    ""
-                }
-                val detail = listOf(
-                    remoteRepository,
-                    runLabel,
-                    remoteStage.ifBlank {
-                        if (remoteLive) taskLabel else ""
-                    },
-                    if (workerError.isNotBlank()) workerError else ""
-                ).filter { it.isNotBlank() }
-                    .joinToString(" • ")
-
-                if (detail.isNotBlank()) {
+            if (queueStarted) {
+                OutlinedButton(
+                    onClick = onTogglePause,
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp)
+                ) {
                     Text(
-                        detail,
-                        color = Muted,
-                        fontSize = 10.sp,
-                        maxLines = 2
+                        if (paused) "متابعة" else "إيقاف مؤقت",
+                        fontSize = 11.sp
                     )
                 }
             }
@@ -1774,11 +1795,50 @@ private fun AutoRuntimeStatusBar(
                                 )
                             )
                         }
-                    }
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
-                    Text("فتح GitHub", fontSize = 11.sp)
+                    Text("GitHub", fontSize = 10.sp)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LiveCodingLine(
+    now: Long,
+    stage: String
+) {
+    val cursor = if ((now / 550L) % 2L == 0L) "▌" else " "
+    val label = when {
+        stage.contains("يصلح") || stage.contains("إصلاح") -> "HAI يصلح الكود"
+        else -> "HAI يكتب الكود"
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Line)
+    ) {
+        Row(
+            Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.Code,
+                null,
+                tint = Blue,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(9.dp))
+            Text(
+                "$label $cursor",
+                color = Ink,
+                fontSize = 13.sp,
+                fontFamily = FontFamily.Monospace
+            )
         }
     }
 }
