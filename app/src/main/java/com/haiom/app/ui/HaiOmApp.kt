@@ -387,11 +387,11 @@ fun HaiOmApp(
                 // منطقة لمس صغيرة على حافة اليمين؛ لا تعيق محتوى الدردشة.
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.TopStart)
                         .statusBarsPadding()
-                        .padding(top = 44.dp)
-                        .width(38.dp)
-                        .height(250.dp)
+                        .padding(top = 2.dp)
+                        .width(52.dp)
+                        .height(210.dp)
                         .clickable {
                             showAutoExecuteControl = true
                         }
@@ -400,17 +400,17 @@ fun HaiOmApp(
                 AnimatedVisibility(
                     visible = showAutoExecuteControl,
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.TopStart)
                         .statusBarsPadding()
-                        .padding(top = 76.dp, end = 8.dp),
-                    enter = slideInHorizontally(
-                        initialOffsetX = { it },
-                        animationSpec = tween(180)
-                    ) + fadeIn(animationSpec = tween(140)),
-                    exit = slideOutHorizontally(
-                        targetOffsetX = { it },
-                        animationSpec = tween(180)
-                    ) + fadeOut(animationSpec = tween(120))
+                        .padding(top = 3.dp, start = 8.dp),
+                    enter = slideInVertically(
+                        initialOffsetY = { -it },
+                        animationSpec = tween(170)
+                    ) + fadeIn(animationSpec = tween(130)),
+                    exit = slideOutVertically(
+                        targetOffsetY = { -it },
+                        animationSpec = tween(160)
+                    ) + fadeOut(animationSpec = tween(110))
                 ) {
                     AutoExecuteTopControl(
                         checked = state.autoExecuteEnabled,
@@ -436,9 +436,9 @@ fun HaiOmApp(
                         showAutoExecuteConfirm = false
                     },
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.TopStart)
                         .statusBarsPadding()
-                        .padding(top = 118.dp, start = 18.dp, end = 10.dp)
+                        .padding(top = 46.dp, start = 8.dp, end = 12.dp)
                 )
             }
 
@@ -1952,7 +1952,7 @@ private fun AutoExecuteTopControl(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Surface(
             modifier = modifier
-                .widthIn(min = 104.dp, max = 116.dp)
+                .wrapContentWidth()
                 .clickable { onToggle(!checked) },
             color = Color.White,
             shape = RoundedCornerShape(17.dp),
@@ -1961,8 +1961,8 @@ private fun AutoExecuteTopControl(
         ) {
             Row(
                 modifier = Modifier.padding(
-                    horizontal = 9.dp,
-                    vertical = 7.dp
+                    horizontal = 8.dp,
+                    vertical = 5.dp
                 ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
@@ -1975,7 +1975,7 @@ private fun AutoExecuteTopControl(
                 Text(
                     "تنفيذ تلقائي",
                     color = Ink,
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1
                 )
@@ -2019,40 +2019,59 @@ private fun AutoExecuteConfirmBanner(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier.widthIn(min = 255.dp, max = 285.dp),
-        color = Color.White,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, Line),
-        shadowElevation = 3.dp
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Surface(
+            modifier = modifier.wrapContentWidth(),
+            color = Color.White,
+            shape = RoundedCornerShape(11.dp),
+            border = BorderStroke(1.dp, Line),
+            shadowElevation = 3.dp
         ) {
-            Text(
-                "تفعيل التنفيذ التلقائي؟",
-                color = Ink,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(3.dp))
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.padding(
+                    horizontal = 9.dp,
+                    vertical = 6.dp
+                ),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                TextButton(onClick = onCancel) {
-                    Text("إلغاء", fontSize = 11.sp)
-                }
-                Spacer(Modifier.width(2.dp))
-                Button(
-                    onClick = onConfirm,
-                    shape = RoundedCornerShape(9.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp)
+                Text(
+                    "تفعيل التنفيذ التلقائي؟",
+                    color = Ink,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+
+                Spacer(Modifier.height(2.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("موافق", fontSize = 11.sp)
+                    TextButton(
+                        onClick = onCancel,
+                        contentPadding = PaddingValues(
+                            horizontal = 7.dp,
+                            vertical = 1.dp
+                        )
+                    ) {
+                        Text("إلغاء", fontSize = 10.sp)
+                    }
+
+                    Spacer(Modifier.width(2.dp))
+
+                    Button(
+                        onClick = onConfirm,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(
+                            horizontal = 10.dp,
+                            vertical = 3.dp
+                        )
+                    ) {
+                        Text("موافق", fontSize = 10.sp)
+                    }
                 }
             }
         }
