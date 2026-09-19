@@ -50,6 +50,7 @@ data class MainUiState(
     val checkingUpdate: Boolean = false,
     val updateInfo: AppUpdateInfo? = null,
     val message: String? = null,
+    val autoExecuteEnabled: Boolean = false,
     val programming: Boolean = false,
     val chatHistory: List<ChatTurn> = emptyList()
 )
@@ -66,7 +67,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(
         MainUiState(
             hasGitHubToken = secrets.githubToken().isNotBlank() || secrets.hasGitHubApp(),
-            githubOAuthAvailable = githubOAuthClient.configured
+            githubOAuthAvailable = githubOAuthClient.configured,
+            autoExecuteEnabled = secrets.autoExecuteEnabled()
         )
     )
     val state: StateFlow<MainUiState> = _state.asStateFlow()
@@ -287,6 +289,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setAutoExecuteEnabled(enabled: Boolean) {
+        secrets.saveAutoExecuteEnabled(enabled)
+        _state.update {
+            it.copy(
+                autoExecuteEnabled = enabled,
+                message = if (enabled) {
+                    "تم تفعيل التنفيذ التلقائي"
+                } else {
+                    "تم إيقاف التنفيذ التلقائي"
+                }
+            )
+        }
+    }
+
     fun runAgent(requirements: String) {
         if (_state.value.running || _state.value.connecting || _state.value.githubLinking) return
         if (requirements.isBlank()) {
@@ -403,9 +419,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val token = resolveGitHubToken() ?: error("اربط GitHub أولًا")
                 val github = GitHubClient(token)
+                val autoExecute = _state.value.autoExecuteEnabled
+                val effectiveRequirements = if (autoExecute) {
+                    """
+                    وضع التنفيذ التلقائي مفعّل.
+                    نفّذ جميع الخطوات والمهام اللازمة لإكمال طلب المستخدم على المشروع المحدد تلقائيًا،
+                    واستمر بين خطوات التنفيذ والإصلاح والفحص دون طلب موافقة إضافية،
+                    مع عدم الانتقال إلى أي مستودع آخر.
+
+                    طلب المستخدم:
+                    $requirements
+                    """.trimIndent()
+                } else {
+                    requirements
+                }
                 val result = withContext(Dispatchers.IO) {
                     RemoteAgentRunner(getApplication(), github)
-                        .run(repositoryUrl, requirements, ::appendLog)
+                        .run(repositoryUrl, effectiveRequirements, ::appendLog)
                 }
                 val completedHistory = result.answer
                     ?.takeIf { it.isNotBlank() }
