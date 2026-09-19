@@ -212,6 +212,38 @@ class AutoTaskStore(context: Context) {
         )
     }
 
+    fun switchToManualMode() {
+        val current = snapshot()
+        val restoredTasks = current.tasks.map { task ->
+            if (task.status == AutoTaskStatus.RUNNING) {
+                task.copy(
+                    status = AutoTaskStatus.WAITING,
+                    updatedAt = System.currentTimeMillis()
+                )
+            } else {
+                task
+            }
+        }
+
+        write(
+            current.copy(
+                tasks = restoredTasks,
+                started = false,
+                paused = false,
+                awaitingConfirmation = false,
+                workerActive = false,
+                workerHeartbeatAt = System.currentTimeMillis(),
+                workerMessage = "",
+                workerError = "",
+                remoteRunId = 0L,
+                remoteRunUrl = "",
+                remoteState = "",
+                remoteStage = "",
+                liveCode = ""
+            )
+        )
+    }
+
     fun recoverInterrupted() {
         val current = snapshot()
         val recovered = current.tasks.map {
