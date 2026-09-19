@@ -2,6 +2,10 @@ package com.haiom.app
 
 import android.app.Application
 import com.haiom.app.agent.RemoteAgentRunner
+import com.haiom.app.automation.AutoTaskItem
+import com.haiom.app.automation.AutoTaskStatus
+import com.haiom.app.automation.AutoTaskStore
+import com.haiom.app.automation.AutoTaskWorker
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.haiom.app.model.AgentRunResult
@@ -22,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,6 +56,10 @@ data class MainUiState(
     val updateInfo: AppUpdateInfo? = null,
     val message: String? = null,
     val autoExecuteEnabled: Boolean = false,
+    val autoTasks: List<AutoTaskItem> = emptyList(),
+    val autoQueueStarted: Boolean = false,
+    val autoAwaitingConfirmation: Boolean = false,
+    val autoEvents: List<String> = emptyList(),
     val programming: Boolean = false,
     val chatHistory: List<ChatTurn> = emptyList()
 )
@@ -63,6 +72,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         clientId = BuildConfig.GITHUB_OAUTH_CLIENT_ID
     )
     private val directChat = DirectChatClient()
+    private val autoTaskStore = AutoTaskStore(application)
     private var githubLinkJob: Job? = null
     private val _state = MutableStateFlow(
         MainUiState(
@@ -73,7 +83,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
-    init { bootstrap() }
+    init {
+        observeAutoQueue()
+        bootstrap()
+    }
+
+    private fun observeAutoQueue() {
+        viewModelScope.launch {
+            autoTaskStore.state.collect { queue ->
+                _state.update {
+                    it.copy(
+                        autoTasks = queue.tasks,
+                        autoQueueStarted = queue.started,
+                        autoAwaitingConfirmation = queue.awaitingConfirmation,
+                        autoEvents = queue.events
+                    )
+                }
+            }
+        }
+    }
 
     fun bootstrap() {
         if (_state.value.running || _state.value.githubLinking) return
@@ -237,6 +265,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         secrets.clearGitHubToken()
         secrets.clearGitHubApp()
         secrets.clearSelectedRepository()
+        autoTaskStore.clearAll()
         _state.update {
             it.copy(
                 hasGitHubToken = false,
@@ -280,6 +309,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        if (_state.value.selectedRepository?.fullName != available.fullName) {
+            autoTaskStore.clearAll()
+        }
         secrets.saveSelectedRepositoryFullName(available.fullName)
         _state.update {
             it.copy(
@@ -291,30 +323,228 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAutoExecuteEnabled(enabled: Boolean) {
         secrets.saveAutoExecuteEnabled(enabled)
+        if (!enabled) {
+            autoTaskStore.setAwaitingConfirmation(false)
+            autoTaskStore.setStarted(false)
+        }
         _state.update {
             it.copy(
                 autoExecuteEnabled = enabled,
-                message = if (enabled) {
-                    "تم تفعيل التنفيذ التلقائي"
-                } else {
-                    "تم إيقاف التنفيذ التلقائي"
-                }
+                message = if (enabled) "تم التفعيل" else "تم الإيقاف"
             )
         }
     }
 
     fun runAgent(requirements: String) {
-        if (_state.value.running || _state.value.connecting || _state.value.githubLinking) return
+        if (_state.value.connecting || _state.value.githubLinking) return
         if (requirements.isBlank()) {
             _state.update { it.copy(error = "اكتب رسالتك") }
             return
         }
+
+        if (_state.value.autoExecuteEnabled) {
+            handleAutomaticInput(requirements)
+            return
+        }
+
+        if (_state.value.running) return
 
         if (isProgrammingRequest(requirements)) {
             runProgramming(requirements)
         } else {
             runChat(requirements)
         }
+    }
+
+    private fun handleAutomaticInput(text: String) {
+        val queue = autoTaskStore.snapshot()
+
+        if (queue.awaitingConfirmation) {
+            when {
+                isPositiveStart(text) -> {
+                    appendChat("user", text)
+                    if (queue.tasks.none { it.status == AutoTaskStatus.WAITING }) {
+                        autoTaskStore.setAwaitingConfirmation(false)
+                        appendChat("assistant", "لا توجد مهام.")
+                        return
+                    }
+                    if (_state.value.selectedRepository == null) {
+                        autoTaskStore.setAwaitingConfirmation(false)
+                        appendChat("assistant", "اختر مشروعًا.")
+                        return
+                    }
+                    if (!_state.value.hasGitHubToken) {
+                        autoTaskStore.setAwaitingConfirmation(false)
+                        appendChat("assistant", "اربط GitHub.")
+                        return
+                    }
+                    autoTaskStore.clearEvents()
+                    autoTaskStore.setStarted(true)
+                    appendChat("assistant", "بدأت.")
+                    AutoTaskWorker.enqueue(getApplication())
+                }
+
+                isNegativeStart(text) -> {
+                    appendChat("user", text)
+                    autoTaskStore.setAwaitingConfirmation(false)
+                    appendChat("assistant", "حسنًا.")
+                }
+
+                else -> {
+                    autoTaskStore.setAwaitingConfirmation(false)
+                    if (isProgrammingRequest(text)) {
+                        collectAutomaticRequirements(text, askToStartAfter = false)
+                    } else {
+                        runChat(text)
+                    }
+                }
+            }
+            return
+        }
+
+        if (isExecutionTrigger(text)) {
+            if (isProgrammingRequest(text) && text.length > 24) {
+                collectAutomaticRequirements(text, askToStartAfter = true)
+                return
+            }
+
+            appendChat("user", text)
+            if (queue.tasks.any { it.status == AutoTaskStatus.WAITING }) {
+                autoTaskStore.setAwaitingConfirmation(true)
+                appendChat("assistant", "هل تريد أن أبدأ؟")
+            } else {
+                appendChat("assistant", "لا توجد مهام.")
+            }
+            return
+        }
+
+        if (isProgrammingRequest(text)) {
+            collectAutomaticRequirements(text, askToStartAfter = false)
+        } else {
+            runChat(text)
+        }
+    }
+
+    private fun collectAutomaticRequirements(
+        text: String,
+        askToStartAfter: Boolean
+    ) {
+        appendChat("user", text)
+
+        viewModelScope.launch {
+            val planned = planAutomaticTasks(text)
+            autoTaskStore.replaceWaitingTasks(planned)
+
+            if (autoTaskStore.snapshot().started) {
+                AutoTaskWorker.enqueue(getApplication())
+            }
+
+            if (askToStartAfter && autoTaskStore.snapshot().tasks.any {
+                    it.status == AutoTaskStatus.WAITING
+                }
+            ) {
+                autoTaskStore.setAwaitingConfirmation(true)
+                appendChat("assistant", "هل تريد أن أبدأ؟")
+            }
+        }
+    }
+
+    private suspend fun planAutomaticTasks(newRequest: String): List<AutoTaskItem> {
+        val existingWaiting = autoTaskStore.snapshot().tasks
+            .filter { it.status == AutoTaskStatus.WAITING }
+            .sortedBy { it.order }
+
+        val existingText = if (existingWaiting.isEmpty()) {
+            "لا توجد مهام سابقة."
+        } else {
+            existingWaiting.joinToString("\n") {
+                "- ${it.title}: ${it.requirements.take(700)}"
+            }
+        }
+
+        val plannerPrompt = """
+            رتّب قائمة مهام برمجية للتنفيذ الفعلي. ادمج المهمة الجديدة مع المهام المنتظرة،
+            ورتبها حسب الاعتماد المنطقي: ما يجب إنجازه أولًا يسبق ما يعتمد عليه.
+            لا تشرح ولا تنفذ. أعد القائمة فقط، كل مهمة في سطر بهذه الصيغة:
+            TASK: عنوان قصير || التفاصيل التنفيذية
+
+            المهام المنتظرة:
+            $existingText
+
+            الطلب الجديد:
+            $newRequest
+        """.trimIndent()
+
+        val response = runCatching {
+            directChat.chat(prompt = plannerPrompt)
+        }.getOrNull().orEmpty()
+
+        val parsed = response.lineSequence()
+            .map { it.trim() }
+            .filter { it.startsWith("TASK:", ignoreCase = true) }
+            .map { line ->
+                val body = line.substringAfter(':').trim()
+                val title = body.substringBefore("||").trim().take(90)
+                val details = body.substringAfter("||", body).trim().take(3_000)
+                title to details
+            }
+            .filter { (title, _) -> title.isNotBlank() }
+            .toList()
+
+        val fallback = if (parsed.isEmpty()) {
+            splitFallbackTasks(newRequest)
+        } else {
+            parsed
+        }
+
+        return fallback.mapIndexed { index, (title, details) ->
+            AutoTaskItem(
+                id = "auto-${System.currentTimeMillis()}-$index",
+                title = title.ifBlank { "مهمة ${index + 1}" },
+                requirements = details.ifBlank { title },
+                order = index + 1
+            )
+        }
+    }
+
+    private fun splitFallbackTasks(text: String): List<Pair<String, String>> {
+        val parts = text
+            .split(Regex("""[\n؛;]+"""))
+            .map { it.trim().trimStart('-', '•', ' ') }
+            .filter { it.isNotBlank() }
+
+        val usable = if (parts.size > 1) parts else listOf(text.trim())
+        return usable.map { part ->
+            part.take(80) to part.take(3_000)
+        }
+    }
+
+    private fun appendChat(role: String, text: String) {
+        if (text.isBlank()) return
+        _state.update {
+            it.copy(
+                chatHistory = (it.chatHistory + ChatTurn(role, text)).takeLast(40)
+            )
+        }
+    }
+
+    private fun isExecutionTrigger(text: String): Boolean {
+        val value = text.trim().lowercase()
+        return EXECUTION_TRIGGERS.any { trigger ->
+            value == trigger ||
+                value.startsWith("$trigger ") ||
+                value.contains(" $trigger")
+        }
+    }
+
+    private fun isPositiveStart(text: String): Boolean {
+        val value = text.trim().lowercase()
+        return START_CONFIRMATIONS.any { value == it || value.startsWith("$it ") }
+    }
+
+    private fun isNegativeStart(text: String): Boolean {
+        val value = text.trim().lowercase()
+        return value in setOf("لا", "لا تبدأ", "لاتبدأ", "الغ", "إلغاء", "الغي", "ألغ")
     }
 
     private fun runChat(prompt: String) {
@@ -607,6 +837,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearError() = _state.update { it.copy(error = null) }
 
     companion object {
+        private val EXECUTION_TRIGGERS = listOf(
+            "نفذ", "نفّذ", "ابدأ", "ابدا", "ابدء", "شغل", "شغّل",
+            "ابدأ التنفيذ", "نفذ المهام", "ابدأ المهام", "توكل", "يلا"
+        )
+
+        private val START_CONFIRMATIONS = listOf(
+            "نعم", "اي", "إي", "ايوه", "أيوه", "ابدأ", "ابدا",
+            "نفذ", "نفّذ", "ابدأ التنفيذ", "توكل", "يلا", "موافق"
+        )
+
         private val EXPLICIT_PROGRAMMING_PHRASES = listOf(
             "ابدأ البرمجة", "ابدأ تنفيذ", "نفذ الآن", "نفّذ الآن",
             "كمل البرمجة", "كمل التنفيذ", "اتصل بالمستودع ونفذ",
