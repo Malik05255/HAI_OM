@@ -120,17 +120,20 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
 import kotlinx.coroutines.delay
 
-private val Canvas = Color(0xFFF7F8F4)
-private val SurfaceSoft = Color(0xFFFFFFFF)
-private val Lavender = Color(0xFFEEF3EC)
-private val LavenderStrong = Color(0xFFE3EBE5)
-private val Line = Color(0xFFD9E2DD)
-private val Blue = Color(0xFF1F8A70)
-private val BlueSoft = Color(0xFFE5F4EF)
-private val Ink = Color(0xFF17211D)
-private val Muted = Color(0xFF78837D)
-private val Violet = Color(0xFFD97757)
-private val SurfaceElevated = Color(0xFFFFFFFF)
+private val Canvas = Color(0xFFF3EFE7)
+private val SurfaceSoft = Color(0xFFFFFCF6)
+private val Lavender = Color(0xFFEDE7DD)
+private val LavenderStrong = Color(0xFFE0D7C9)
+private val Line = Color(0xFFCBC1B2)
+private val Blue = Color(0xFF3156D3)
+private val BlueSoft = Color(0xFFE6EBFF)
+private val Ink = Color(0xFF17181B)
+private val Muted = Color(0xFF716D66)
+private val Violet = Color(0xFFFF6B4A)
+private val SurfaceElevated = Color(0xFFFFFCF6)
+private val Signal = Color(0xFFFF6B4A)
+private val Moss = Color(0xFF52725D)
+private val PaperShadow = Color(0x1A151515)
 
 private enum class ToolPanel { PROJECTS, HISTORY, MODELS, SETTINGS }
 private enum class SettingsPage { ROOT, GITHUB, AUTOMATION }
