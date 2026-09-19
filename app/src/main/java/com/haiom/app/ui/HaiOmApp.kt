@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.os.Bundle
@@ -173,11 +174,45 @@ fun HaiOmApp(
     var runtimeNow by remember { mutableStateOf(System.currentTimeMillis()) }
     val media = remember { mutableStateListOf<PickedMedia>() }
     var voiceListening by remember { mutableStateOf(false) }
+    val audioManager = remember(context) {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+    var voicePreviousMusicVolume by remember {
+        mutableStateOf<Int?>(null)
+    }
     val speechRecognizer = remember(context) {
         if (SpeechRecognizer.isRecognitionAvailable(context)) {
             SpeechRecognizer.createSpeechRecognizer(context)
         } else {
             null
+        }
+    }
+
+    fun silenceVoiceRecognitionTone() {
+        if (voicePreviousMusicVolume != null) return
+        val currentVolume = runCatching {
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        }.getOrNull() ?: return
+
+        voicePreviousMusicVolume = currentVolume
+        runCatching {
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                0,
+                0
+            )
+        }
+    }
+
+    fun restoreVoiceAudio() {
+        val previousVolume = voicePreviousMusicVolume ?: return
+        voicePreviousMusicVolume = null
+        runCatching {
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                previousVolume,
+                0
+            )
         }
     }
 
@@ -204,10 +239,12 @@ fun HaiOmApp(
         }
 
         voiceListening = true
+        silenceVoiceRecognitionTone()
         runCatching {
             recognizer.startListening(intent)
         }.onFailure {
             voiceListening = false
+            restoreVoiceAudio()
             Toast.makeText(
                 context,
                 "تعذر بدء التسجيل الصوتي",
@@ -247,6 +284,7 @@ fun HaiOmApp(
 
                 override fun onError(error: Int) {
                     voiceListening = false
+                    restoreVoiceAudio()
                     if (
                         error != SpeechRecognizer.ERROR_NO_MATCH &&
                         error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT
@@ -261,6 +299,7 @@ fun HaiOmApp(
 
                 override fun onResults(results: Bundle?) {
                     voiceListening = false
+                    restoreVoiceAudio()
                     val text = results
                         ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         ?.firstOrNull()
@@ -286,6 +325,7 @@ fun HaiOmApp(
         onDispose {
             runCatching { speechRecognizer?.cancel() }
             runCatching { speechRecognizer?.destroy() }
+            restoreVoiceAudio()
         }
     }
 
