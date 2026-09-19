@@ -2,6 +2,8 @@ package com.haiom.app
 
 import android.app.Application
 import android.net.Uri
+import java.io.File
+import java.util.concurrent.TimeUnit
 import com.haiom.app.agent.RemoteAgentRunner
 import com.haiom.app.automation.AutoTaskItem
 import com.haiom.app.automation.AutoTaskStatus
@@ -31,6 +33,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 data class MainUiState(
     val running: Boolean = false,
@@ -85,6 +89,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         clientId = BuildConfig.GITHUB_OAUTH_CLIENT_ID
     )
     private val directChat = DirectChatClient()
+    private val imageClient = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(150, TimeUnit.SECONDS)
+        .callTimeout(180, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
     private val autoTaskStore = AutoTaskStore(application)
     private var githubLinkJob: Job? = null
     private var manualChatJob: Job? = null
@@ -784,27 +795,130 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .trim()
                     .ifBlank { prompt.trim() }
 
-                val seed = (cleanPrompt.hashCode().toLong() and 0x7fffffffL)
-                val imageUrl =
+                val seed = (
+                    cleanPrompt.hashCode().toLong() and 0x7fffffffL
+                    )
+
+                val encodedPrompt = Uri.encode(cleanPrompt)
+                val candidateUrls = listOf(
                     "https://image.pollinations.ai/prompt/" +
-                        Uri.encode(cleanPrompt) +
+                        encodedPrompt +
                         "?width=1024&height=1024" +
                         "&model=flux" +
-                        "&seed=$seed" +
+                        "&seed=${seed}" +
                         "&nologo=true" +
-                        "&private=true" +
-                        "&enhance=true"
+                        "&enhance=true",
+                    "https://image.pollinations.ai/prompt/" +
+                        encodedPrompt +
+                        "?width=1024&height=1024" +
+                        "&seed=${seed}" +
+                        "&nologo=true"
+                )
+
+                val imageFile = withContext(Dispatchers.IO) {
+                    var lastError = "تعذر توليد الصورة"
+
+                    for (url in candidateUrls) {
+                        val request = Request.Builder()
+                            .url(url)
+                            .header(
+                                "User-Agent",
+                                "HAI-OM/${BuildConfig.VERSION_NAME}"
+                            )
+                            .header(
+                                "Accept",
+                                "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+                            )
+                            .build()
+
+                        val result = runCatching {
+                            imageClient.newCall(request)
+                                .execute()
+                                .use { response ->
+                                    if (!response.isSuccessful) {
+                                        error(
+                                            "HTTP ${response.code}"
+                                        )
+                                    }
+
+                                    val body = response.body
+                                        ?: error("استجابة صورة فارغة")
+
+                                    val contentType = body.contentType()
+                                        ?.toString()
+                                        .orEmpty()
+
+                                    if (
+                                        contentType.isNotBlank() &&
+                                        !contentType.startsWith("image/")
+                                    ) {
+                                        error(
+                                            "الاستجابة ليست صورة"
+                                        )
+                                    }
+
+                                    val bytes = body.bytes()
+                                    if (bytes.size < 1_024) {
+                                        error("ملف الصورة غير صالح")
+                                    }
+
+                                    val extension = when {
+                                        contentType.contains("png") -> "png"
+                                        contentType.contains("webp") -> "webp"
+                                        else -> "jpg"
+                                    }
+
+                                    val directory = File(
+                                        getApplication<Application>().cacheDir,
+                                        "generated_images"
+                                    ).apply {
+                                        mkdirs()
+                                    }
+
+                                    directory.listFiles()
+                                        ?.sortedByDescending {
+                                            it.lastModified()
+                                        }
+                                        ?.drop(12)
+                                        ?.forEach {
+                                            runCatching { it.delete() }
+                                        }
+
+                                    File(
+                                        directory,
+                                        "hai_${System.currentTimeMillis()}_${seed}.${extension}"
+                                    ).apply {
+                                        writeBytes(bytes)
+                                    }
+                                }
+                        }
+
+                        val file = result.getOrNull()
+                        if (file != null && file.exists()) {
+                            return@withContext file
+                        }
+
+                        lastError = result.exceptionOrNull()
+                            ?.message
+                            ?.takeIf { it.isNotBlank() }
+                            ?: lastError
+                    }
+
+                    error(lastError)
+                }
+
+                if (
+                    generation != responseGeneration ||
+                    _state.value.autoExecuteEnabled
+                ) {
+                    runCatching { imageFile.delete() }
+                    return@launch
+                }
 
                 val imageTurn = ChatTurn(
                     role = "assistant",
-                    text = "[[HAI_IMAGE]]$imageUrl"
+                    text = "[[HAI_IMAGE_FILE]]${imageFile.absolutePath}"
                 )
-
-                if (generation != responseGeneration ||
-                    _state.value.autoExecuteEnabled
-                ) {
-                    return@launch
-                }
 
                 _state.update {
                     it.copy(
@@ -837,9 +951,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(
                             running = false,
                             programming = false,
-                            error = t.message?.takeIf { message ->
-                                message.isNotBlank()
-                            } ?: "تعذر إنشاء الصورة"
+                            error = "تعذر إنشاء الصورة: " +
+                                (
+                                    t.message
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?: "خطأ في خدمة الصور"
+                                    )
                         )
                     }
                 }
