@@ -988,70 +988,56 @@ private fun AnimatedToolDock(
     onModels: () -> Unit,
     onSettings: () -> Unit
 ) {
-    val panelWidth = 58.dp
-    val handleWidth = 17.dp
+    val panelWidth = 64.dp
+    val handleWidth = 22.dp
     val panelOffset by animateDpAsState(
         targetValue = if (open) 0.dp else -panelWidth,
-        animationSpec = tween(durationMillis = 280),
-        label = "drawerPanel"
+        animationSpec = tween(durationMillis = 240),
+        label = "commandRail"
     )
     val handleOffset by animateDpAsState(
         targetValue = if (open) panelWidth else 0.dp,
-        animationSpec = tween(durationMillis = 280),
-        label = "drawerHandle"
+        animationSpec = tween(durationMillis = 240),
+        label = "commandHandle"
     )
 
     Box(
         modifier = modifier
             .width(panelWidth + handleWidth)
-            .height(292.dp)
+            .height(310.dp)
     ) {
         Surface(
             modifier = Modifier
                 .width(panelWidth)
                 .offset(x = panelOffset),
-            color = SurfaceSoft,
+            color = Color(0xFF0D1219),
             shape = RoundedCornerShape(
-                topEnd = 24.dp,
-                bottomEnd = 24.dp
+                topEnd = 18.dp,
+                bottomEnd = 18.dp
             ),
             border = BorderStroke(1.dp, Line),
-            shadowElevation = 8.dp
+            shadowElevation = 16.dp
         ) {
             Column(
                 modifier = Modifier.padding(
-                    vertical = 10.dp,
-                    horizontal = 7.dp
+                    vertical = 12.dp,
+                    horizontal = 8.dp
                 ),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                DockIcon(
-                    Icons.Outlined.ChatBubbleOutline,
-                    "دردشة جديدة",
-                    onNewChat
+                CommandGlyph("+", "دردشة جديدة", onNewChat)
+                CommandGlyph("□", "المشاريع", onProjects)
+                CommandGlyph("↺", "السجل", onHistory)
+                CommandGlyph("✦", "النماذج", onModels)
+                Box(
+                    Modifier
+                        .width(24.dp)
+                        .height(1.dp)
+                        .background(Line)
                 )
-                DockIcon(
-                    Icons.Outlined.FolderOpen,
-                    "المشاريع",
-                    onProjects
-                )
-                DockIcon(
-                    Icons.Outlined.History,
-                    "السجل",
-                    onHistory
-                )
-                DockIcon(
-                    Icons.Outlined.AutoAwesome,
-                    "النماذج",
-                    onModels
-                )
-                HorizontalDivider(
-                    modifier = Modifier.width(30.dp),
-                    color = Line
-                )
-                DockIcon(
-                    Icons.Outlined.Settings,
+                CommandGlyph(
+                    if (connected) "≡" else "◎",
                     if (connected) "الإعدادات" else "الربط",
                     onSettings
                 )
@@ -1063,40 +1049,48 @@ private fun AnimatedToolDock(
                 .align(Alignment.CenterStart)
                 .offset(x = handleOffset)
                 .width(handleWidth)
-                .height(62.dp)
+                .height(74.dp)
                 .clickable(onClick = onToggle),
-            color = Blue,
+            color = Color(0xFF111923),
             shape = RoundedCornerShape(
-                topEnd = 10.dp,
-                bottomEnd = 10.dp
+                topEnd = 12.dp,
+                bottomEnd = 12.dp
             ),
-            shadowElevation = 2.dp
+            border = BorderStroke(1.dp, Line)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Outlined.MoreVert,
-                    if (open) "إغلاق الأدوات" else "فتح الأدوات",
-                    tint = Color.White,
-                    modifier = Modifier.size(13.dp)
+                Text(
+                    if (open) "‹" else "›",
+                    color = Blue,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
     }
 }
+
 @Composable
-private fun DockIcon(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+private fun CommandGlyph(
+    glyph: String,
     label: String,
     onClick: () -> Unit
 ) {
     Surface(
-        modifier = Modifier.size(39.dp),
-        color = Color.White,
-        shape = CircleShape,
+        modifier = Modifier
+            .size(42.dp)
+            .clickable(onClick = onClick),
+        color = SurfaceElevated,
+        shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, Line)
     ) {
-        IconButton(onClick = onClick) {
-            Icon(icon, label, tint = Ink, modifier = Modifier.size(21.dp))
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                glyph,
+                color = Ink,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
@@ -1258,14 +1252,41 @@ private fun ToolScreen(
 @Composable
 private fun ToolHeader(title: String, onBack: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 10.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(42.dp)) {
-            Icon(Icons.Outlined.ArrowBack, "رجوع", tint = Ink)
+        Surface(
+            modifier = Modifier
+                .size(38.dp)
+                .clickable(onClick = onBack),
+            color = SurfaceElevated,
+            shape = RoundedCornerShape(11.dp),
+            border = BorderStroke(1.dp, Line)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text("‹", color = Blue, fontSize = 26.sp)
+            }
         }
-        Spacer(Modifier.width(8.dp))
-        Text(title, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+
+        Spacer(Modifier.width(12.dp))
+
+        Column {
+            Text(
+                title,
+                color = Ink,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(3.dp))
+            Box(
+                Modifier
+                    .width(28.dp)
+                    .height(2.dp)
+                    .background(Blue)
+            )
+        }
     }
 }
 
@@ -1497,57 +1518,103 @@ private fun SettingsRootContent(
 ) {
     Column(
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        OutlinedButton(
-            onClick = onOpenGitHub,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.Link, null)
-            Spacer(Modifier.width(8.dp))
-            Text("GitHub")
-        }
+        SettingsTile(
+            glyph = "◎",
+            title = "GitHub",
+            subtitle = "الحساب والمشروع النشط",
+            onClick = onOpenGitHub
+        )
 
-        Spacer(Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = onOpenAutomation,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.AutoAwesome, null)
-            Spacer(Modifier.width(8.dp))
-            Text("المهام التلقائية")
-        }
+        SettingsTile(
+            glyph = "⚡",
+            title = "التنفيذ",
+            subtitle = "المهام والحالة التلقائية",
+            onClick = onOpenAutomation
+        )
 
         Spacer(Modifier.weight(1f))
 
-        OutlinedButton(
-            onClick = onCheckUpdate,
-            enabled = !checkingUpdate,
-            modifier = Modifier.widthIn(min = 220.dp, max = 330.dp),
-            shape = RoundedCornerShape(18.dp)
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = !checkingUpdate, onClick = onCheckUpdate),
+            color = SurfaceElevated,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Line)
         ) {
-            if (checkingUpdate) {
-                CircularProgressIndicator(
-                    Modifier.size(17.dp),
-                    strokeWidth = 2.dp
+            Row(
+                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (checkingUpdate) "…" else "↻",
+                    color = Blue,
+                    fontSize = 20.sp
                 )
-            } else {
-                Icon(Icons.Outlined.Refresh, null)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    if (checkingUpdate) "جاري البحث" else "البحث عن تحديث",
+                    color = Ink,
+                    fontSize = 14.sp
+                )
             }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                if (checkingUpdate) {
-                    "جاري البحث…"
-                } else {
-                    "البحث عن تحديث"
-                }
-            )
         }
+        Spacer(Modifier.height(6.dp))
+    }
+}
 
-        Spacer(Modifier.height(8.dp))
+@Composable
+private fun SettingsTile(
+    glyph: String,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = SurfaceElevated,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Line)
+    ) {
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(44.dp),
+                color = BlueSoft,
+                shape = RoundedCornerShape(13.dp),
+                border = BorderStroke(1.dp, Color(0xFF1E4A58))
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        glyph,
+                        color = Blue,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = Ink,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    subtitle,
+                    color = Muted,
+                    fontSize = 11.sp
+                )
+            }
+            Text("›", color = Muted, fontSize = 20.sp)
+        }
     }
 }
 
