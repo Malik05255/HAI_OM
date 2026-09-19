@@ -346,15 +346,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAutoExecuteEnabled(enabled: Boolean) {
         secrets.saveAutoExecuteEnabled(enabled)
-        if (!enabled) {
+
+        if (enabled) {
             autoTaskStore.setAwaitingConfirmation(false)
-            autoTaskStore.setStarted(false)
+            _state.update {
+                it.copy(
+                    autoExecuteEnabled = true,
+                    message = "التنفيذ التلقائي"
+                )
+            }
+            return
         }
+
+        val queueBeforeStop = autoTaskStore.snapshot()
+        val repositoryUrl = _state.value.selectedRepository?.htmlUrl.orEmpty()
+
+        AutoTaskWorker.cancel(getApplication())
+        autoTaskStore.switchToManualMode()
+
         _state.update {
             it.copy(
-                autoExecuteEnabled = enabled,
-                message = if (enabled) "تم التفعيل" else "تم الإيقاف"
+                autoExecuteEnabled = false,
+                programming = false,
+                programmingLiveCode = "",
+                message = "الوضع اليدوي"
             )
+        }
+
+        val runId = queueBeforeStop.remoteRunId
+        if (runId > 0L && repositoryUrl.isNotBlank()) {
+            viewModelScope.launch {
+                val token = resolveGitHubToken() ?: return@launch
+                val github = GitHubClient(token)
+                val repo = runCatching {
+                    github.parseRepository(repositoryUrl)
+                }.getOrNull() ?: return@launch
+
+                runCatching {
+                    github.cancelWorkflowRun(repo, runId)
+                }
+            }
         }
     }
 
@@ -490,18 +521,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 else -> {
                     autoTaskStore.setAwaitingConfirmation(false)
-                    if (isAutoTaskRequest(text)) {
-                        collectAutomaticRequirements(text, askToStartAfter = false)
-                    } else {
-                        runChat(text)
-                    }
+                    collectAutomaticRequirements(
+                        text,
+                        askToStartAfter = false
+                    )
                 }
             }
             return
         }
 
-        if (queue.started && isAutoTaskRequest(text)) {
-            collectAutomaticRequirements(text, askToStartAfter = false)
+        if (queue.started) {
+            collectAutomaticRequirements(
+                text,
+                askToStartAfter = false
+            )
             return
         }
 
@@ -521,11 +554,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        if (isAutoTaskRequest(text)) {
-            collectAutomaticRequirements(text, askToStartAfter = false)
-        } else {
-            runChat(text)
-        }
+        collectAutomaticRequirements(
+            text,
+            askToStartAfter = false
+        )
     }
 
     private fun collectAutomaticRequirements(
