@@ -64,6 +64,11 @@ data class MainUiState(
     val autoWorkerHeartbeatAt: Long = 0L,
     val autoWorkerMessage: String = "",
     val autoWorkerError: String = "",
+    val autoRemoteRepository: String = "",
+    val autoRemoteRunId: Long = 0L,
+    val autoRemoteRunUrl: String = "",
+    val autoRemoteState: String = "",
+    val autoRemoteStage: String = "",
     val programming: Boolean = false,
     val chatHistory: List<ChatTurn> = emptyList()
 )
@@ -104,7 +109,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         autoWorkerActive = queue.workerActive,
                         autoWorkerHeartbeatAt = queue.workerHeartbeatAt,
                         autoWorkerMessage = queue.workerMessage,
-                        autoWorkerError = queue.workerError
+                        autoWorkerError = queue.workerError,
+                        autoRemoteRepository = queue.remoteRepository,
+                        autoRemoteRunId = queue.remoteRunId,
+                        autoRemoteRunUrl = queue.remoteRunUrl,
+                        autoRemoteState = queue.remoteState,
+                        autoRemoteStage = queue.remoteStage
                     )
                 }
             }
