@@ -189,7 +189,8 @@ class GitHubClient(
         headSha: String,
         onEvent: (String) -> Unit,
         workflowName: String? = null,
-        maxAttempts: Int = 45
+        maxAttempts: Int = 45,
+        onProgress: (Long?, String, String) -> Unit = { _, _, _ -> }
     ): CiResult {
         repeat(maxAttempts.coerceIn(1, 360)) { attempt ->
             val root = getJson("/repos/${repo.owner}/${repo.repo}/actions/runs?branch=${enc(branch)}&per_page=50")
@@ -201,36 +202,82 @@ class GitHubClient(
                 }
 
             if (matching.isNotEmpty()) {
-                val pending = matching.filter { it["status"]?.jsonPrimitive?.content != "completed" }
+                val pending = matching.filter {
+                    it["status"]?.jsonPrimitive?.content != "completed"
+                }
+
                 if (pending.isNotEmpty()) {
-                    val activeRunId = pending.first()["id"]?.jsonPrimitive?.longOrNull
-                    val stage = activeRunId?.let { currentRunStage(repo, it) }
-                    if (!stage.isNullOrBlank()) {
-                        onEvent(stage)
-                    } else {
-                        onEvent("جاري التنفيذ")
-                    }
+                    val active = pending.first()
+                    val activeRunId = active["id"]?.jsonPrimitive?.longOrNull
+                    val githubState = active["status"]?.jsonPrimitive?.contentOrNull
+                        .orEmpty()
+                        .ifBlank { "queued" }
+                    val stage = activeRunId
+                        ?.let { currentRunStage(repo, it) }
+                        .orEmpty()
+                        .ifBlank {
+                            if (githubState == "queued") {
+                                "بانتظار مشغل GitHub"
+                            } else {
+                                "جاري التنفيذ"
+                            }
+                        }
+
+                    onProgress(activeRunId, githubState, stage)
+                    onEvent(stage)
                 } else {
                     val failed = matching.filter {
-                        it["conclusion"]?.jsonPrimitive?.contentOrNull !in setOf("success", "neutral", "skipped")
+                        it["conclusion"]?.jsonPrimitive?.contentOrNull !in
+                            setOf("success", "neutral", "skipped")
                     }
-                    if (failed.isEmpty()) return CiResult(CiState.SUCCESS, matching.first()["id"]?.jsonPrimitive?.longOrNull)
+
+                    if (failed.isEmpty()) {
+                        val successful = matching.first()
+                        val runId = successful["id"]?.jsonPrimitive?.longOrNull
+                        onProgress(runId, "success", "اكتمل GitHub Actions")
+                        return CiResult(CiState.SUCCESS, runId)
+                    }
+
+                    val failedRunId =
+                        failed.first()["id"]?.jsonPrimitive?.longOrNull
+                    onProgress(
+                        failedRunId,
+                        "failure",
+                        "فشل GitHub Actions"
+                    )
 
                     val logs = buildString {
                         for (run in failed.take(4)) {
-                            val id = run["id"]?.jsonPrimitive?.longOrNull ?: continue
-                            val event = run["event"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                            val id =
+                                run["id"]?.jsonPrimitive?.longOrNull ?: continue
+                            val event =
+                                run["event"]?.jsonPrimitive?.contentOrNull.orEmpty()
                             appendLine("\n===== CI $event / run $id =====")
                             appendLine(downloadRunLogs(repo, id))
                         }
                     }.takeLast(100_000)
-                    return CiResult(CiState.FAILURE, failed.first()["id"]?.jsonPrimitive?.longOrNull, logs)
+
+                    return CiResult(
+                        CiState.FAILURE,
+                        failedRunId,
+                        logs
+                    )
                 }
-            } else if (attempt == 8) {
-                onEvent("لم يظهر CI بعد؛ سأواصل الانتظار")
+            } else {
+                onProgress(
+                    null,
+                    "waiting",
+                    "بانتظار GitHub Actions"
+                )
+                if (attempt == 8) {
+                    onEvent("بانتظار GitHub Actions")
+                }
             }
+
             delay(if (attempt < 15) 4_000 else 8_000)
         }
+
+        onProgress(null, "not_found", "لم يبدأ GitHub Actions")
         return CiResult(CiState.NOT_FOUND)
     }
 
