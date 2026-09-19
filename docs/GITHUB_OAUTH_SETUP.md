@@ -1,30 +1,29 @@
-# GitHub OAuth setup for OM
+# GitHub Device Flow setup for OM
 
-OM supports a one-button GitHub connection flow using OAuth Authorization Code + PKCE.
+OM uses GitHub OAuth Device Flow for account linking.
+
+## End-user flow
+
+1. Tap **ربط GitHub بالكود** in OM.
+2. OM requests a short user code from GitHub.
+3. OM shows the code, for example `ABCD-EFGH`.
+4. Tap **نسخ الكود وفتح GitHub**.
+5. Enter/paste the code at GitHub and approve the requested permissions.
+6. OM polls GitHub in the background until approval is complete.
+7. OM loads all accessible repositories and opens the project picker.
+8. Select a repository and continue development in chat.
+
+There is no manual Personal Access Token flow in the UI.
 
 ## One-time developer setup
 
-Create one OAuth App in the GitHub account that owns OM:
+Create one OAuth App in the GitHub account that owns OM and enable **Device Flow** in that app's settings.
 
-- Application name: `OM Mobile`
-- Homepage URL: `https://github.com/Malik05255/HAI_OM`
-- Authorization callback URL: `om://github-auth`
+Configure the repository Actions variable:
 
-Then configure the repository:
+- `GITHUB_OAUTH_CLIENT_ID`
 
-- Actions variable: `GITHUB_OAUTH_CLIENT_ID`
-- Actions secret: `GITHUB_OAUTH_CLIENT_SECRET`
-
-The Android workflow injects both values only at build time. They are not committed to the repository.
-
-## User flow
-
-1. Tap **ربط GitHub** in OM.
-2. GitHub opens using the account already signed in to the browser.
-3. Review permissions and tap **Authorize**.
-4. GitHub redirects to `om://github-auth`.
-5. OM exchanges the temporary code using PKCE, stores the returned token with the existing encrypted SecretStore, loads all accessible repositories, and opens the project picker.
-6. Select a repository and continue in chat.
+No client secret is required for GitHub Device Flow.
 
 ## Requested OAuth scopes
 
@@ -32,4 +31,4 @@ The Android workflow injects both values only at build time. They are not commit
 - `workflow`
 - `read:user`
 
-The manual fine-grained-token path remains only as a fallback when OAuth credentials are not configured in the build.
+The access token returned by GitHub after approval is stored through the existing encrypted SecretStore. Users never create, paste, or manage the token manually.
