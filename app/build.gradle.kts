@@ -19,6 +19,18 @@ val githubOAuthClientId = providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID"
     .takeUnless { it.isNullOrBlank() }
     ?: defaultGitHubOAuthClientId
 
+val imageApiUrl = providers.environmentVariable("IMAGE_API_URL")
+    .orElse(providers.gradleProperty("IMAGE_API_URL"))
+    .orNull
+    ?.trim()
+    .orEmpty()
+
+val imageApiKey = providers.environmentVariable("IMAGE_API_KEY")
+    .orElse(providers.gradleProperty("IMAGE_API_KEY"))
+    .orNull
+    ?.trim()
+    .orEmpty()
+
 fun buildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
@@ -37,6 +49,17 @@ android {
             "String",
             "GITHUB_OAUTH_CLIENT_ID",
             buildConfigString(githubOAuthClientId)
+        )
+
+        buildConfigField(
+            "String",
+            "IMAGE_API_URL",
+            buildConfigString(imageApiUrl)
+        )
+        buildConfigField(
+            "String",
+            "IMAGE_API_KEY",
+            buildConfigString(imageApiKey)
         )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
