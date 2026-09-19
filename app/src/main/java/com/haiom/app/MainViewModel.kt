@@ -1027,6 +1027,178 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
     }
 
+    private suspend fun requestAiHordeImage(
+        prompt: String,
+        seed: Long
+    ): ImagePayload {
+        val apiKey = BuildConfig.AI_HORDE_API_KEY
+            .trim()
+            .ifBlank { "0000000000" }
+
+        val clientAgent =
+            "HAI-OM:${BuildConfig.VERSION_NAME}:" +
+                "https://github.com/Malik05255/HAI_OM"
+
+        val bodyJson = JSONObject().apply {
+            put("prompt", prompt)
+            put(
+                "params",
+                JSONObject().apply {
+                    put("n", 1)
+                    put("width", 768)
+                    put("height", 768)
+                    put("steps", 24)
+                    put("cfg_scale", 7.0)
+                    put("sampler_name", "k_euler_a")
+                    put("seed", seed.toString())
+                }
+            )
+        }
+
+        val submitRequest = Request.Builder()
+            .url("https://aihorde.net/api/v2/generate/async")
+            .header("apikey", apiKey)
+            .header("Client-Agent", clientAgent)
+            .header("Accept", "application/json")
+            .post(
+                bodyJson.toString()
+                    .toRequestBody(
+                        "application/json; charset=utf-8".toMediaType()
+                    )
+            )
+            .build()
+
+        val requestId = imageClient.newCall(submitRequest)
+            .execute()
+            .use { response ->
+                val raw = response.body?.string().orEmpty()
+
+                if (!response.isSuccessful) {
+                    val apiMessage = runCatching {
+                        JSONObject(raw).optString("message")
+                    }.getOrNull().orEmpty()
+
+                    throw ImageProviderException(
+                        message = apiMessage.ifBlank {
+                            "AI Horde: HTTP ${response.code}"
+                        },
+                        allowFallback = response.code >= 500 ||
+                            response.code == 408 ||
+                            response.code == 429
+                    )
+                }
+
+                JSONObject(raw)
+                    .optString("id")
+                    .takeIf { it.isNotBlank() }
+                    ?: throw ImageProviderException(
+                        "AI Horde لم يرجع رقم طلب صالح",
+                        true
+                    )
+            }
+
+        repeat(72) {
+            kotlinx.coroutines.delay(2_500L)
+
+            val checkRequest = Request.Builder()
+                .url(
+                    "https://aihorde.net/api/v2/generate/check/" +
+                        requestId
+                )
+                .header("Client-Agent", clientAgent)
+                .header("Accept", "application/json")
+                .build()
+
+            val check = imageClient.newCall(checkRequest)
+                .execute()
+                .use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        throw ImageProviderException(
+                            "تعذر فحص طلب AI Horde: HTTP ${response.code}",
+                            response.code >= 500 ||
+                                response.code == 408 ||
+                                response.code == 429
+                        )
+                    }
+                    JSONObject(raw)
+                }
+
+            if (check.optBoolean("faulted", false)) {
+                throw ImageProviderException(
+                    "تعذر إكمال الصورة على AI Horde",
+                    true
+                )
+            }
+
+            if (
+                check.has("is_possible") &&
+                !check.optBoolean("is_possible", true)
+            ) {
+                throw ImageProviderException(
+                    "لا يوجد عامل متاح لهذا الطلب على AI Horde",
+                    true
+                )
+            }
+
+            if (!check.optBoolean("done", false)) {
+                return@repeat
+            }
+
+            val statusRequest = Request.Builder()
+                .url(
+                    "https://aihorde.net/api/v2/generate/status/" +
+                        requestId
+                )
+                .header("Client-Agent", clientAgent)
+                .header("Accept", "application/json")
+                .build()
+
+            return imageClient.newCall(statusRequest)
+                .execute()
+                .use { response ->
+                    val raw = response.body?.string().orEmpty()
+
+                    if (!response.isSuccessful) {
+                        throw ImageProviderException(
+                            "تعذر استلام صورة AI Horde: HTTP ${response.code}",
+                            response.code >= 500 ||
+                                response.code == 408 ||
+                                response.code == 429
+                        )
+                    }
+
+                    val status = JSONObject(raw)
+                    val generations = status.optJSONArray("generations")
+                        ?: throw ImageProviderException(
+                            "AI Horde لم يرجع صورة",
+                            true
+                        )
+
+                    val first = generations.optJSONObject(0)
+                        ?: throw ImageProviderException(
+                            "AI Horde رجع نتيجة غير صالحة",
+                            true
+                        )
+
+                    val image = first.optString("img")
+                    if (image.isBlank()) {
+                        throw ImageProviderException(
+                            "AI Horde لم يرجع بيانات الصورة",
+                            true
+                        )
+                    }
+
+                    resolveImageReference(image)
+                }
+        }
+
+        throw ImageProviderException(
+            "انتهت مهلة انتظار AI Horde",
+            true
+        )
+    }
+
     private fun requestDefaultImage(
         prompt: String,
         seed: Long
@@ -1185,14 +1357,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val payload = when {
                         configuredPayload != null -> configuredPayload
 
-                        configuredResult == null -> {
-                            requestDefaultImage(
-                                cleanPrompt,
-                                seed
-                            )
-                        }
-
-                        configuredResult.exceptionOrNull()
+                        configuredResult?.exceptionOrNull()
                             is ImageProviderException -> {
                             val error =
                                 configuredResult.exceptionOrNull()
@@ -1200,17 +1365,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             if (!error.allowFallback) {
                                 throw error
                             }
-                            requestDefaultImage(
-                                cleanPrompt,
-                                seed
-                            )
+
+                            runCatching {
+                                requestAiHordeImage(
+                                    cleanPrompt,
+                                    seed
+                                )
+                            }.getOrElse {
+                                requestDefaultImage(
+                                    cleanPrompt,
+                                    seed
+                                )
+                            }
                         }
 
                         else -> {
-                            requestDefaultImage(
-                                cleanPrompt,
-                                seed
-                            )
+                            runCatching {
+                                requestAiHordeImage(
+                                    cleanPrompt,
+                                    seed
+                                )
+                            }.getOrElse {
+                                requestDefaultImage(
+                                    cleanPrompt,
+                                    seed
+                                )
+                            }
                         }
                     }
 
@@ -1640,9 +1820,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         private val IMAGE_GENERATION_PATTERNS = listOf(
-            Regex("""(^|\s)(صمم|صمّم|أنشئ|انشئ|ولد|ولّد|ارسم|اصنع|سوي|سو)\s+(لي\s+)?(صورة|صوره|تصميم|رسمة|رسمه)(\s|$)"""),
-            Regex("""(^|\s)(توليد|إنشاء|انشاء|تصميم)\s+(صورة|صوره|صور)(\s|$)"""),
-            Regex("""(^|\s)(generate|create|draw|make)\s+(an?\s+)?(image|picture|illustration)(\s|$)""", RegexOption.IGNORE_CASE)
+            Regex("""(^|\s)(صمم|صمّم|تصمم|أنشئ|انشئ|تنشئ|ولد|ولّد|تولد|ارسم|ترسم|اصنع|تصنع|سوي|سو|تسوي)\s+(لي\s*)?(صورة|صوره|صور|تصميم|رسمة|رسمه)(\s|$)"""),
+            Regex("""(^|\s)(توليد|إنشاء|انشاء|تصميم|عمل)\s+(صورة|صوره|صور|رسمة|رسمه)(\s|$)"""),
+            Regex("""(^|\s)(ابي|أبي|ابغى|أبغى|اريد|أريد|أحتاج|احتاج|محتاج|محتاجه|بدي|ودي)\s+(لي\s*)?(صورة|صوره|صور|رسمة|رسمه|تصميم)(\s|$)"""),
+            Regex("""(^|\s)(سويلي|سولي|صمملي|صمّملي|ارسملي|اعمللي)\s+(صورة|صوره|صور|رسمة|رسمه|تصميم)(\s|$)"""),
+            Regex("""^(صورة|صوره|رسمة|رسمه|تصميم)\s+.+"""),
+            Regex("""(^|\s)(generate|create|draw|make)\s+(an?\s+)?(image|picture|illustration|artwork)(\s|$)""", RegexOption.IGNORE_CASE)
         )
 
         private val REPOSITORY_CONTEXT_WORDS = listOf(
