@@ -1,10 +1,13 @@
 package com.haiom.app.ui
 
+import android.app.Activity
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -136,6 +139,8 @@ fun HaiOmApp(
     var panel by remember { mutableStateOf<ToolPanel?>(null) }
     var showAutoExecuteConfirm by remember { mutableStateOf(false) }
     var showAutoExecuteControl by remember { mutableStateOf(false) }
+    var openAutomationSettings by remember { mutableStateOf(false) }
+    var lastHomeBackAt by remember { mutableStateOf(0L) }
     var runtimeNow by remember { mutableStateOf(System.currentTimeMillis()) }
     val media = remember { mutableStateListOf<PickedMedia>() }
 
@@ -198,6 +203,27 @@ fun HaiOmApp(
         while (true) {
             runtimeNow = System.currentTimeMillis()
             delay(2_000)
+        }
+    }
+
+    BackHandler(enabled = panel == null) {
+        when {
+            showAutoExecuteConfirm -> showAutoExecuteConfirm = false
+            showAutoExecuteControl -> showAutoExecuteControl = false
+            dockOpen -> dockOpen = false
+            else -> {
+                val now = System.currentTimeMillis()
+                if (now - lastHomeBackAt <= 2_000L) {
+                    (context as? Activity)?.finish()
+                } else {
+                    lastHomeBackAt = now
+                    Toast.makeText(
+                        context,
+                        "اضغط رجوع مرة أخرى للخروج",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
         }
     }
 
@@ -270,6 +296,8 @@ fun HaiOmApp(
                     autoTasks = state.autoTasks,
                     autoQueueStarted = state.autoQueueStarted,
                     autoPaused = state.autoPaused,
+                    autoLiveCode = state.autoLiveCode,
+                    programmingLiveCode = state.programmingLiveCode,
                     autoWorkerActive = state.autoWorkerActive,
                     autoWorkerHeartbeatAt = state.autoWorkerHeartbeatAt,
                     autoWorkerMessage = state.autoWorkerMessage,
@@ -280,7 +308,11 @@ fun HaiOmApp(
                     remoteState = state.autoRemoteState,
                     remoteStage = state.autoRemoteStage,
                     runtimeNow = runtimeNow,
-                    onTogglePause = vm::toggleAutoPause
+                    onTogglePause = vm::toggleAutoPause,
+                    onOpenTasks = {
+                        openAutomationSettings = true
+                        panel = ToolPanel.SETTINGS
+                    }
                 )
             } else {
                 ToolScreen(
@@ -313,7 +345,15 @@ fun HaiOmApp(
                     remoteState = state.autoRemoteState,
                     remoteStage = state.autoRemoteStage,
                     runtimeNow = runtimeNow,
-                    onBack = { panel = null },
+                    initialSettingsPage = if (openAutomationSettings) {
+                        SettingsPage.AUTOMATION
+                    } else {
+                        SettingsPage.ROOT
+                    },
+                    onBack = {
+                        panel = null
+                        openAutomationSettings = false
+                    },
                     onSaveRepo = {
                         vm.saveSelectedRepository(it)
                         panel = null
@@ -339,7 +379,7 @@ fun HaiOmApp(
                 )
             }
 
-            if (panel == null) {
+            if (panel == null && !state.autoQueueStarted) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -442,6 +482,7 @@ fun HaiOmApp(
                             dockOpen = false
                         },
                         onSettings = {
+                            openAutomationSettings = false
                             panel = ToolPanel.SETTINGS
                             dockOpen = false
                         }
@@ -463,6 +504,8 @@ private fun ChatCanvas(
     autoTasks: List<AutoTaskItem>,
     autoQueueStarted: Boolean,
     autoPaused: Boolean,
+    autoLiveCode: String,
+    programmingLiveCode: String,
     autoWorkerActive: Boolean,
     autoWorkerHeartbeatAt: Long,
     autoWorkerMessage: String,
@@ -473,7 +516,8 @@ private fun ChatCanvas(
     remoteState: String,
     remoteStage: String,
     runtimeNow: Long,
-    onTogglePause: () -> Unit
+    onTogglePause: () -> Unit,
+    onOpenTasks: () -> Unit
 ) {
     val lastAnswer = history.lastOrNull { it.role == "assistant" }?.text
     val extraAnswer = standaloneAnswer?.takeIf { it.isNotBlank() && it != lastAnswer }
@@ -483,23 +527,14 @@ private fun ChatCanvas(
             !running &&
             !autoQueueStarted
     val listState = rememberLazyListState()
-    val liveCoding =
-        !autoPaused &&
-            (
-                (autoQueueStarted &&
-                    remoteState == "in_progress" &&
-                    (
-                        remoteStage.contains("كود") ||
-                            remoteStage.contains("يكتب") ||
-                            remoteStage.contains("يصلح")
-                        )
-                    ) ||
-                    (running && programming)
-                )
+    val liveCode = if (autoQueueStarted) autoLiveCode else programmingLiveCode
+    val showLiveCode =
+        liveCode.isNotBlank() &&
+            (autoQueueStarted || (running && programming))
     val renderedItemCount =
         history.size +
             if (extraAnswer != null) 1 else 0 +
-            if (liveCoding) 1 else 0 +
+            if (showLiveCode) 1 else 0 +
             if (running && !programming) 1 else 0
 
     LaunchedEffect(
@@ -507,7 +542,8 @@ private fun ChatCanvas(
         extraAnswer,
         running,
         progressText,
-        liveCoding,
+        showLiveCode,
+        liveCode,
         remoteStage
     ) {
         if (renderedItemCount > 0) {
@@ -537,7 +573,8 @@ private fun ChatCanvas(
                 remoteState = remoteState,
                 remoteStage = remoteStage,
                 now = runtimeNow,
-                onTogglePause = onTogglePause
+                onTogglePause = onTogglePause,
+                onOpenTasks = onOpenTasks
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -572,11 +609,11 @@ private fun ChatCanvas(
                     }
                 }
 
-                if (liveCoding) {
+                if (showLiveCode) {
                     item {
-                        LiveCodingLine(
-                            now = runtimeNow,
-                            stage = remoteStage
+                        LiveCodePreview(
+                            code = liveCode,
+                            now = runtimeNow
                         )
                     }
                 }
@@ -1032,6 +1069,7 @@ private fun ToolScreen(
     remoteState: String,
     remoteStage: String,
     runtimeNow: Long,
+    initialSettingsPage: SettingsPage,
     onBack: () -> Unit,
     onSaveRepo: (GitHubRepository) -> Unit,
     onOpenProjects: () -> Unit,
@@ -1043,7 +1081,15 @@ private fun ToolScreen(
     onTogglePause: () -> Unit,
     onOpenPr: (String) -> Unit
 ) {
-    var settingsPage by remember(panel) { mutableStateOf(SettingsPage.ROOT) }
+    var settingsPage by remember(panel, initialSettingsPage) {
+        mutableStateOf(
+            if (panel == ToolPanel.SETTINGS) {
+                initialSettingsPage
+            } else {
+                SettingsPage.ROOT
+            }
+        )
+    }
 
     val title = when (panel) {
         ToolPanel.PROJECTS -> "المشاريع"
@@ -1063,6 +1109,8 @@ private fun ToolScreen(
             onBack()
         }
     }
+
+    BackHandler { handleBack() }
 
     Column(
         Modifier
@@ -1584,7 +1632,8 @@ private fun AutomaticTasksContent(
             remoteState = remoteState,
             remoteStage = remoteStage,
             now = now,
-            onTogglePause = onTogglePause
+            onTogglePause = onTogglePause,
+            onOpenTasks = {}
         )
 
         Spacer(Modifier.height(10.dp))
@@ -1710,7 +1759,8 @@ private fun AutoRuntimeStatusBar(
     remoteState: String,
     remoteStage: String,
     now: Long,
-    onTogglePause: () -> Unit
+    onTogglePause: () -> Unit,
+    onOpenTasks: () -> Unit
 ) {
     val controllerLive = workerIsLive(workerActive, heartbeatAt, now)
     val remoteLive = remoteState == "queued" || remoteState == "in_progress"
@@ -1727,7 +1777,7 @@ private fun AutoRuntimeStatusBar(
         remoteState == "not_found" -> "لم يبدأ"
         workerError.isNotBlank() -> "متوقف"
         remoteStage.contains("يصلح") || remoteStage.contains("إصلاح") -> "يقوم بالإصلاح"
-        remoteStage.contains("كود") || remoteStage.contains("يكتب") -> "يكتب الكود"
+        remoteStage.contains("كود") || remoteStage.contains("يكتب") -> "يعمل"
         remoteStage.contains("يفحص") -> "يفحص التغييرات"
         remoteStage.contains("يحفظ") -> "يحفظ التغييرات"
         remoteStage.contains("يجهز") -> "يجهز"
@@ -1738,7 +1788,9 @@ private fun AutoRuntimeStatusBar(
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenTasks),
         color = if (paused) Color.White else BlueSoft,
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, Line)
@@ -1785,63 +1837,46 @@ private fun AutoRuntimeStatusBar(
                 }
             }
 
-            if (remoteRunUrl.isNotBlank()) {
-                val context = LocalContext.current
-                TextButton(
-                    onClick = {
-                        runCatching {
-                            context.startActivity(
-                                Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse(remoteRunUrl)
-                                )
-                            )
-                        }
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Text("GitHub", fontSize = 10.sp)
-                }
-            }
         }
     }
 }
 
 @Composable
-private fun LiveCodingLine(
-    now: Long,
-    stage: String
+private fun LiveCodePreview(
+    code: String,
+    now: Long
 ) {
-    val cursor = if ((now / 550L) % 2L == 0L) "▌" else " "
-    val label = when {
-        stage.contains("يصلح") || stage.contains("إصلاح") -> "HAI يصلح الكود"
-        else -> "HAI يكتب الكود"
+    val preview = code.takeLast(6_000)
+    var typed by remember { mutableStateOf("") }
+
+    LaunchedEffect(preview) {
+        var index = if (preview.startsWith(typed)) typed.length else 0
+        if (index == 0) typed = ""
+
+        while (index < preview.length) {
+            index = (index + 36).coerceAtMost(preview.length)
+            typed = preview.take(index)
+            delay(14)
+        }
     }
+
+    val cursor = if ((now / 500L) % 2L == 0L) "▌" else ""
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = Color.White,
+        color = Color(0xFFFAFAFC),
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, Line)
     ) {
-        Row(
-            Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Outlined.Code,
-                null,
-                tint = Blue,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(9.dp))
-            Text(
-                "$label $cursor",
-                color = Ink,
-                fontSize = 13.sp,
-                fontFamily = FontFamily.Monospace
-            )
-        }
+        Text(
+            text = typed + cursor,
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
+            color = Ink,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 22
+        )
     }
 }
 
