@@ -117,6 +117,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -137,6 +138,7 @@ import com.haiom.app.automation.AutoTaskItem
 import com.haiom.app.automation.AutoTaskStatus
 import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
+import coil.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -1140,6 +1142,84 @@ private fun copyCode(context: Context, code: String) {
 @Composable
 private fun MessageBlock(turn: ChatTurn) {
     val user = turn.role == "user"
+    val generatedImageUrl = if (
+        turn.role == "assistant" &&
+        turn.text.startsWith("[[HAI_IMAGE]]")
+    ) {
+        turn.text.removePrefix("[[HAI_IMAGE]]").trim()
+    } else {
+        null
+    }
+
+    if (!generatedImageUrl.isNullOrBlank()) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = AbsoluteAlignment.CenterLeft
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.88f),
+                color = SurfaceElevated,
+                shape = RoundedCornerShape(22.dp),
+                border = BorderStroke(1.dp, Line),
+                shadowElevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp)
+                ) {
+                    CompositionLocalProvider(
+                        LocalLayoutDirection provides LayoutDirection.Rtl
+                    ) {
+                        Text(
+                            "HAI",
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Blue,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            textAlign = TextAlign.Right
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    SubcomposeAsyncImage(
+                        model = generatedImageUrl,
+                        contentDescription = "صورة مولدة بواسطة HAI",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(320.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                        contentScale = ContentScale.Crop,
+                        loading = {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(28.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Blue
+                                )
+                            }
+                        },
+                        error = {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "تعذر تحميل الصورة",
+                                    color = Muted,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        }
+        return
+    }
+
     val context = LocalContext.current
     val segments = remember(turn.text) {
         parseChatSegments(turn.text)
