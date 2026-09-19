@@ -1,12 +1,18 @@
 package com.haiom.app.ui
 
 import android.app.Activity
+import android.Manifest
 import android.content.ClipData
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,6 +29,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,6 +74,7 @@ import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -90,6 +98,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -108,6 +117,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -116,6 +126,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import com.haiom.app.MainViewModel
 import com.haiom.app.automation.AutoTaskItem
 import com.haiom.app.automation.AutoTaskStatus
@@ -161,6 +172,137 @@ fun HaiOmApp(
     var lastHomeBackAt by remember { mutableStateOf(0L) }
     var runtimeNow by remember { mutableStateOf(System.currentTimeMillis()) }
     val media = remember { mutableStateListOf<PickedMedia>() }
+    var voiceListening by remember { mutableStateOf(false) }
+    val speechRecognizer = remember(context) {
+        if (SpeechRecognizer.isRecognitionAvailable(context)) {
+            SpeechRecognizer.createSpeechRecognizer(context)
+        } else {
+            null
+        }
+    }
+
+    fun startVoiceRecognition() {
+        val recognizer = speechRecognizer
+        if (recognizer == null) {
+            Toast.makeText(
+                context,
+                "التعرف على الصوت غير متاح على هذا الجهاز",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ar-SA")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        }
+
+        voiceListening = true
+        runCatching {
+            recognizer.startListening(intent)
+        }.onFailure {
+            voiceListening = false
+            Toast.makeText(
+                context,
+                "تعذر بدء التسجيل الصوتي",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val microphonePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startVoiceRecognition()
+        } else {
+            Toast.makeText(
+                context,
+                "اسمح بالميكروفون لإرسال رسالة صوتية",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    DisposableEffect(speechRecognizer, vm) {
+        speechRecognizer?.setRecognitionListener(
+            object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {
+                    voiceListening = true
+                }
+
+                override fun onBeginningOfSpeech() {
+                    voiceListening = true
+                }
+
+                override fun onRmsChanged(rmsdB: Float) = Unit
+                override fun onBufferReceived(buffer: ByteArray?) = Unit
+                override fun onEndOfSpeech() = Unit
+
+                override fun onError(error: Int) {
+                    voiceListening = false
+                    if (
+                        error != SpeechRecognizer.ERROR_NO_MATCH &&
+                        error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                    ) {
+                        Toast.makeText(
+                            context,
+                            "تعذر فهم الصوت، حاول مرة أخرى",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                override fun onResults(results: Bundle?) {
+                    voiceListening = false
+                    val text = results
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()
+                        ?.trim()
+                        .orEmpty()
+
+                    if (text.isNotBlank()) {
+                        vm.runAgent(text)
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "لم يتم التقاط كلام واضح",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                override fun onPartialResults(partialResults: Bundle?) = Unit
+                override fun onEvent(eventType: Int, params: Bundle?) = Unit
+            }
+        )
+
+        onDispose {
+            runCatching { speechRecognizer?.cancel() }
+            runCatching { speechRecognizer?.destroy() }
+        }
+    }
+
+    val requestVoiceInput: () -> Unit = {
+        if (voiceListening) {
+            speechRecognizer?.stopListening()
+        } else if (
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            startVoiceRecognition()
+        } else {
+            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     val mediaPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -277,6 +419,8 @@ fun HaiOmApp(
                                 arrayOf("image/*", "video/*", "application/pdf", "text/plain")
                             )
                         },
+                        voiceListening = voiceListening,
+                        onVoiceLongPress = requestVoiceInput,
                         onSend = {
                             if (draft.isBlank() || (state.running && !state.autoExecuteEnabled)) return@CompactComposer
                             val attachmentNote = if (media.isEmpty()) "" else
@@ -1019,6 +1163,8 @@ private fun CompactComposer(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
     onMedia: () -> Unit,
+    voiceListening: Boolean,
+    onVoiceLongPress: () -> Unit,
     onSend: () -> Unit
 ) {
     Surface(
@@ -1037,15 +1183,48 @@ private fun CompactComposer(
             Surface(
                 modifier = Modifier
                     .size(44.dp)
-                    .clickable(enabled = enabled && value.isNotBlank(), onClick = onSend),
-                color = if (enabled && value.isNotBlank()) Blue else BlueSoft,
+                    .pointerInput(enabled, value, voiceListening) {
+                        detectTapGestures(
+                            onTap = {
+                                if (
+                                    enabled &&
+                                    value.isNotBlank() &&
+                                    !voiceListening
+                                ) {
+                                    onSend()
+                                }
+                            },
+                            onLongPress = {
+                                if (enabled) {
+                                    onVoiceLongPress()
+                                }
+                            }
+                        )
+                    },
+                color = when {
+                    voiceListening -> Color(0xFFFFE5DD)
+                    enabled && value.isNotBlank() -> Blue
+                    else -> BlueSoft
+                },
                 shape = CircleShape
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        Icons.Outlined.ArrowUpward,
-                        contentDescription = "إرسال",
-                        tint = if (enabled && value.isNotBlank()) Color.White else Blue,
+                        if (voiceListening) {
+                            Icons.Outlined.Mic
+                        } else {
+                            Icons.Outlined.ArrowUpward
+                        },
+                        contentDescription = if (voiceListening) {
+                            "جاري الاستماع"
+                        } else {
+                            "إرسال؛ اضغط مطولًا للصوت"
+                        },
+                        tint = when {
+                            voiceListening -> Color(0xFFB66A55)
+                            enabled && value.isNotBlank() -> Color.White
+                            else -> Blue
+                        },
                         modifier = Modifier.size(21.dp)
                     )
                 }
@@ -1183,7 +1362,7 @@ private fun AnimatedToolDock(
     Box(
         modifier = modifier
             .width(76.dp)
-            .height(342.dp)
+            .height(452.dp)
     ) {
         Column(
             modifier = Modifier
@@ -1222,6 +1401,7 @@ private fun AnimatedToolDock(
                 background = Color(0xFFF0F3F7),
                 onClick = onSettings
             )
+            Spacer(Modifier.height(110.dp))
             PearlAutoAction(
                 enabled = autoEnabled,
                 onClick = onAutoExecute
@@ -1286,11 +1466,10 @@ private fun PearlAutoAction(
 ) {
     Surface(
         modifier = Modifier
-            .width(58.dp)
-            .height(46.dp)
+            .size(46.dp)
             .clickable(onClick = onClick),
         color = if (enabled) BlueSoft else Lavender,
-        shape = RoundedCornerShape(23.dp),
+        shape = CircleShape,
         border = BorderStroke(
             1.dp,
             if (enabled) Color(0xFFCBD5FF) else Color.White
@@ -1301,7 +1480,7 @@ private fun PearlAutoAction(
             Text(
                 "تلقائي",
                 color = if (enabled) Blue else Violet,
-                fontSize = 10.sp,
+                fontSize = 8.sp,
                 fontWeight = FontWeight.ExtraBold,
                 textAlign = TextAlign.Center
             )
