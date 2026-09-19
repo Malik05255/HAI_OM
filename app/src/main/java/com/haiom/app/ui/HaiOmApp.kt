@@ -120,15 +120,17 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
 import kotlinx.coroutines.delay
 
-private val Canvas = Color(0xFFFCFBFD)
-private val SurfaceSoft = Color(0xFFFFFAFD)
-private val Lavender = Color(0xFFF3EEF7)
-private val LavenderStrong = Color(0xFFE8DFF0)
-private val Line = Color(0xFFE7E0E9)
-private val Blue = Color(0xFF4E82E9)
-private val BlueSoft = Color(0xFFEAF0FF)
-private val Ink = Color(0xFF1B181D)
-private val Muted = Color(0xFF98929C)
+private val Canvas = Color(0xFF090C11)
+private val SurfaceSoft = Color(0xFF10151D)
+private val Lavender = Color(0xFF151B25)
+private val LavenderStrong = Color(0xFF222C3A)
+private val Line = Color(0xFF25303E)
+private val Blue = Color(0xFF68E1FF)
+private val BlueSoft = Color(0xFF102832)
+private val Ink = Color(0xFFF3F7FB)
+private val Muted = Color(0xFF7F8B9B)
+private val Violet = Color(0xFFA78BFA)
+private val SurfaceElevated = Color(0xFF131A24)
 
 private enum class ToolPanel { PROJECTS, HISTORY, MODELS, SETTINGS }
 private enum class SettingsPage { ROOT, GITHUB, AUTOMATION }
@@ -664,10 +666,39 @@ private fun ChatCanvas(
 @Composable
 private fun EmptyState(modifier: Modifier = Modifier) {
     Column(
-        modifier.padding(horizontal = 26.dp),
+        modifier = modifier.padding(horizontal = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("كيف أساعدك؟", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Medium)
+        Surface(
+            modifier = Modifier.size(72.dp),
+            color = SurfaceElevated,
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.dp, Line),
+            shadowElevation = 10.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    "H",
+                    color = Blue,
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Text(
+            "HAI",
+            color = Ink,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 2.sp
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "اكتب أي شيء",
+            color = Muted,
+            fontSize = 13.sp
+        )
     }
 }
 
@@ -679,88 +710,66 @@ private fun MessageBlock(turn: ChatTurn) {
     val messageText = if (codeLike) turn.text.replace(fence, "") else turn.text
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        if (user) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.End
-            ) {
-                Text(
-                    "أنا",
-                    color = Color(0xFF7A6D82),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (user) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.Top
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(if (user) 0.84f else 0.92f),
+                color = if (user) Color(0xFF171D27) else SurfaceElevated,
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(
+                    1.dp,
+                    if (user) Color(0xFF2D3B4F) else Line
                 )
-                Spacer(Modifier.height(5.dp))
-                Surface(
-                    modifier = Modifier.fillMaxWidth(0.82f),
-                    color = Lavender,
-                    shape = RoundedCornerShape(
-                        topStart = 20.dp,
-                        topEnd = 20.dp,
-                        bottomStart = 20.dp,
-                        bottomEnd = 7.dp
-                    ),
-                    border = BorderStroke(1.dp, LavenderStrong)
+            ) {
+                Row(
+                    Modifier.padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                        Text(
-                            messageText,
-                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
-                            color = Ink,
-                            fontSize = 15.sp,
-                            lineHeight = 23.sp,
-                            textAlign = TextAlign.Right
-                        )
-                    }
-                }
-            }
-        } else {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.Start
-            ) {
-                Text(
-                    "HAI",
-                    color = Blue,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(5.dp))
-                Surface(
-                    modifier = Modifier.fillMaxWidth(0.90f),
-                    color = if (codeLike) Color(0xFFF6F5F8) else Color(0xFFF8FAFF),
-                    shape = RoundedCornerShape(
-                        topStart = 20.dp,
-                        topEnd = 20.dp,
-                        bottomStart = 7.dp,
-                        bottomEnd = 20.dp
-                    ),
-                    border = BorderStroke(
-                        1.dp,
-                        if (codeLike) Line else Color(0xFFE3E9F8)
+                    Box(
+                        Modifier
+                            .width(3.dp)
+                            .height(if (codeLike) 54.dp else 34.dp)
+                            .background(if (user) Violet else Blue)
                     )
-                ) {
-                    if (codeLike) {
-                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Spacer(Modifier.width(11.dp))
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .padding(end = 13.dp)
+                    ) {
+                        Text(
+                            if (user) "YOU" else "HAI",
+                            color = if (user) Violet else Blue,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.4.sp
+                        )
+                        Spacer(Modifier.height(5.dp))
+                        CompositionLocalProvider(
+                            LocalLayoutDirection provides if (codeLike) {
+                                LayoutDirection.Ltr
+                            } else {
+                                LayoutDirection.Rtl
+                            }
+                        ) {
                             Text(
                                 messageText,
-                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
-                                color = Color(0xFF3B3840),
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                                fontFamily = FontFamily.Monospace,
-                                textAlign = TextAlign.Left
-                            )
-                        }
-                    } else {
-                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                            Text(
-                                messageText,
-                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
                                 color = Ink,
-                                fontSize = 15.sp,
-                                lineHeight = 24.sp,
-                                textAlign = TextAlign.Right
+                                fontSize = if (codeLike) 12.sp else 15.sp,
+                                lineHeight = if (codeLike) 18.sp else 23.sp,
+                                fontFamily = if (codeLike) {
+                                    FontFamily.Monospace
+                                } else {
+                                    FontFamily.Default
+                                },
+                                textAlign = if (codeLike) {
+                                    TextAlign.Left
+                                } else {
+                                    TextAlign.Right
+                                }
                             )
                         }
                     }
@@ -769,6 +778,7 @@ private fun MessageBlock(turn: ChatTurn) {
         }
     }
 }
+
 @Composable
 private fun AutoEventLine(text: String) {
     val icon = when {
@@ -820,57 +830,70 @@ private fun CompactComposer(
 ) {
     val c = LocalConfiguration.current
     val compact = c.screenWidthDp < 360 || c.screenHeightDp < 680
+
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 12.dp, top = 3.dp, bottom = 1.dp),
-            color = Color(0xFFF8F4FA),
-            shape = RoundedCornerShape(29.dp),
-            border = BorderStroke(1.dp, LavenderStrong)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            color = SurfaceElevated,
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, Line),
+            shadowElevation = 12.dp
         ) {
             Row(
-                Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                Modifier.padding(horizontal = 7.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                FilledIconButton(
-                    onClick = onSend,
-                    enabled = enabled && value.isNotBlank(),
-                    modifier = Modifier.size(if (compact) 40.dp else 42.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = Color(0xFF66616A),
-                        contentColor = Color.White,
-                        disabledContainerColor = Color(0xFFE7E1E9),
-                        disabledContentColor = Color(0xFF9C96A0)
-                    )
+                Surface(
+                    modifier = Modifier
+                        .size(if (compact) 38.dp else 40.dp)
+                        .clickable(
+                            enabled = enabled && value.isNotBlank(),
+                            onClick = onSend
+                        ),
+                    color = if (enabled && value.isNotBlank()) Blue else Line,
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Outlined.ArrowUpward, "إرسال", Modifier.size(22.dp))
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            "↑",
+                            color = if (enabled && value.isNotBlank()) Canvas else Muted,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
+
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     BasicTextField(
                         value = value,
                         onValueChange = onValueChange,
                         enabled = enabled,
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = Ink,
-                            fontSize = if (compact) 16.sp else 17.sp
+                            fontSize = if (compact) 15.sp else 16.sp
                         ),
                         cursorBrush = SolidColor(Blue),
                         maxLines = 4,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(
-                            onSend = { if (value.isNotBlank() && enabled) onSend() }
+                            onSend = {
+                                if (value.isNotBlank() && enabled) onSend()
+                            }
                         ),
                         decorationBox = { inner ->
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (value.isBlank()) {
                                     Text(
-                                        "اكتب هنا…",
+                                        "رسالة إلى HAI",
                                         color = Muted,
-                                        fontSize = if (compact) 16.sp else 17.sp
+                                        fontSize = if (compact) 14.sp else 15.sp
                                     )
                                 }
                                 inner()
@@ -878,19 +901,25 @@ private fun CompactComposer(
                         }
                     )
                 }
+
                 Spacer(Modifier.width(6.dp))
-                FilledIconButton(
-                    onClick = onMedia,
-                    enabled = enabled,
-                    modifier = Modifier.size(if (compact) 40.dp else 42.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = Blue,
-                        contentColor = Color.White,
-                        disabledContainerColor = Blue.copy(alpha = 0.38f),
-                        disabledContentColor = Color.White.copy(alpha = 0.7f)
-                    )
+
+                Surface(
+                    modifier = Modifier
+                        .size(if (compact) 38.dp else 40.dp)
+                        .clickable(enabled = enabled, onClick = onMedia),
+                    color = BlueSoft,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1D4654))
                 ) {
-                    Icon(Icons.Outlined.Add, "إدراج وسائط", Modifier.size(24.dp))
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            "+",
+                            color = Blue,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         }
