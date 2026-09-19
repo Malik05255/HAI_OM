@@ -402,6 +402,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        if (queue.started && isAutoTaskRequest(text)) {
+            collectAutomaticRequirements(text, askToStartAfter = false)
+            return
+        }
+
         if (isExecutionTrigger(text)) {
             if (isProgrammingRequest(text) && text.length > 24) {
                 collectAutomaticRequirements(text, askToStartAfter = true)
@@ -418,7 +423,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        if (isProgrammingRequest(text)) {
+        if (isAutoTaskRequest(text)) {
             collectAutomaticRequirements(text, askToStartAfter = false)
         } else {
             runChat(text)
@@ -526,6 +531,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 chatHistory = (it.chatHistory + ChatTurn(role, text)).takeLast(40)
             )
         }
+    }
+
+    private fun isAutoTaskRequest(text: String): Boolean {
+        if (isProgrammingRequest(text)) return true
+
+        val value = text.trim().lowercase()
+        if (value.isBlank()) return false
+        if (value in setOf("تمام", "اوكي", "أوكي", "شكرا", "شكرًا", "حلو", "ممتاز")) {
+            return false
+        }
+
+        val questionStarters = listOf(
+            "هل ", "وش ", "ما ", "ليش ", "كيف ", "متى ", "وين ",
+            "ايش ", "اشرح", "فسر", "وضح", "لخص"
+        )
+        return questionStarters.none { value.startsWith(it) }
     }
 
     private fun isExecutionTrigger(text: String): Boolean {
