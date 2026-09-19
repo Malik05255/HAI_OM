@@ -812,7 +812,7 @@ private fun AnimatedToolDock(
                     Icons.Outlined.MoreVert,
                     if (open) "إغلاق الأدوات" else "فتح الأدوات",
                     tint = Color.White,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }
@@ -1371,31 +1371,23 @@ private fun AutoExecuteTopControl(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier,
-        color = Color.White,
-        shape = RoundedCornerShape(13.dp),
-        border = BorderStroke(1.dp, Line),
-        shadowElevation = 2.dp
-    ) {
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AutoExecuteCheckBox(
-                    checked = checked,
-                    onClick = { onToggle(!checked) }
-                )
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    "تنفيذ تلقائي",
-                    modifier = Modifier.clickable { onToggle(!checked) },
-                    color = Ink,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Row(
+            modifier = modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AutoExecuteCheckBox(
+                checked = checked,
+                onClick = { onToggle(!checked) }
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                "تنفيذ تلقائي",
+                modifier = Modifier.clickable { onToggle(!checked) },
+                color = Ink,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
@@ -1407,7 +1399,7 @@ private fun AutoExecuteCheckBox(
 ) {
     Surface(
         modifier = Modifier
-            .size(22.dp)
+            .size(20.dp)
             .clickable(onClick = onClick),
         color = if (checked) BlueSoft else Color.White,
         shape = RoundedCornerShape(5.dp),
@@ -1436,38 +1428,38 @@ private fun AutoExecuteConfirmBanner(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier.widthIn(max = 340.dp),
+        modifier = modifier.widthIn(max = 315.dp),
         color = Color.White,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, Line),
-        shadowElevation = 6.dp
+        shadowElevation = 4.dp
     ) {
         Column(
-            Modifier.padding(horizontal = 13.dp, vertical = 10.dp)
+            Modifier.padding(horizontal = 11.dp, vertical = 8.dp)
         ) {
             Text(
                 "سوف يتم تنفيذ كل المهام بشكل تلقائي",
                 modifier = Modifier.fillMaxWidth(),
                 color = Ink,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(4.dp))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = onCancel) {
-                    Text("إلغاء")
+                    Text("إلغاء", fontSize = 12.sp)
                 }
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(2.dp))
                 Button(
                     onClick = onConfirm,
-                    shape = RoundedCornerShape(11.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("موافق")
+                    Text("موافق", fontSize = 12.sp)
                 }
             }
         }
