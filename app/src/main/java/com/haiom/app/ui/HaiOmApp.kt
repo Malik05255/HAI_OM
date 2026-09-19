@@ -7,6 +7,11 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -99,6 +104,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.haiom.app.MainViewModel
 import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
+import kotlinx.coroutines.delay
 
 private val Canvas = Color(0xFFFCFBFD)
 private val SurfaceSoft = Color(0xFFFFFAFD)
@@ -127,6 +133,7 @@ fun HaiOmApp(
     var dockOpen by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<ToolPanel?>(null) }
     var showAutoExecuteConfirm by remember { mutableStateOf(false) }
+    var showAutoExecuteControl by remember { mutableStateOf(false) }
     val media = remember { mutableStateListOf<PickedMedia>() }
 
     val mediaPicker = rememberLauncherForActivityResult(
@@ -175,6 +182,13 @@ fun HaiOmApp(
             onOpenGitHub = vm::openGitHubVerification,
             onCancel = vm::cancelGitHubLink
         )
+    }
+
+    LaunchedEffect(showAutoExecuteControl) {
+        if (showAutoExecuteControl) {
+            delay(2_000)
+            showAutoExecuteControl = false
+        }
     }
 
     state.updateInfo?.let { update ->
@@ -288,20 +302,44 @@ fun HaiOmApp(
             }
 
             if (panel == null) {
-                AutoExecuteTopControl(
-                    checked = state.autoExecuteEnabled,
-                    onToggle = { enabled ->
-                        if (enabled) {
-                            showAutoExecuteConfirm = true
-                        } else {
-                            vm.setAutoExecuteEnabled(false)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .height(72.dp)
+                        .clickable {
+                            showAutoExecuteControl = true
                         }
-                    },
+                )
+
+                AnimatedVisibility(
+                    visible = showAutoExecuteControl,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
-                        .padding(top = 3.dp)
-                )
+                        .padding(top = 2.dp),
+                    enter = slideInVertically(
+                        initialOffsetY = { -it },
+                        animationSpec = tween(180)
+                    ) + fadeIn(animationSpec = tween(140)),
+                    exit = slideOutVertically(
+                        targetOffsetY = { -it },
+                        animationSpec = tween(180)
+                    ) + fadeOut(animationSpec = tween(120))
+                ) {
+                    AutoExecuteTopControl(
+                        checked = state.autoExecuteEnabled,
+                        onToggle = { enabled ->
+                            if (enabled) {
+                                showAutoExecuteConfirm = true
+                            } else {
+                                vm.setAutoExecuteEnabled(false)
+                            }
+                            showAutoExecuteControl = false
+                        }
+                    )
+                }
             }
 
             if (showAutoExecuteConfirm) {
@@ -1428,38 +1466,39 @@ private fun AutoExecuteConfirmBanner(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier.widthIn(max = 315.dp),
+        modifier = modifier.widthIn(min = 255.dp, max = 285.dp),
         color = Color.White,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, Line),
-        shadowElevation = 4.dp
+        shadowElevation = 3.dp
     ) {
         Column(
-            Modifier.padding(horizontal = 11.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 "سوف يتم تنفيذ كل المهام بشكل تلقائي",
-                modifier = Modifier.fillMaxWidth(),
                 color = Ink,
                 fontSize = 12.sp,
+                lineHeight = 17.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(3.dp))
             Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = onCancel) {
-                    Text("إلغاء", fontSize = 12.sp)
+                    Text("إلغاء", fontSize = 11.sp)
                 }
                 Spacer(Modifier.width(2.dp))
                 Button(
                     onClick = onConfirm,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(9.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp)
                 ) {
-                    Text("موافق", fontSize = 12.sp)
+                    Text("موافق", fontSize = 11.sp)
                 }
             }
         }
