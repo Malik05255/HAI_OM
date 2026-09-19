@@ -10,7 +10,6 @@ val signingStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSW
 val signingKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
 val signingKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
 val githubOAuthClientId = providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID").orNull.orEmpty()
-val githubOAuthClientSecret = providers.environmentVariable("GITHUB_OAUTH_CLIENT_SECRET").orNull.orEmpty()
 
 fun buildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -23,18 +22,13 @@ android {
         applicationId = "com.haiom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "0.9.1"
+        versionCode = 23
+        versionName = "0.9.2"
 
         buildConfigField(
             "String",
             "GITHUB_OAUTH_CLIENT_ID",
             buildConfigString(githubOAuthClientId)
-        )
-        buildConfigField(
-            "String",
-            "GITHUB_OAUTH_CLIENT_SECRET",
-            buildConfigString(githubOAuthClientSecret)
         )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

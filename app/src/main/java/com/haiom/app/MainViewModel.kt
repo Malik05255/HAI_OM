@@ -1,7 +1,6 @@
 package com.haiom.app
 
 import android.app.Application
-import android.content.Context
 import com.haiom.app.agent.RemoteAgentRunner
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -39,6 +38,8 @@ data class MainUiState(
     val githubLinking: Boolean = false,
     val githubLaunchUrl: String? = null,
     val githubLinkStatus: String = "",
+    val githubDeviceCode: String = "",
+    val githubVerificationUrl: String = "",
     val githubOAuthAvailable: Boolean = false,
     val githubJustLinked: Boolean = false,
     val omniReady: Boolean = false,
@@ -57,12 +58,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val updater = AppUpdateManager(application)
     private val githubAppLinker = GitHubAppLinker()
     private val githubOAuthClient = GitHubOAuthClient(
-        clientId = BuildConfig.GITHUB_OAUTH_CLIENT_ID,
-        clientSecret = BuildConfig.GITHUB_OAUTH_CLIENT_SECRET
-    )
-    private val githubOAuthPrefs = application.getSharedPreferences(
-        "github_oauth_pending",
-        Context.MODE_PRIVATE
+        clientId = BuildConfig.GITHUB_OAUTH_CLIENT_ID
     )
     private val directChat = DirectChatClient()
     private var githubLinkJob: Job? = null
@@ -103,53 +99,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!githubOAuthClient.configured) {
             _state.update {
                 it.copy(
-                    githubLaunchUrl = GITHUB_TOKEN_TEMPLATE_URL,
-                    githubLinkStatus = "في GitHub اختر Repository access → All repositories، أنشئ الرمز وانسخه، ثم ارجع واضغط لصق وربط",
-                    githubJustLinked = false,
-                    error = null,
-                    message = null
+                    error = "ربط GitHub بالكود غير مهيأ في هذا الإصدار",
+                    githubJustLinked = false
                 )
             }
             return
         }
-
-        val session = runCatching {
-            githubOAuthClient.createSession()
-        }.getOrElse { throwable ->
-            _state.update {
-                it.copy(
-                    error = throwable.message ?: "تعذر بدء ربط GitHub"
-                )
-            }
-            return
-        }
-
-        githubOAuthPrefs.edit()
-            .putString(OAUTH_STATE_KEY, session.state)
-            .putString(OAUTH_VERIFIER_KEY, session.verifier)
-            .apply()
-
-        _state.update {
-            it.copy(
-                githubLinking = true,
-                githubLaunchUrl = session.authorizationUrl,
-                githubLinkStatus = "وافق على صلاحيات OM في GitHub",
-                githubJustLinked = false,
-                error = null,
-                message = null
-            )
-        }
-    }
-
-    fun completeGitHubOAuth(callbackUrl: String) {
-        if (!githubOAuthClient.configured) return
 
         githubLinkJob?.cancel()
         _state.update {
             it.copy(
                 githubLinking = true,
-                githubLinkStatus = "جاري اعتماد حساب GitHub…",
                 githubLaunchUrl = null,
+                githubLinkStatus = "جاري طلب كود GitHub…",
+                githubDeviceCode = "",
+                githubVerificationUrl = "",
+                githubJustLinked = false,
                 error = null,
                 message = null
             )
@@ -157,47 +122,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         githubLinkJob = viewModelScope.launch {
             try {
-                val (code, returnedState) =
-                    githubOAuthClient.parseCallback(callbackUrl)
-
-                val expectedState = githubOAuthPrefs
-                    .getString(OAUTH_STATE_KEY, null)
-                    .orEmpty()
-                val verifier = githubOAuthPrefs
-                    .getString(OAUTH_VERIFIER_KEY, null)
-                    .orEmpty()
-
-                if (
-                    expectedState.isBlank() ||
-                    verifier.isBlank() ||
-                    returnedState != expectedState
-                ) {
-                    error("تعذر التحقق من جلسة GitHub")
-                }
-
-                val token = githubOAuthClient.exchangeCode(
-                    code = code,
-                    verifier = verifier
-                )
+                val authorization =
+                    githubOAuthClient.requestDeviceAuthorization()
 
                 _state.update {
                     it.copy(
-                        githubLinkStatus = "جاري تحميل مشاريعك…"
+                        githubLinkStatus = "أدخل الكود في GitHub ووافق على الصلاحيات",
+                        githubDeviceCode = authorization.userCode,
+                        githubVerificationUrl = authorization.verificationUri
                     )
                 }
 
-                val account = GitHubAccountClient(token)
+                val accessToken =
+                    githubOAuthClient.waitForAuthorization(
+                        authorization
+                    )
+
+                _state.update {
+                    it.copy(
+                        githubLinkStatus = "تمت الموافقة، جاري تحميل مشاريعك…"
+                    )
+                }
+
+                val account = GitHubAccountClient(accessToken)
                 val login = account.login()
                 val repositories = account.repositories()
 
                 secrets.clearGitHubApp()
-                secrets.saveGitHubToken(token)
-                clearPendingOAuth()
+                secrets.saveGitHubToken(accessToken)
 
                 _state.update {
                     it.copy(
                         githubLinking = false,
+                        githubLaunchUrl = null,
                         githubLinkStatus = "",
+                        githubDeviceCode = "",
+                        githubVerificationUrl = "",
                         hasGitHubToken = true,
                         githubLogin = login,
                         repositories = repositories,
@@ -206,19 +166,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             } catch (_: CancellationException) {
-                clearPendingOAuth()
                 _state.update {
                     it.copy(
                         githubLinking = false,
-                        githubLinkStatus = ""
+                        githubLaunchUrl = null,
+                        githubLinkStatus = "",
+                        githubDeviceCode = "",
+                        githubVerificationUrl = ""
                     )
                 }
             } catch (t: Throwable) {
-                clearPendingOAuth()
                 _state.update {
                     it.copy(
                         githubLinking = false,
+                        githubLaunchUrl = null,
                         githubLinkStatus = "",
+                        githubDeviceCode = "",
+                        githubVerificationUrl = "",
                         error = t.message?.takeIf { message -> message.isNotBlank() }
                             ?: "تعذر ربط GitHub"
                     )
@@ -229,87 +193,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun connectGitHubToken(rawToken: String) {
-        if (_state.value.running || _state.value.githubLinking) return
-
-        val token = rawToken
-            .trim()
-            .removePrefix("Bearer ")
-            .trim()
-
-        if (token.isBlank()) {
-            _state.update {
-                it.copy(
-                    error = "انسخ رمز GitHub أولًا ثم اضغط لصق وربط"
-                )
-            }
-            return
-        }
-
-        githubLinkJob?.cancel()
+    fun openGitHubVerification() {
+        val url = _state.value.githubVerificationUrl
+        if (url.isBlank()) return
         _state.update {
-            it.copy(
-                githubLinking = true,
-                githubLinkStatus = "جاري التحقق من GitHub…",
-                error = null,
-                message = null
-            )
-        }
-
-        githubLinkJob = viewModelScope.launch {
-            try {
-                val account = GitHubAccountClient(token)
-                val login = account.login()
-                val repositories = account.repositories()
-
-                secrets.clearGitHubApp()
-                secrets.saveGitHubToken(token)
-
-                _state.update {
-                    it.copy(
-                        githubLinking = false,
-                        githubLinkStatus = "",
-                        hasGitHubToken = true,
-                        githubLogin = login,
-                        repositories = repositories,
-                        githubJustLinked = true,
-                        message = "تم ربط GitHub. اختر المشروع الذي تريد العمل عليه"
-                    )
-                }
-            } catch (_: CancellationException) {
-                _state.update {
-                    it.copy(
-                        githubLinking = false,
-                        githubLinkStatus = ""
-                    )
-                }
-            } catch (t: Throwable) {
-                _state.update {
-                    it.copy(
-                        githubLinking = false,
-                        githubLinkStatus = "",
-                        error = when {
-                            t.message.orEmpty().contains("401") ->
-                                "رمز GitHub غير صالح"
-                            else ->
-                                "تعذر التحقق من الرمز. تأكد من نسخه كاملًا ومن الصلاحيات"
-                        }
-                    )
-                }
-            } finally {
-                githubLinkJob = null
-            }
+            it.copy(githubLaunchUrl = url)
         }
     }
 
     fun cancelGitHubLink() {
         githubLinkJob?.cancel()
         githubLinkJob = null
-        clearPendingOAuth()
         _state.update {
             it.copy(
                 githubLinking = false,
-                githubLinkStatus = ""
+                githubLaunchUrl = null,
+                githubLinkStatus = "",
+                githubDeviceCode = "",
+                githubVerificationUrl = ""
             )
         }
     }
@@ -328,7 +229,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         githubLinkJob = null
         secrets.clearGitHubToken()
         secrets.clearGitHubApp()
-        clearPendingOAuth()
         _state.update {
             it.copy(
                 hasGitHubToken = false,
@@ -337,6 +237,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 githubLinking = false,
                 githubLaunchUrl = null,
                 githubLinkStatus = "",
+                githubDeviceCode = "",
+                githubVerificationUrl = "",
                 githubJustLinked = false,
                 message = "تم فصل GitHub"
             )
@@ -565,10 +467,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun clearPendingOAuth() {
-        githubOAuthPrefs.edit().clear().apply()
-    }
-
     private fun appendLog(message: String) {
         val simple = when {
             message.contains("قراءة المستودع", true) -> "قراءة المشروع"
@@ -637,19 +535,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearError() = _state.update { it.copy(error = null) }
 
     companion object {
-        private const val OAUTH_STATE_KEY = "state"
-        private const val OAUTH_VERIFIER_KEY = "verifier"
-
-        private const val GITHUB_TOKEN_TEMPLATE_URL =
-            "https://github.com/settings/personal-access-tokens/new" +
-                "?name=OM-Mobile" +
-                "&description=OM+Android+coding+assistant" +
-                "&expires_in=366" +
-                "&contents=write" +
-                "&pull_requests=write" +
-                "&actions=read" +
-                "&workflows=write"
-
         private val EXPLICIT_PROGRAMMING_PHRASES = listOf(
             "ابدأ البرمجة", "ابدأ تنفيذ", "نفذ الآن", "نفّذ الآن",
             "كمل البرمجة", "كمل التنفيذ", "اتصل بالمستودع ونفذ",
