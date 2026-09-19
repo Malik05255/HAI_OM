@@ -70,6 +70,8 @@ data class MainUiState(
     val autoRemoteRunUrl: String = "",
     val autoRemoteState: String = "",
     val autoRemoteStage: String = "",
+    val autoLiveCode: String = "",
+    val programmingLiveCode: String = "",
     val programming: Boolean = false,
     val chatHistory: List<ChatTurn> = emptyList()
 )
@@ -116,7 +118,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         autoRemoteRunId = queue.remoteRunId,
                         autoRemoteRunUrl = queue.remoteRunUrl,
                         autoRemoteState = queue.remoteState,
-                        autoRemoteStage = queue.remoteStage
+                        autoRemoteStage = queue.remoteStage,
+                        autoLiveCode = queue.liveCode
                     )
                 }
             }
@@ -743,6 +746,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 result = null,
                 error = null,
                 logs = listOf("بدأ التنفيذ"),
+                programmingLiveCode = "",
                 chatHistory = visibleHistory
             )
         }
@@ -767,7 +771,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val result = withContext(Dispatchers.IO) {
                     RemoteAgentRunner(getApplication(), github)
-                        .run(repositoryUrl, effectiveRequirements, ::appendLog)
+                        .run(
+                            repositoryUrl = repositoryUrl,
+                            requirements = effectiveRequirements,
+                            onEvent = ::appendLog,
+                            onLiveCode = { code ->
+                                _state.update { current ->
+                                    current.copy(programmingLiveCode = code)
+                                }
+                            }
+                        )
                 }
                 val completedHistory = result.answer
                     ?.takeIf { it.isNotBlank() }
