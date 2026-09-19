@@ -506,7 +506,9 @@ private fun ChatCanvas(
         history.size,
         extraAnswer,
         running,
-        progressText
+        progressText,
+        liveCoding,
+        remoteStage
     ) {
         if (renderedItemCount > 0) {
             listState.animateScrollToItem(renderedItemCount - 1)
