@@ -1,11 +1,19 @@
 package com.haiom.app.ui
 
 import android.app.Activity
+import android.Manifest
+import android.content.ClipData
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,9 +30,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -60,10 +70,12 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -87,6 +99,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -105,6 +118,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -113,6 +127,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import com.haiom.app.MainViewModel
 import com.haiom.app.automation.AutoTaskItem
 import com.haiom.app.automation.AutoTaskStatus
@@ -120,15 +135,22 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
 import kotlinx.coroutines.delay
 
-private val Canvas = Color(0xFFFCFBFD)
-private val SurfaceSoft = Color(0xFFFFFAFD)
-private val Lavender = Color(0xFFF3EEF7)
-private val LavenderStrong = Color(0xFFE8DFF0)
-private val Line = Color(0xFFE7E0E9)
-private val Blue = Color(0xFF4E82E9)
-private val BlueSoft = Color(0xFFEAF0FF)
-private val Ink = Color(0xFF1B181D)
-private val Muted = Color(0xFF98929C)
+private val Canvas = Color(0xFFF8FBFF)
+private val SurfaceSoft = Color(0xFFFFFFFF)
+private val Lavender = Color(0xFFF2F1FF)
+private val LavenderStrong = Color(0xFFE9E7FF)
+private val Line = Color(0xFFE4EAF2)
+private val Blue = Color(0xFF4F6BFF)
+private val BlueSoft = Color(0xFFEEF2FF)
+private val Ink = Color(0xFF172033)
+private val Muted = Color(0xFF8A94A6)
+private val Violet = Color(0xFF8C7CFF)
+private val SurfaceElevated = Color(0xFFFFFFFF)
+private val Signal = Color(0xFFFFB6A3)
+private val Moss = Color(0xFF62C6A5)
+private val Sky = Color(0xFFDDF7FF)
+private val Peach = Color(0xFFFFEEE9)
+private val PaperShadow = Color(0x120D2744)
 
 private enum class ToolPanel { PROJECTS, HISTORY, MODELS, SETTINGS }
 private enum class SettingsPage { ROOT, GITHUB, AUTOMATION }
@@ -141,18 +163,186 @@ fun HaiOmApp(
 ) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
     val snackbar = remember { SnackbarHostState() }
     var draft by remember { mutableStateOf("") }
     val selectedRepo = state.selectedRepository
     var dockOpen by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<ToolPanel?>(null) }
     var showAutoExecuteConfirm by remember { mutableStateOf(false) }
-    var showAutoExecuteControl by remember { mutableStateOf(false) }
     var openAutomationSettings by remember { mutableStateOf(false) }
     var lastHomeBackAt by remember { mutableStateOf(0L) }
     var runtimeNow by remember { mutableStateOf(System.currentTimeMillis()) }
     val media = remember { mutableStateListOf<PickedMedia>() }
+    var voiceListening by remember { mutableStateOf(false) }
+    val audioManager = remember(context) {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+    var voicePreviousMusicVolume by remember {
+        mutableStateOf<Int?>(null)
+    }
+    val speechRecognizer = remember(context) {
+        if (SpeechRecognizer.isRecognitionAvailable(context)) {
+            SpeechRecognizer.createSpeechRecognizer(context)
+        } else {
+            null
+        }
+    }
+
+    fun silenceVoiceRecognitionTone() {
+        if (voicePreviousMusicVolume != null) return
+        val currentVolume = runCatching {
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        }.getOrNull() ?: return
+
+        voicePreviousMusicVolume = currentVolume
+        runCatching {
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                0,
+                0
+            )
+        }
+    }
+
+    fun restoreVoiceAudio() {
+        val previousVolume = voicePreviousMusicVolume ?: return
+        voicePreviousMusicVolume = null
+        runCatching {
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                previousVolume,
+                0
+            )
+        }
+    }
+
+    fun startVoiceRecognition() {
+        val recognizer = speechRecognizer
+        if (recognizer == null) {
+            Toast.makeText(
+                context,
+                "التعرف على الصوت غير متاح على هذا الجهاز",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ar-SA")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        }
+
+        voiceListening = true
+        silenceVoiceRecognitionTone()
+        runCatching {
+            recognizer.startListening(intent)
+        }.onFailure {
+            voiceListening = false
+            restoreVoiceAudio()
+            Toast.makeText(
+                context,
+                "تعذر بدء التسجيل الصوتي",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val microphonePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startVoiceRecognition()
+        } else {
+            Toast.makeText(
+                context,
+                "اسمح بالميكروفون لإرسال رسالة صوتية",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    DisposableEffect(speechRecognizer, vm) {
+        speechRecognizer?.setRecognitionListener(
+            object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {
+                    voiceListening = true
+                }
+
+                override fun onBeginningOfSpeech() {
+                    voiceListening = true
+                }
+
+                override fun onRmsChanged(rmsdB: Float) = Unit
+                override fun onBufferReceived(buffer: ByteArray?) = Unit
+                override fun onEndOfSpeech() = Unit
+
+                override fun onError(error: Int) {
+                    voiceListening = false
+                    restoreVoiceAudio()
+                    if (
+                        error != SpeechRecognizer.ERROR_NO_MATCH &&
+                        error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                    ) {
+                        Toast.makeText(
+                            context,
+                            "تعذر فهم الصوت، حاول مرة أخرى",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                override fun onResults(results: Bundle?) {
+                    voiceListening = false
+                    restoreVoiceAudio()
+                    val text = results
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()
+                        ?.trim()
+                        .orEmpty()
+
+                    if (text.isNotBlank()) {
+                        vm.runAgent(text)
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "لم يتم التقاط كلام واضح",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                override fun onPartialResults(partialResults: Bundle?) = Unit
+                override fun onEvent(eventType: Int, params: Bundle?) = Unit
+            }
+        )
+
+        onDispose {
+            runCatching { speechRecognizer?.cancel() }
+            runCatching { speechRecognizer?.destroy() }
+            restoreVoiceAudio()
+        }
+    }
+
+    val requestVoiceInput: () -> Unit = {
+        if (voiceListening) {
+            speechRecognizer?.stopListening()
+        } else if (
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            startVoiceRecognition()
+        } else {
+            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     val mediaPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -202,13 +392,6 @@ fun HaiOmApp(
         )
     }
 
-    LaunchedEffect(showAutoExecuteControl) {
-        if (showAutoExecuteControl) {
-            delay(2_000)
-            showAutoExecuteControl = false
-        }
-    }
-
     LaunchedEffect(Unit) {
         while (true) {
             runtimeNow = System.currentTimeMillis()
@@ -219,7 +402,6 @@ fun HaiOmApp(
     BackHandler(enabled = panel == null) {
         when {
             showAutoExecuteConfirm -> showAutoExecuteConfirm = false
-            showAutoExecuteControl -> showAutoExecuteControl = false
             dockOpen -> dockOpen = false
             else -> {
                 val now = System.currentTimeMillis()
@@ -277,6 +459,8 @@ fun HaiOmApp(
                                 arrayOf("image/*", "video/*", "application/pdf", "text/plain")
                             )
                         },
+                        voiceListening = voiceListening,
+                        onVoiceLongPress = requestVoiceInput,
                         onSend = {
                             if (draft.isBlank() || (state.running && !state.autoExecuteEnabled)) return@CompactComposer
                             val attachmentNote = if (media.isEmpty()) "" else
@@ -389,58 +573,6 @@ fun HaiOmApp(
                 )
             }
 
-            if (panel == null) {
-                // نقطة لمس مخفية فقط في أعلى يمين الشاشة.
-                val autoExecuteTouchSource = remember {
-                    MutableInteractionSource()
-                }
-
-                Box(
-                    modifier = Modifier
-                        .align(AbsoluteAlignment.TopRight)
-                        .statusBarsPadding()
-                        .padding(top = 0.dp, end = 0.dp)
-                        .size(80.dp)
-                        .clickable(
-                            interactionSource = autoExecuteTouchSource,
-                            indication = null
-                        ) {
-                            haptics.performHapticFeedback(
-                                HapticFeedbackType.TextHandleMove
-                            )
-                            showAutoExecuteControl = true
-                        }
-                )
-
-                AnimatedVisibility(
-                    visible = showAutoExecuteControl,
-                    modifier = Modifier
-                        .align(AbsoluteAlignment.TopRight)
-                        .statusBarsPadding()
-                        .padding(top = 3.dp, end = 8.dp),
-                    enter = slideInVertically(
-                        initialOffsetY = { -it },
-                        animationSpec = tween(170)
-                    ) + fadeIn(animationSpec = tween(130)),
-                    exit = slideOutVertically(
-                        targetOffsetY = { -it },
-                        animationSpec = tween(160)
-                    ) + fadeOut(animationSpec = tween(110))
-                ) {
-                    AutoExecuteTopControl(
-                        checked = state.autoExecuteEnabled,
-                        onToggle = { enabled ->
-                            if (enabled) {
-                                showAutoExecuteConfirm = true
-                            } else {
-                                vm.setAutoExecuteEnabled(false)
-                            }
-                            showAutoExecuteControl = false
-                        }
-                    )
-                }
-            }
-
             if (showAutoExecuteConfirm) {
                 AutoExecuteConfirmBanner(
                     onConfirm = {
@@ -451,9 +583,9 @@ fun HaiOmApp(
                         showAutoExecuteConfirm = false
                     },
                     modifier = Modifier
-                        .align(AbsoluteAlignment.TopRight)
+                        .align(Alignment.TopCenter)
                         .statusBarsPadding()
-                        .padding(top = 46.dp, end = 8.dp)
+                        .padding(top = 0.dp)
                 )
             }
 
@@ -482,7 +614,16 @@ fun HaiOmApp(
                             .padding(top = railTop),
                         open = dockOpen,
                         connected = state.hasGitHubToken,
+                        autoEnabled = state.autoExecuteEnabled,
                         onToggle = { dockOpen = !dockOpen },
+                        onAutoExecute = {
+                            if (state.autoExecuteEnabled) {
+                                vm.setAutoExecuteEnabled(false)
+                            } else {
+                                showAutoExecuteConfirm = true
+                            }
+                            dockOpen = false
+                        },
                         onNewChat = {
                             vm.clearChat()
                             draft = ""
@@ -575,7 +716,7 @@ private fun ChatCanvas(
     Column(
         modifier = modifier
             .statusBarsPadding()
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 14.dp)
     ) {
         Spacer(Modifier.height(8.dp))
 
@@ -630,7 +771,7 @@ private fun ChatCanvas(
                     top = 18.dp,
                     bottom = 10.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(history) { turn ->
                     MessageBlock(turn)
@@ -664,104 +805,349 @@ private fun ChatCanvas(
 @Composable
 private fun EmptyState(modifier: Modifier = Modifier) {
     Column(
-        modifier.padding(horizontal = 26.dp),
+        modifier = modifier.padding(horizontal = 30.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("كيف أساعدك؟", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Medium)
+        Box(
+            modifier = Modifier.size(116.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .size(46.dp),
+                color = Sky,
+                shape = CircleShape
+            ) {}
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(38.dp),
+                color = Peach,
+                shape = CircleShape
+            ) {}
+            Surface(
+                modifier = Modifier.size(82.dp),
+                color = SurfaceElevated,
+                shape = RoundedCornerShape(30.dp),
+                border = BorderStroke(1.dp, Line),
+                shadowElevation = 12.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.AutoAwesome,
+                        contentDescription = null,
+                        tint = Blue,
+                        modifier = Modifier.size(34.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            "HAI",
+            color = Ink,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Black
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "مساعدك للمحادثة والبرمجة والتنفيذ",
+            color = Muted,
+            fontSize = 12.sp
+        )
     }
+}
+
+private data class ChatRenderSegment(
+    val text: String,
+    val isCode: Boolean,
+    val language: String = ""
+)
+
+private fun parseChatSegments(raw: String): List<ChatRenderSegment> {
+    val fence = 96.toChar().toString().repeat(3)
+    val result = mutableListOf<ChatRenderSegment>()
+    var cursor = 0
+
+    while (cursor < raw.length) {
+        val open = raw.indexOf(fence, cursor)
+        if (open < 0) {
+            raw.substring(cursor)
+                .takeIf { it.isNotBlank() }
+                ?.let { result += ChatRenderSegment(it.trim(), false) }
+            break
+        }
+
+        if (open > cursor) {
+            raw.substring(cursor, open)
+                .takeIf { it.isNotBlank() }
+                ?.let { result += ChatRenderSegment(it.trim(), false) }
+        }
+
+        val afterFence = open + fence.length
+        val close = raw.indexOf(fence, afterFence)
+        if (close < 0) {
+            raw.substring(afterFence)
+                .takeIf { it.isNotBlank() }
+                ?.let { result += ChatRenderSegment(it.trim(), true) }
+            break
+        }
+
+        var codeBody = raw.substring(afterFence, close)
+            .trimStart('\n', '\r', ' ')
+        var language = ""
+
+        val firstBreak = codeBody.indexOf('\n')
+        if (firstBreak >= 0) {
+            val firstLine = codeBody.substring(0, firstBreak).trim()
+            if (
+                firstLine.length in 1..24 &&
+                firstLine.matches(Regex("[A-Za-z0-9_+.#-]+"))
+            ) {
+                language = firstLine
+                codeBody = codeBody.substring(firstBreak + 1)
+            }
+        }
+
+        result += ChatRenderSegment(
+            text = codeBody.trimEnd(),
+            isCode = true,
+            language = language
+        )
+        cursor = close + fence.length
+    }
+
+    if (result.isEmpty() && raw.isNotBlank()) {
+        result += ChatRenderSegment(raw.trim(), false)
+    }
+
+    return result
+}
+
+private fun containsArabic(text: String): Boolean =
+    text.any { ch ->
+        ch.code in 0x0600..0x06FF ||
+            ch.code in 0x0750..0x077F ||
+            ch.code in 0x08A0..0x08FF
+    }
+
+private fun cleanChatProse(text: String): String =
+    text
+        .replace("**", "")
+        .replace("__", "")
+        .trim()
+
+private fun copyCode(context: Context, code: String) {
+    val clipboard = context.getSystemService(
+        Context.CLIPBOARD_SERVICE
+    ) as ClipboardManager
+
+    clipboard.setPrimaryClip(
+        ClipData.newPlainText("HAI code", code)
+    )
+
+    Toast.makeText(
+        context,
+        "تم نسخ الكود",
+        Toast.LENGTH_SHORT
+    ).show()
 }
 
 @Composable
 private fun MessageBlock(turn: ChatTurn) {
     val user = turn.role == "user"
-    val fence = 96.toChar().toString().repeat(3)
-    val codeLike = turn.text.contains(fence)
-    val messageText = if (codeLike) turn.text.replace(fence, "") else turn.text
+    val context = LocalContext.current
+    val segments = remember(turn.text) {
+        parseChatSegments(turn.text)
+    }
+    val hasCode = segments.any { it.isCode }
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        if (user) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.End
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        val cardMaxWidth = maxWidth * when {
+            user -> 0.72f
+            hasCode -> 0.95f
+            else -> 0.82f
+        }
+
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = if (user) {
+                AbsoluteAlignment.CenterRight
+            } else {
+                AbsoluteAlignment.CenterLeft
+            }
+        ) {
+            Surface(
+                modifier = Modifier.widthIn(
+                    min = 92.dp,
+                    max = cardMaxWidth
+                ),
+                color = if (user) Peach else SurfaceElevated,
+                shape = if (user) {
+                    RoundedCornerShape(
+                        topStart = 18.dp,
+                        topEnd = 18.dp,
+                        bottomStart = 18.dp,
+                        bottomEnd = 6.dp
+                    )
+                } else {
+                    RoundedCornerShape(
+                        topStart = 18.dp,
+                        topEnd = 18.dp,
+                        bottomStart = 6.dp,
+                        bottomEnd = 18.dp
+                    )
+                },
+                border = BorderStroke(
+                    1.dp,
+                    if (user) Color(0xFFFFD9CD) else Line
+                ),
+                shadowElevation = 3.dp
             ) {
-                Text(
-                    "أنا",
-                    color = Color(0xFF7A6D82),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(5.dp))
-                Surface(
-                    modifier = Modifier.fillMaxWidth(0.82f),
-                    color = Lavender,
-                    shape = RoundedCornerShape(
-                        topStart = 20.dp,
-                        topEnd = 20.dp,
-                        bottomStart = 20.dp,
-                        bottomEnd = 7.dp
-                    ),
-                    border = BorderStroke(1.dp, LavenderStrong)
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = 12.dp,
+                        vertical = 9.dp
+                    )
                 ) {
-                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                    CompositionLocalProvider(
+                        LocalLayoutDirection provides LayoutDirection.Rtl
+                    ) {
                         Text(
-                            messageText,
-                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
-                            color = Ink,
-                            fontSize = 15.sp,
-                            lineHeight = 23.sp,
+                            if (user) "أنت" else "HAI",
+                            modifier = Modifier.fillMaxWidth(),
+                            color = if (user) Color(0xFFB66A55) else Blue,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
                             textAlign = TextAlign.Right
                         )
                     }
-                }
-            }
-        } else {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.Start
-            ) {
-                Text(
-                    "HAI",
-                    color = Blue,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(5.dp))
-                Surface(
-                    modifier = Modifier.fillMaxWidth(0.90f),
-                    color = if (codeLike) Color(0xFFF6F5F8) else Color(0xFFF8FAFF),
-                    shape = RoundedCornerShape(
-                        topStart = 20.dp,
-                        topEnd = 20.dp,
-                        bottomStart = 7.dp,
-                        bottomEnd = 20.dp
-                    ),
-                    border = BorderStroke(
-                        1.dp,
-                        if (codeLike) Line else Color(0xFFE3E9F8)
-                    )
-                ) {
-                    if (codeLike) {
-                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                            Text(
-                                messageText,
-                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
-                                color = Color(0xFF3B3840),
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                                fontFamily = FontFamily.Monospace,
-                                textAlign = TextAlign.Left
-                            )
+
+                    Spacer(Modifier.height(5.dp))
+
+                    segments.forEachIndexed { index, segment ->
+                        if (segment.isCode) {
+                            CompositionLocalProvider(
+                                LocalLayoutDirection provides LayoutDirection.Ltr
+                            ) {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Color(0xFFF5F7FC),
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        Color(0xFFDCE3F1)
+                                    )
+                                ) {
+                                    Column {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFFECF1FF))
+                                                .padding(
+                                                    horizontal = 9.dp,
+                                                    vertical = 6.dp
+                                                ),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                segment.language.ifBlank { "CODE" },
+                                                modifier = Modifier.weight(1f),
+                                                color = Blue,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                textAlign = TextAlign.Left
+                                            )
+
+                                            Surface(
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        copyCode(
+                                                            context,
+                                                            segment.text
+                                                        )
+                                                    },
+                                                color = Color.White,
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(
+                                                    1.dp,
+                                                    Color(0xFFDCE3F1)
+                                                )
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(
+                                                        horizontal = 8.dp,
+                                                        vertical = 4.dp
+                                                    ),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        Icons.Outlined.ContentCopy,
+                                                        contentDescription = "نسخ الكود",
+                                                        tint = Blue,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(
+                                                        "نسخ",
+                                                        color = Blue,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Text(
+                                            segment.text,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(
+                                                    horizontal = 11.dp,
+                                                    vertical = 10.dp
+                                                ),
+                                            color = Color(0xFF24304A),
+                                            fontSize = 12.sp,
+                                            lineHeight = 18.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            textAlign = TextAlign.Left
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            val prose = cleanChatProse(segment.text)
+                            val rtl = containsArabic(prose)
+
+                            CompositionLocalProvider(
+                                LocalLayoutDirection provides if (rtl) {
+                                    LayoutDirection.Rtl
+                                } else {
+                                    LayoutDirection.Ltr
+                                }
+                            ) {
+                                Text(
+                                    prose,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Ink,
+                                    fontSize = 14.sp,
+                                    lineHeight = 21.sp,
+                                    textAlign = if (rtl) {
+                                        TextAlign.Right
+                                    } else {
+                                        TextAlign.Left
+                                    }
+                                )
+                            }
                         }
-                    } else {
-                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                            Text(
-                                messageText,
-                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
-                                color = Ink,
-                                fontSize = 15.sp,
-                                lineHeight = 24.sp,
-                                textAlign = TextAlign.Right
-                            )
+
+                        if (index != segments.lastIndex) {
+                            Spacer(Modifier.height(9.dp))
                         }
                     }
                 }
@@ -769,6 +1155,7 @@ private fun MessageBlock(turn: ChatTurn) {
         }
     }
 }
+
 @Composable
 private fun AutoEventLine(text: String) {
     val icon = when {
@@ -816,81 +1203,126 @@ private fun CompactComposer(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
     onMedia: () -> Unit,
+    voiceListening: Boolean,
+    onVoiceLongPress: () -> Unit,
     onSend: () -> Unit
 ) {
-    val c = LocalConfiguration.current
-    val compact = c.screenWidthDp < 360 || c.screenHeightDp < 680
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 12.dp, end = 12.dp, top = 3.dp, bottom = 1.dp),
-            color = Color(0xFFF8F4FA),
-            shape = RoundedCornerShape(29.dp),
-            border = BorderStroke(1.dp, LavenderStrong)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        color = Color(0xF8FFFFFF),
+        shape = RoundedCornerShape(28.dp),
+        border = BorderStroke(1.dp, Line),
+        shadowElevation = 16.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(7.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                FilledIconButton(
-                    onClick = onSend,
-                    enabled = enabled && value.isNotBlank(),
-                    modifier = Modifier.size(if (compact) 40.dp else 42.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = Color(0xFF66616A),
-                        contentColor = Color.White,
-                        disabledContainerColor = Color(0xFFE7E1E9),
-                        disabledContentColor = Color(0xFF9C96A0)
-                    )
-                ) {
-                    Icon(Icons.Outlined.ArrowUpward, "إرسال", Modifier.size(22.dp))
-                }
-
-                Spacer(Modifier.width(6.dp))
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                    BasicTextField(
-                        value = value,
-                        onValueChange = onValueChange,
-                        enabled = enabled,
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 6.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = Ink,
-                            fontSize = if (compact) 16.sp else 17.sp
-                        ),
-                        cursorBrush = SolidColor(Blue),
-                        maxLines = 4,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(
-                            onSend = { if (value.isNotBlank() && enabled) onSend() }
-                        ),
-                        decorationBox = { inner ->
-                            Box(contentAlignment = Alignment.CenterStart) {
-                                if (value.isBlank()) {
-                                    Text(
-                                        "اكتب هنا…",
-                                        color = Muted,
-                                        fontSize = if (compact) 16.sp else 17.sp
-                                    )
+            Surface(
+                modifier = Modifier
+                    .size(44.dp)
+                    .pointerInput(enabled, value, voiceListening) {
+                        detectTapGestures(
+                            onTap = {
+                                if (
+                                    enabled &&
+                                    value.isNotBlank() &&
+                                    !voiceListening
+                                ) {
+                                    onSend()
                                 }
-                                inner()
+                            },
+                            onLongPress = {
+                                if (enabled) {
+                                    onVoiceLongPress()
+                                }
                             }
-                        }
+                        )
+                    },
+                color = when {
+                    voiceListening -> Color(0xFFFFE5DD)
+                    enabled && value.isNotBlank() -> Blue
+                    else -> BlueSoft
+                },
+                shape = CircleShape
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        if (voiceListening) {
+                            Icons.Outlined.Mic
+                        } else {
+                            Icons.Outlined.ArrowUpward
+                        },
+                        contentDescription = if (voiceListening) {
+                            "جاري الاستماع"
+                        } else {
+                            "إرسال؛ اضغط مطولًا للصوت"
+                        },
+                        tint = when {
+                            voiceListening -> Color(0xFFB66A55)
+                            enabled && value.isNotBlank() -> Color.White
+                            else -> Blue
+                        },
+                        modifier = Modifier.size(21.dp)
                     )
                 }
-                Spacer(Modifier.width(6.dp))
-                FilledIconButton(
-                    onClick = onMedia,
+            }
+
+            Spacer(Modifier.width(7.dp))
+
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
                     enabled = enabled,
-                    modifier = Modifier.size(if (compact) 40.dp else 42.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = Blue,
-                        contentColor = Color.White,
-                        disabledContainerColor = Blue.copy(alpha = 0.38f),
-                        disabledContentColor = Color.White.copy(alpha = 0.7f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = Ink,
+                        fontSize = 15.sp
+                    ),
+                    cursorBrush = SolidColor(Blue),
+                    maxLines = 4,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (value.isNotBlank() && enabled) onSend()
+                        }
+                    ),
+                    decorationBox = { inner ->
+                        Box {
+                            if (value.isBlank()) {
+                                Text(
+                                    "اكتب رسالتك…",
+                                    color = Muted,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            inner()
+                        }
+                    }
+                )
+            }
+
+            Spacer(Modifier.width(7.dp))
+
+            Surface(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clickable(enabled = enabled, onClick = onMedia),
+                color = Lavender,
+                shape = CircleShape
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.Add,
+                        contentDescription = "إضافة",
+                        tint = Violet,
+                        modifier = Modifier.size(22.dp)
                     )
-                ) {
-                    Icon(Icons.Outlined.Add, "إدراج وسائط", Modifier.size(24.dp))
                 }
             }
         }
@@ -924,7 +1356,7 @@ private fun MediaStrip(
                         Modifier
                             .align(Alignment.CenterStart)
                             .padding(end = 36.dp),
-                        color = Color(0xFF5D6270),
+                        color = Color(0xFF7D8780),
                         fontSize = 11.sp,
                         maxLines = 1
                     )
@@ -938,7 +1370,7 @@ private fun MediaStrip(
                             Icons.Outlined.Close,
                             "إزالة",
                             Modifier.size(16.dp),
-                            tint = Color(0xFF666B76)
+                            tint = Color(0xFF8A938D)
                         )
                     }
                 }
@@ -952,122 +1384,146 @@ private fun AnimatedToolDock(
     modifier: Modifier,
     open: Boolean,
     connected: Boolean,
+    autoEnabled: Boolean,
     onToggle: () -> Unit,
+    onAutoExecute: () -> Unit,
     onNewChat: () -> Unit,
     onProjects: () -> Unit,
     onHistory: () -> Unit,
     onModels: () -> Unit,
     onSettings: () -> Unit
 ) {
-    val panelWidth = 58.dp
-    val handleWidth = 17.dp
-    val panelOffset by animateDpAsState(
-        targetValue = if (open) 0.dp else -panelWidth,
-        animationSpec = tween(durationMillis = 280),
-        label = "drawerPanel"
-    )
-    val handleOffset by animateDpAsState(
-        targetValue = if (open) panelWidth else 0.dp,
-        animationSpec = tween(durationMillis = 280),
-        label = "drawerHandle"
+    val shift by animateDpAsState(
+        targetValue = if (open) 0.dp else (-58).dp,
+        animationSpec = tween(durationMillis = 230),
+        label = "pearlRail"
     )
 
     Box(
         modifier = modifier
-            .width(panelWidth + handleWidth)
-            .height(292.dp)
+            .width(76.dp)
+            .height(452.dp)
     ) {
-        Surface(
+        Column(
             modifier = Modifier
-                .width(panelWidth)
-                .offset(x = panelOffset),
-            color = SurfaceSoft,
-            shape = RoundedCornerShape(
-                topEnd = 24.dp,
-                bottomEnd = 24.dp
-            ),
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 8.dp
+                .offset(x = shift)
+                .padding(start = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier.padding(
-                    vertical = 10.dp,
-                    horizontal = 7.dp
-                ),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                DockIcon(
-                    Icons.Outlined.ChatBubbleOutline,
-                    "دردشة جديدة",
-                    onNewChat
-                )
-                DockIcon(
-                    Icons.Outlined.FolderOpen,
-                    "المشاريع",
-                    onProjects
-                )
-                DockIcon(
-                    Icons.Outlined.History,
-                    "السجل",
-                    onHistory
-                )
-                DockIcon(
-                    Icons.Outlined.AutoAwesome,
-                    "النماذج",
-                    onModels
-                )
-                HorizontalDivider(
-                    modifier = Modifier.width(30.dp),
-                    color = Line
-                )
-                DockIcon(
-                    Icons.Outlined.Settings,
-                    if (connected) "الإعدادات" else "الربط",
-                    onSettings
-                )
-            }
+            PearlAction(
+                icon = Icons.Outlined.ChatBubbleOutline,
+                tint = Blue,
+                background = BlueSoft,
+                onClick = onNewChat
+            )
+            PearlAction(
+                icon = Icons.Outlined.FolderOpen,
+                tint = Color(0xFF4A9D83),
+                background = Color(0xFFE9F8F3),
+                onClick = onProjects
+            )
+            PearlAction(
+                icon = Icons.Outlined.History,
+                tint = Color(0xFFB06B57),
+                background = Peach,
+                onClick = onHistory
+            )
+            PearlAction(
+                icon = Icons.Outlined.Code,
+                tint = Violet,
+                background = Lavender,
+                onClick = onModels
+            )
+            PearlAction(
+                icon = if (connected) Icons.Outlined.Settings else Icons.Outlined.Link,
+                tint = Color(0xFF566274),
+                background = Color(0xFFF0F3F7),
+                onClick = onSettings
+            )
+            Spacer(Modifier.height(110.dp))
+            PearlAutoAction(
+                enabled = autoEnabled,
+                onClick = onAutoExecute
+            )
         }
 
-        Surface(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .offset(x = handleOffset)
-                .width(handleWidth)
-                .height(62.dp)
-                .clickable(onClick = onToggle),
-            color = Blue,
-            shape = RoundedCornerShape(
-                topEnd = 10.dp,
-                bottomEnd = 10.dp
-            ),
-            shadowElevation = 2.dp
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Outlined.MoreVert,
-                    if (open) "إغلاق الأدوات" else "فتح الأدوات",
-                    tint = Color.White,
-                    modifier = Modifier.size(13.dp)
-                )
+        if (!open) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .size(38.dp)
+                    .clickable(onClick = onToggle),
+                color = SurfaceElevated,
+                shape = CircleShape,
+                border = BorderStroke(1.dp, Line),
+                shadowElevation = 8.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.MoreVert,
+                        contentDescription = "فتح الأدوات",
+                        tint = Blue,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
             }
         }
     }
 }
+
 @Composable
-private fun DockIcon(
+private fun PearlAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
+    tint: Color,
+    background: Color,
     onClick: () -> Unit
 ) {
     Surface(
-        modifier = Modifier.size(39.dp),
-        color = Color.White,
+        modifier = Modifier
+            .size(46.dp)
+            .clickable(onClick = onClick),
+        color = background,
         shape = CircleShape,
-        border = BorderStroke(1.dp, Line)
+        border = BorderStroke(1.dp, Color.White),
+        shadowElevation = 7.dp
     ) {
-        IconButton(onClick = onClick) {
-            Icon(icon, label, tint = Ink, modifier = Modifier.size(21.dp))
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(21.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PearlAutoAction(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .size(46.dp)
+            .clickable(onClick = onClick),
+        color = if (enabled) BlueSoft else Lavender,
+        shape = CircleShape,
+        border = BorderStroke(
+            1.dp,
+            if (enabled) Color(0xFFCBD5FF) else Color.White
+        ),
+        shadowElevation = 7.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                "تلقائي",
+                color = if (enabled) Blue else Violet,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -1229,14 +1685,58 @@ private fun ToolScreen(
 @Composable
 private fun ToolHeader(title: String, onBack: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(42.dp)) {
-            Icon(Icons.Outlined.ArrowBack, "رجوع", tint = Ink)
+        Surface(
+            modifier = Modifier
+                .size(42.dp)
+                .clickable(onClick = onBack),
+            color = SurfaceElevated,
+            shape = CircleShape,
+            border = BorderStroke(1.dp, Line),
+            shadowElevation = 6.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Outlined.ArrowBack,
+                    contentDescription = "رجوع",
+                    tint = Blue,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
-        Spacer(Modifier.width(8.dp))
-        Text(title, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = Ink,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Black
+            )
+            Text(
+                "مساحة HAI",
+                color = Muted,
+                fontSize = 10.sp
+            )
+        }
+
+        Surface(
+            color = BlueSoft,
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Text(
+                "LIVE",
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                color = Blue,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
     }
 }
 
@@ -1280,26 +1780,54 @@ private fun ProjectsContent(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Text(
-            "اختر المشروع",
-            color = Ink,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 15.sp
-        )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            "${repositories.size} مشروع",
-            color = Muted,
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.height(12.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Sky,
+            shape = RoundedCornerShape(26.dp)
+        ) {
+            Row(
+                Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(48.dp),
+                    color = Color.White,
+                    shape = RoundedCornerShape(17.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Outlined.FolderOpen,
+                            contentDescription = null,
+                            tint = Blue,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "مشاريعك",
+                        color = Ink,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        "${repositories.size} مشروع متاح",
+                        color = Muted,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
 
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
-            contentPadding = PaddingValues(bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
+            contentPadding = PaddingValues(bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(repositories) { repo ->
                 val pending = pendingFullName == repo.fullName
@@ -1307,71 +1835,91 @@ private fun ProjectsContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { pendingFullName = repo.fullName },
-                    color = if (pending) Lavender else Color.White,
-                    shape = RoundedCornerShape(18.dp),
+                    color = if (pending) BlueSoft else SurfaceElevated,
+                    shape = RoundedCornerShape(22.dp),
                     border = BorderStroke(
                         1.dp,
-                        if (pending) Blue.copy(alpha = 0.45f) else Line
-                    )
+                        if (pending) Color(0xFFCBD5FF) else Line
+                    ),
+                    shadowElevation = if (pending) 8.dp else 3.dp
                 ) {
                     Row(
-                        Modifier.padding(15.dp),
+                        Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Outlined.FolderOpen,
-                            null,
-                            tint = Blue
-                        )
+                        Surface(
+                            modifier = Modifier.size(42.dp),
+                            color = if (pending) Blue else Lavender,
+                            shape = RoundedCornerShape(15.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    repo.fullName.substringAfter('/').take(1).uppercase(),
+                                    color = if (pending) Color.White else Violet,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+                        }
+
                         Spacer(Modifier.width(11.dp))
+
                         Column(Modifier.weight(1f)) {
                             Text(
                                 repo.fullName.substringAfter('/'),
                                 color = Ink,
-                                fontWeight = FontWeight.SemiBold
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                repo.fullName,
+                                repo.fullName.substringBefore('/'),
                                 color = Muted,
-                                fontSize = 11.sp
+                                fontSize = 10.sp
                             )
                         }
+
                         if (pending) {
-                            Icon(
-                                Icons.Outlined.CheckCircle,
-                                "محدد",
-                                tint = Blue
-                            )
+                            Surface(
+                                color = Color.White,
+                                shape = CircleShape
+                            ) {
+                                Icon(
+                                    Icons.Outlined.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Blue,
+                                    modifier = Modifier
+                                        .padding(5.dp)
+                                        .size(19.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        pendingRepository?.let { repo ->
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    enabled = pendingRepository != null,
+                    onClick = { pendingRepository?.let(onSave) }
+                ),
+            color = if (pendingRepository != null) Blue else LavenderStrong,
+            shape = RoundedCornerShape(20.dp),
+            shadowElevation = 8.dp
+        ) {
             Text(
-                "المحدد: ${repo.fullName.substringAfter('/')}",
-                modifier = Modifier.fillMaxWidth(),
-                color = Muted,
-                fontSize = 12.sp,
+                "استخدام هذا المشروع",
+                modifier = Modifier.padding(vertical = 14.dp),
+                color = if (pendingRepository != null) Color.White else Muted,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.ExtraBold,
                 textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(8.dp))
         }
 
-        Button(
-            onClick = {
-                pendingRepository?.let(onSave)
-            },
-            enabled = pendingRepository != null,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.CheckCircle, null)
-            Spacer(Modifier.width(8.dp))
-            Text("حفظ")
-        }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
     }
 }
 
@@ -1387,72 +1935,204 @@ private fun HistoryContent(
         EmptyToolCard("السجل فارغ", "")
         return
     }
+
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(bottom = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        items(logs.reversed()) { log ->
+        items(logs.reversed().take(30)) { log ->
             Surface(
-                Modifier.fillMaxWidth(),
-                color = Color.White,
-                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+                color = SurfaceElevated,
+                shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(1.dp, Line)
             ) {
-                Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(Blue))
+                Row(
+                    Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        modifier = Modifier.size(34.dp),
+                        color = Sky,
+                        shape = CircleShape
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.History,
+                                contentDescription = null,
+                                tint = Blue,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+                    }
                     Spacer(Modifier.width(10.dp))
-                    Text(log, color = Ink, fontSize = 13.sp)
+                    Text(
+                        log,
+                        modifier = Modifier.weight(1f),
+                        color = Ink,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
                 }
             }
         }
+
         answer?.takeIf { it.isNotBlank() }?.let { text ->
             item {
                 Surface(
                     Modifier.fillMaxWidth(),
-                    color = Lavender,
-                    shape = RoundedCornerShape(18.dp)
+                    color = Peach,
+                    shape = RoundedCornerShape(22.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFFD8CB))
                 ) {
-                    Text(text, Modifier.padding(15.dp), color = Ink, fontSize = 14.sp)
+                    Column(Modifier.padding(14.dp)) {
+                        Text(
+                            "النتيجة",
+                            color = Color(0xFFB66A55),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Spacer(Modifier.height(5.dp))
+                        Text(
+                            text,
+                            color = Ink,
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             }
         }
     }
+
     if (!prUrl.isNullOrBlank()) {
-        OutlinedButton(
-            onClick = { onOpenPr(prUrl) },
-            modifier = Modifier.fillMaxWidth(),
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onOpenPr(prUrl) },
+            color = BlueSoft,
             shape = RoundedCornerShape(18.dp)
         ) {
-            Icon(Icons.Outlined.Code, null)
-            Spacer(Modifier.width(8.dp))
-            Text("فتح آخر تعديل")
+            Row(
+                Modifier.padding(13.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Outlined.Code,
+                    contentDescription = null,
+                    tint = Blue,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "فتح آخر تعديل",
+                    color = Blue,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
 private fun ModelsContent(models: List<String>, ready: Boolean) {
-    EmptyToolCard(
-        if (ready) "النماذج جاهزة" else "النماذج غير جاهزة",
-        ""
-    )
-    if (models.isNotEmpty()) {
-        Spacer(Modifier.height(12.dp))
-        models.take(12).forEachIndexed { index, model ->
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (ready) Color(0xFFE9F8F3) else Lavender,
+        shape = RoundedCornerShape(26.dp)
+    ) {
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Surface(
-                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                modifier = Modifier.size(46.dp),
                 color = Color.White,
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, Line)
+                shape = CircleShape
             ) {
-                Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.AutoAwesome, null, tint = Blue)
-                    Spacer(Modifier.width(10.dp))
-                    Text(model, Modifier.weight(1f), color = Ink)
-                    Text("#" + (index + 1), color = Muted, fontSize = 11.sp)
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.AutoAwesome,
+                        contentDescription = null,
+                        tint = if (ready) Moss else Muted,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
+            }
+            Spacer(Modifier.width(11.dp))
+            Column {
+                Text(
+                    if (ready) "المحرك جاهز" else "المحرك غير جاهز",
+                    color = Ink,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 15.sp
+                )
+                Text(
+                    if (ready) "جاهز للمساعدة" else "تحقق من الاتصال",
+                    color = Muted,
+                    fontSize = 10.sp
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(14.dp))
+
+    models.take(12).forEachIndexed { index, model ->
+        val tileColor = when (index % 4) {
+            0 -> BlueSoft
+            1 -> Lavender
+            2 -> Peach
+            else -> Sky
+        }
+        val iconTint = when (index % 4) {
+            0 -> Blue
+            1 -> Violet
+            2 -> Color(0xFFB66A55)
+            else -> Color(0xFF3A8FA4)
+        }
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            color = tileColor,
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Row(
+                Modifier.padding(13.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(38.dp),
+                    color = Color.White,
+                    shape = CircleShape
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Outlined.Code,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    model,
+                    modifier = Modifier.weight(1f),
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "${index + 1}",
+                    color = Muted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -1466,59 +2146,159 @@ private fun SettingsRootContent(
     onCheckUpdate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        OutlinedButton(
-            onClick = onOpenGitHub,
+    Column(modifier = modifier) {
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
+            color = Lavender,
+            shape = RoundedCornerShape(28.dp)
         ) {
-            Icon(Icons.Outlined.Link, null)
-            Spacer(Modifier.width(8.dp))
-            Text("GitHub")
+            Column(Modifier.padding(17.dp)) {
+                Text(
+                    "لوحة التحكم",
+                    color = Ink,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "كل إعدادات HAI في مكان واحد",
+                    color = Muted,
+                    fontSize = 11.sp
+                )
+            }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
 
-        OutlinedButton(
-            onClick = onOpenAutomation,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.AutoAwesome, null)
-            Spacer(Modifier.width(8.dp))
-            Text("المهام التلقائية")
-        }
+        SettingsTile(
+            icon = Icons.Outlined.Link,
+            title = "GitHub",
+            subtitle = "الحساب والمشروع النشط",
+            accent = Blue,
+            background = BlueSoft,
+            onClick = onOpenGitHub
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        SettingsTile(
+            icon = Icons.Outlined.AutoAwesome,
+            title = "التنفيذ التلقائي",
+            subtitle = "المهام والحالة والتحكم",
+            accent = Violet,
+            background = Lavender,
+            onClick = onOpenAutomation
+        )
 
         Spacer(Modifier.weight(1f))
 
-        OutlinedButton(
-            onClick = onCheckUpdate,
-            enabled = !checkingUpdate,
-            modifier = Modifier.widthIn(min = 220.dp, max = 330.dp),
-            shape = RoundedCornerShape(18.dp)
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = !checkingUpdate, onClick = onCheckUpdate),
+            color = Sky,
+            shape = RoundedCornerShape(22.dp)
         ) {
-            if (checkingUpdate) {
-                CircularProgressIndicator(
-                    Modifier.size(17.dp),
-                    strokeWidth = 2.dp
-                )
-            } else {
-                Icon(Icons.Outlined.Refresh, null)
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                if (checkingUpdate) {
-                    "جاري البحث…"
-                } else {
-                    "البحث عن تحديث"
+            Row(
+                Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(38.dp),
+                    color = Color.White,
+                    shape = CircleShape
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Outlined.Refresh,
+                            contentDescription = null,
+                            tint = Blue,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
                 }
-            )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    if (checkingUpdate) "جاري البحث…" else "البحث عن تحديث",
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
 
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun SettingsTile(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    accent: Color,
+    background: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = background,
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, Color.White),
+        shadowElevation = 5.dp
+    ) {
+        Row(
+            Modifier.padding(15.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(46.dp),
+                color = Color.White,
+                shape = CircleShape
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        icon,
+                        contentDescription = title,
+                        tint = accent,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = Ink,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    subtitle,
+                    color = Muted,
+                    fontSize = 10.sp
+                )
+            }
+
+            Surface(
+                modifier = Modifier.size(30.dp),
+                color = Color.White.copy(alpha = 0.72f),
+                shape = CircleShape
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        "›",
+                        color = accent,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1551,81 +2331,128 @@ private fun GitHubSettingsContent(
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Lavender,
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, LavenderStrong)
+            color = BlueSoft,
+            shape = RoundedCornerShape(28.dp)
         ) {
-            Row(
-                Modifier.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Outlined.AccountCircle,
-                    null,
-                    tint = Blue,
-                    modifier = Modifier.size(28.dp)
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        login.ifBlank { "GitHub" },
-                        color = Ink,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "$repositoryCount مشروع",
-                        color = Muted,
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        selectedRepo?.let {
-                            "الحالي: ${it.fullName.substringAfter('/')}"
-                        } ?: "اختر مشروعًا",
-                        color = if (selectedRepo == null) Muted else Blue,
-                        fontSize = 12.sp,
-                        fontWeight = if (selectedRepo == null) FontWeight.Normal else FontWeight.SemiBold
-                    )
+            Column(Modifier.padding(17.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        modifier = Modifier.size(54.dp),
+                        color = Color.White,
+                        shape = CircleShape,
+                        shadowElevation = 5.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.AccountCircle,
+                                contentDescription = null,
+                                tint = Blue,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            login.ifBlank { "GitHub" },
+                            color = Ink,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp
+                        )
+                        Text(
+                            "${repositoryCount} مستودع",
+                            color = Muted,
+                            fontSize = 10.sp
+                        )
+                    }
+
+                    Surface(
+                        color = Color(0xFFE9F8F3),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(
+                            "متصل",
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            color = Moss,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
                 }
-                Icon(
-                    if (selectedRepo == null) {
-                        Icons.Outlined.FolderOpen
-                    } else {
-                        Icons.Outlined.CheckCircle
-                    },
-                    null,
-                    tint = Blue
-                )
+
+                Spacer(Modifier.height(14.dp))
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.White.copy(alpha = 0.78f),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Column(Modifier.padding(13.dp)) {
+                        Text(
+                            "المشروع النشط",
+                            color = Muted,
+                            fontSize = 9.sp
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            selectedRepo?.fullName ?: "لم يتم اختيار مشروع",
+                            color = Ink,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         }
 
         Spacer(Modifier.height(12.dp))
 
-        OutlinedButton(
-            onClick = onOpenProjects,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.FolderOpen, null)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                if (selectedRepo == null) {
-                    "المشاريع"
-                } else {
-                    "تغيير المشروع"
-                }
-            )
-        }
+        SettingsTile(
+            icon = Icons.Outlined.FolderOpen,
+            title = if (selectedRepo == null) "اختيار مشروع" else "تغيير المشروع",
+            subtitle = selectedRepo?.fullName?.substringAfter('/') ?: "حدد مساحة العمل",
+            accent = Blue,
+            background = Sky,
+            onClick = onOpenProjects
+        )
 
         Spacer(Modifier.height(10.dp))
 
-        OutlinedButton(
-            onClick = onDisconnect,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onDisconnect),
+            color = Peach,
+            shape = RoundedCornerShape(22.dp)
         ) {
-            Icon(Icons.Outlined.Logout, null)
-            Spacer(Modifier.width(8.dp))
-            Text("فصل GitHub")
+            Row(
+                Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(38.dp),
+                    color = Color.White,
+                    shape = CircleShape
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Outlined.Logout,
+                            contentDescription = null,
+                            tint = Color(0xFFB66A55),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "فصل الحساب",
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -1671,16 +2498,46 @@ private fun AutomaticTasksContent(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(14.dp))
 
         if (tasks.isEmpty()) {
-            Box(
+            Surface(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentAlignment = Alignment.Center
+                color = Lavender,
+                shape = RoundedCornerShape(28.dp)
             ) {
-                Text("لا توجد مهام", color = Muted, fontSize = 13.sp)
+                Box(contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(
+                            modifier = Modifier.size(56.dp),
+                            color = Color.White,
+                            shape = CircleShape
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Outlined.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Violet,
+                                    modifier = Modifier.size(25.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "لا توجد مهام",
+                            color = Ink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            "ستظهر المهام هنا عند بدء التنفيذ التلقائي",
+                            color = Muted,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
             }
             return@Column
         }
@@ -1690,7 +2547,7 @@ private fun AutomaticTasksContent(
                 .weight(1f)
                 .fillMaxWidth(),
             contentPadding = PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(tasks.sortedBy { it.order }, key = { it.id }) { task ->
                 val staleRunning =
@@ -1708,61 +2565,94 @@ private fun AutomaticTasksContent(
                     else -> "فشل"
                 }
 
-                val statusIcon = when {
-                    staleRunning -> Icons.Outlined.Close
-                    task.status == AutoTaskStatus.WAITING -> Icons.Outlined.MoreVert
-                    task.status == AutoTaskStatus.RUNNING -> Icons.Outlined.AutoAwesome
-                    task.status == AutoTaskStatus.SUCCESS -> Icons.Outlined.CheckCircle
-                    else -> Icons.Outlined.Close
+                val statusColor = when {
+                    staleRunning -> Muted
+                    task.status == AutoTaskStatus.RUNNING -> Blue
+                    task.status == AutoTaskStatus.SUCCESS -> Moss
+                    task.status == AutoTaskStatus.FAILED -> Color(0xFFDB5D6A)
+                    else -> Violet
+                }
+
+                val cardColor = when {
+                    task.status == AutoTaskStatus.RUNNING -> BlueSoft
+                    task.status == AutoTaskStatus.SUCCESS -> Color(0xFFE9F8F3)
+                    task.status == AutoTaskStatus.FAILED -> Peach
+                    else -> SurfaceElevated
                 }
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = if (task.status == AutoTaskStatus.RUNNING && remoteLive) {
-                        BlueSoft
-                    } else {
-                        Color.White
-                    },
-                    shape = RoundedCornerShape(15.dp),
-                    border = BorderStroke(1.dp, Line)
+                    color = cardColor,
+                    shape = RoundedCornerShape(22.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        if (task.status == AutoTaskStatus.RUNNING && remoteLive) {
+                            Color(0xFFCBD5FF)
+                        } else {
+                            Line
+                        }
+                    ),
+                    shadowElevation = if (
+                        task.status == AutoTaskStatus.RUNNING && remoteLive
+                    ) 6.dp else 2.dp
                 ) {
                     Row(
-                        Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                        Modifier.padding(13.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "${task.order}",
-                            color = Muted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.width(10.dp))
+                        Surface(
+                            modifier = Modifier.size(42.dp),
+                            color = Color.White,
+                            shape = CircleShape
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    task.order.toString(),
+                                    color = statusColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.width(11.dp))
+
                         Column(Modifier.weight(1f)) {
                             Text(
                                 task.title,
                                 color = Ink,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold
                             )
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(3.dp))
                             Text(
                                 statusText,
-                                color = if (
-                                    task.status == AutoTaskStatus.RUNNING &&
-                                    remoteLive
-                                ) Blue else Muted,
-                                fontSize = 11.sp
+                                color = statusColor,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
-                        Icon(
-                            statusIcon,
-                            statusText,
-                            tint = if (
-                                (task.status == AutoTaskStatus.RUNNING && remoteLive) ||
-                                task.status == AutoTaskStatus.SUCCESS
-                            ) Blue else Muted,
-                            modifier = Modifier.size(19.dp)
-                        )
+
+                        Surface(
+                            modifier = Modifier.size(30.dp),
+                            color = Color.White.copy(alpha = 0.8f),
+                            shape = CircleShape
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    when {
+                                        task.status == AutoTaskStatus.RUNNING && paused -> "Ⅱ"
+                                        task.status == AutoTaskStatus.RUNNING -> "●"
+                                        task.status == AutoTaskStatus.SUCCESS -> "✓"
+                                        task.status == AutoTaskStatus.FAILED -> "×"
+                                        else -> "○"
+                                    },
+                                    color = statusColor,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1813,99 +2703,84 @@ private fun AutoRuntimeStatusBar(
         remoteState == "not_found" -> "لم يبدأ"
         workerError.isNotBlank() -> "متوقف"
         remoteStage.contains("يصلح") || remoteStage.contains("إصلاح") -> "يقوم بالإصلاح"
-        remoteStage.contains("كود") || remoteStage.contains("يكتب") -> "يعمل"
-        remoteStage.contains("يفحص") -> "يفحص التغييرات"
-        remoteStage.contains("يحفظ") -> "يحفظ التغييرات"
+        remoteStage.contains("يفحص") -> "يفحص"
+        remoteStage.contains("يحفظ") -> "يحفظ"
         remoteStage.contains("يجهز") -> "يجهز"
-        remoteStage.contains("يفتح") -> "يفتح المشروع"
         queueStarted && (remoteLive || controllerLive) -> "يعمل"
         tasks.isNotEmpty() && doneCount == tasks.size -> "تم"
-        else -> "في الانتظار"
+        else -> "جاهز"
     }
 
-    CompositionLocalProvider(
-        LocalLayoutDirection provides LayoutDirection.Rtl
+    val accent = when {
+        remoteState == "failure" || workerError.isNotBlank() -> Color(0xFFDB5D6A)
+        paused -> Violet
+        remoteState == "success" -> Moss
+        else -> Blue
+    }
+
+    Surface(
+        modifier = modifier.clickable(onClick = onOpenTasks),
+        color = Color(0xF8FFFFFF),
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, Line),
+        shadowElevation = 10.dp
     ) {
-        Surface(
-        modifier = modifier
-            .clickable(onClick = onOpenTasks),
-        color = if (paused) Color.White else BlueSoft,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, Line)
-    ) {
-        CompositionLocalProvider(
-            LocalLayoutDirection provides LayoutDirection.Ltr
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                Modifier.padding(
-                    start = 1.dp,
-                    end = 10.dp,
-                    top = 8.dp,
-                    bottom = 8.dp
-                ),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (queueStarted) {
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clickable(onClick = onTogglePause),
-                        contentAlignment = Alignment.Center
-                    ) {
+            if (queueStarted) {
+                Surface(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clickable(onClick = onTogglePause),
+                    color = if (paused) Lavender else BlueSoft,
+                    shape = CircleShape
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            if (paused) {
-                                Icons.Outlined.PlayArrow
-                            } else {
-                                Icons.Outlined.Pause
-                            },
-                            contentDescription = if (paused) {
-                                "متابعة"
-                            } else {
-                                "إيقاف مؤقت"
-                            },
-                            tint = Blue,
-                            modifier = Modifier.size(17.dp)
+                            if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause,
+                            contentDescription = null,
+                            tint = accent,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
-                    Spacer(Modifier.width(6.dp))
+                }
+                Spacer(Modifier.width(9.dp))
+            }
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    status,
+                    color = Ink,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+
+                val detail = when {
+                    workerError.isNotBlank() -> workerError
+                    remoteStage.isNotBlank() -> remoteStage
+                    queueStarted -> "التنفيذ مستمر"
+                    else -> ""
                 }
 
-                CompositionLocalProvider(
-                    LocalLayoutDirection provides LayoutDirection.Rtl
-                ) {
+                if (detail.isNotBlank()) {
                     Text(
-                        status,
-                        modifier = Modifier.weight(1f),
-                        color = if (
-                            !paused && (remoteLive || controllerLive)
-                        ) Blue else Ink,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Right
-                    )
-                }
-
-                Spacer(Modifier.width(8.dp))
-
-                if (!paused && (remoteLive || controllerLive)) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                        color = Blue
-                    )
-                } else {
-                    Box(
-                        Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (status == "تم") Blue else Muted
-                            )
+                        detail,
+                        color = Muted,
+                        fontSize = 9.sp,
+                        maxLines = 1
                     )
                 }
             }
+
+            Box(
+                Modifier
+                    .size(9.dp)
+                    .clip(CircleShape)
+                    .background(accent)
+            )
         }
-    }
     }
 }
 
@@ -1936,20 +2811,64 @@ private fun LiveCodePreview(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFFFAFAFC),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Line)
+            color = Color(0xFFFDFEFF),
+            shape = RoundedCornerShape(24.dp),
+            border = BorderStroke(1.dp, Color(0xFFDDE5FF)),
+            shadowElevation = 5.dp
         ) {
-            Text(
-                text = typed + cursor,
-                modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
-                color = Ink,
-                fontSize = 11.sp,
-                lineHeight = 16.sp,
-                fontFamily = FontFamily.Monospace,
-                textAlign = TextAlign.Left,
-                maxLines = 22
-            )
+            Column {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(BlueSoft)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        modifier = Modifier.size(28.dp),
+                        color = Color.White,
+                        shape = CircleShape
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.Code,
+                                contentDescription = null,
+                                tint = Blue,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    Text(
+                        "الكود المباشر",
+                        color = Ink,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+
+                    Spacer(Modifier.weight(1f))
+
+                    Text(
+                        if (paused) "متوقف" else "مباشر",
+                        color = if (paused) Violet else Moss,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Text(
+                    text = typed + cursor,
+                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
+                    color = Color(0xFF24304A),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Left,
+                    maxLines = 22
+                )
+            }
         }
     }
 }
@@ -1960,37 +2879,45 @@ private fun AutoExecuteTopControl(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Surface(
-            modifier = modifier
-                .wrapContentWidth()
-                .clickable { onToggle(!checked) },
-            color = Color.White,
-            shape = RoundedCornerShape(17.dp),
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 4.dp
+    Surface(
+        modifier = modifier
+            .wrapContentWidth()
+            .clickable { onToggle(!checked) },
+        color = Color(0xF8FFFFFF),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(
+            1.dp,
+            if (checked) Color(0xFFCBD5FF) else Line
+        ),
+        shadowElevation = 10.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.padding(
-                    horizontal = 8.dp,
-                    vertical = 5.dp
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+            Surface(
+                modifier = Modifier.size(22.dp),
+                color = if (checked) BlueSoft else Lavender,
+                shape = CircleShape
             ) {
-                AutoExecuteCheckBox(
-                    checked = checked,
-                    onClick = { onToggle(!checked) }
-                )
-                Spacer(Modifier.width(5.dp))
-                Text(
-                    "تنفيذ تلقائي",
-                    color = Ink,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        if (checked) "✓" else "○",
+                        color = if (checked) Blue else Muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
+
+            Spacer(Modifier.width(6.dp))
+
+            Text(
+                "تلقائي",
+                color = if (checked) Blue else Ink,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
         }
     }
 }
@@ -2000,27 +2927,17 @@ private fun AutoExecuteCheckBox(
     checked: Boolean,
     onClick: () -> Unit
 ) {
-    Surface(
+    Box(
         modifier = Modifier
-            .size(18.dp)
+            .size(16.dp)
             .clickable(onClick = onClick),
-        color = if (checked) BlueSoft else Color.White,
-        shape = RoundedCornerShape(5.dp),
-        border = BorderStroke(
-            1.dp,
-            if (checked) Blue else Color(0xFFCFC9D2)
-        )
+        contentAlignment = Alignment.Center
     ) {
-        if (checked) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Outlined.CheckCircle,
-                    "مفعّل",
-                    tint = Blue,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
+        Text(
+            if (checked) "●" else "○",
+            color = if (checked) Blue else Muted,
+            fontSize = 11.sp
+        )
     }
 }
 
@@ -2030,59 +2947,54 @@ private fun AutoExecuteConfirmBanner(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Surface(
-            modifier = modifier.wrapContentWidth(),
-            color = Color.White,
-            shape = RoundedCornerShape(11.dp),
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 3.dp
+    Surface(
+        modifier = modifier.wrapContentWidth(),
+        color = Color(0xFAFFFFFF),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, Line),
+        shadowElevation = 10.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                modifier = Modifier.padding(
-                    horizontal = 9.dp,
-                    vertical = 6.dp
-                ),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Text(
+                "تفعيل التنفيذ التلقائي؟",
+                color = Ink,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+
+            Spacer(Modifier.width(9.dp))
+
+            Surface(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clickable(onClick = onCancel),
+                color = Lavender,
+                shape = CircleShape
             ) {
-                Text(
-                    "تفعيل التنفيذ التلقائي؟",
-                    color = Ink,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Text("×", color = Muted, fontSize = 16.sp)
+                }
+            }
 
-                Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.width(5.dp))
 
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(
-                        onClick = onCancel,
-                        contentPadding = PaddingValues(
-                            horizontal = 7.dp,
-                            vertical = 1.dp
-                        )
-                    ) {
-                        Text("إلغاء", fontSize = 10.sp)
-                    }
-
-                    Spacer(Modifier.width(2.dp))
-
-                    Button(
-                        onClick = onConfirm,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(
-                            horizontal = 10.dp,
-                            vertical = 3.dp
-                        )
-                    ) {
-                        Text("موافق", fontSize = 10.sp)
-                    }
+            Surface(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clickable(onClick = onConfirm),
+                color = Blue,
+                shape = CircleShape
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        "✓",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -2099,33 +3011,27 @@ private fun GitHubConnectCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFFF5F7FD),
-        shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(
-            1.dp,
-            Color(0xFFE0E6F4)
-        )
+        color = BlueSoft,
+        shape = RoundedCornerShape(28.dp)
     ) {
         Column(
-            modifier = Modifier.padding(18.dp)
+            modifier = Modifier.padding(17.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    modifier = Modifier.size(42.dp),
-                    shape = CircleShape,
+                    modifier = Modifier.size(52.dp),
                     color = Color.White,
-                    border = BorderStroke(1.dp, Line)
+                    shape = CircleShape,
+                    shadowElevation = 5.dp
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.Outlined.Link,
-                            null,
-                            tint = Ink,
-                            modifier = Modifier.size(22.dp)
+                            contentDescription = null,
+                            tint = Blue,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
@@ -2136,57 +3042,78 @@ private fun GitHubConnectCard(
                     Text(
                         "ربط GitHub",
                         color = Ink,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black
                     )
                     Text(
                         if (linking) {
-                            status.ifBlank { "جاري تجهيز كود الربط…" }
-                        } else if (oauthAvailable) {
-                            "اربط حسابك للمتابعة"
+                            status.ifBlank { "جاري الربط" }
                         } else {
-                            "الربط غير متاح"
+                            "اربط حسابك واختر المشروع"
                         },
                         color = Muted,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp
+                        fontSize = 10.sp
                     )
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(15.dp))
 
             if (linking) {
-                Row(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    color = Color.White.copy(alpha = 0.82f),
+                    shape = RoundedCornerShape(18.dp)
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Blue
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        status.ifBlank { "بانتظار GitHub…" },
-                        modifier = Modifier.weight(1f),
-                        color = Ink,
-                        fontSize = 13.sp
-                    )
-                    TextButton(onClick = onCancel) {
-                        Text("إلغاء")
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(17.dp),
+                            strokeWidth = 2.dp,
+                            color = Blue
+                        )
+                        Spacer(Modifier.width(9.dp))
+                        Text(
+                            status.ifBlank { "بانتظار الموافقة" },
+                            modifier = Modifier.weight(1f),
+                            color = Ink,
+                            fontSize = 11.sp
+                        )
+                        Surface(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clickable(onClick = onCancel),
+                            color = Peach,
+                            shape = CircleShape
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    "×",
+                                    color = Color(0xFFB66A55),
+                                    fontSize = 16.sp
+                                )
+                            }
+                        }
                     }
                 }
             } else {
-                Button(
-                    onClick = onConnect,
-                    enabled = oauthAvailable,
-                    modifier = Modifier.fillMaxWidth(),
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = oauthAvailable, onClick = onConnect),
+                    color = if (oauthAvailable) Blue else LavenderStrong,
                     shape = RoundedCornerShape(18.dp)
                 ) {
-                    Icon(Icons.Outlined.Link, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("ربط GitHub")
+                    Text(
+                        "ربط الحساب",
+                        modifier = Modifier.padding(vertical = 13.dp),
+                        color = if (oauthAvailable) Color.White else Muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
@@ -2195,12 +3122,41 @@ private fun GitHubConnectCard(
 
 @Composable
 private fun EmptyToolCard(title: String, subtitle: String) {
-    Surface(Modifier.fillMaxWidth(), color = Lavender, shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(15.dp)) {
-            Text(title, color = Ink, fontWeight = FontWeight.SemiBold)
-            if (subtitle.isNotBlank()) {
-                Spacer(Modifier.height(3.dp))
-                Text(subtitle, color = Muted, fontSize = 12.sp)
+    Surface(
+        Modifier.fillMaxWidth(),
+        color = SurfaceElevated,
+        shape = RoundedCornerShape(3.dp),
+        border = BorderStroke(1.dp, Ink.copy(alpha = 0.18f))
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(34.dp),
+                color = Lavender,
+                shape = RoundedCornerShape(2.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        "—",
+                        color = Blue,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    title,
+                    color = Ink,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                if (subtitle.isNotBlank()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(subtitle, color = Muted, fontSize = 11.sp)
+                }
             }
         }
     }
@@ -2218,7 +3174,7 @@ private fun GitHubLinkDialog(
     AlertDialog(
         modifier = Modifier.widthIn(max = 300.dp),
         onDismissRequest = {},
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(4.dp),
         title = {
             Text(
                 "GitHub",
@@ -2245,8 +3201,9 @@ private fun GitHubLinkDialog(
                     )
                 } else {
                     Surface(
-                        color = Lavender,
-                        shape = RoundedCornerShape(12.dp)
+                        color = BlueSoft,
+                        shape = RoundedCornerShape(3.dp),
+                        border = BorderStroke(1.dp, Blue.copy(alpha = 0.45f))
                     ) {
                         Text(
                             userCode,

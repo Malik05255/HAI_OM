@@ -29,19 +29,19 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             val colors = lightColorScheme(
-                primary = Color(0xFF2F7AE9),
+                primary = Color(0xFF4F6BFF),
                 onPrimary = Color.White,
-                primaryContainer = Color(0xFFF0E8F7),
-                onPrimaryContainer = Color(0xFF4A3F53),
-                secondary = Color(0xFF7B6B86),
-                secondaryContainer = Color(0xFFF1ECF5),
-                background = Color(0xFFFCFBFE),
-                surface = Color(0xFFFFFBFF),
-                surfaceVariant = Color(0xFFF3EEF5),
-                onSurface = Color(0xFF17151A),
-                onSurfaceVariant = Color(0xFF706A73),
-                outline = Color(0xFFE2DBE7),
-                error = Color(0xFFB3261E)
+                primaryContainer = Color(0xFFEEF2FF),
+                onPrimaryContainer = Color(0xFF1E2A62),
+                secondary = Color(0xFF8C7CFF),
+                secondaryContainer = Color(0xFFF2F1FF),
+                background = Color(0xFFF8FBFF),
+                surface = Color.White,
+                surfaceVariant = Color(0xFFF4F7FB),
+                onSurface = Color(0xFF172033),
+                onSurfaceVariant = Color(0xFF8A94A6),
+                outline = Color(0xFFE4EAF2),
+                error = Color(0xFFDB5D6A)
             )
             MaterialTheme(colorScheme = colors) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
