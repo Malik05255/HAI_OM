@@ -31,6 +31,7 @@ class RemoteAgentRunner(
         onEvent: (String) -> Unit,
         baseBranchOverride: String? = null,
         onCiProgress: (Long?, String, String) -> Unit = { _, _, _ -> },
+        onLiveCode: (String) -> Unit = {},
         autoMerge: Boolean = false
     ): AgentRunResult {
         require(requirements.isNotBlank()) { "اكتب رسالتك" }
@@ -88,7 +89,9 @@ class RemoteAgentRunner(
             onEvent = onEvent,
             workflowName = WORKFLOW_NAME,
             maxAttempts = 300,
-            onProgress = onCiProgress
+            onProgress = onCiProgress,
+            liveCodePath = "$LIVE_DIR/$taskId.txt",
+            onLiveCode = onLiveCode
         )
 
         when (run.state) {
@@ -123,7 +126,8 @@ class RemoteAgentRunner(
                     summary = "تنظيف نتيجة HAI OM",
                     files = listOf(
                         FileEdit(TASK_PATH, delete = true),
-                        FileEdit(resultPath, delete = true)
+                        FileEdit(resultPath, delete = true),
+                        FileEdit("$LIVE_DIR/$taskId.txt", delete = true)
                     )
                 ),
                 taskId = "runtime-cleanup",
@@ -288,6 +292,7 @@ class RemoteAgentRunner(
         private const val TASK_PATH = ".hai-om/task.json"
         private const val CONTROL_PATH = ".hai-om/control.json"
         private const val RESULTS_DIR = ".hai-om/results"
+        private const val LIVE_DIR = ".hai-om/live"
         private const val MAX_REQUIREMENTS_CHARS = 20_000
     }
 }
