@@ -116,7 +116,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.copy(
                 githubLinking = true,
                 githubLaunchUrl = null,
-                githubLinkStatus = "جاري طلب كود GitHub…",
+                githubLinkStatus = "جاري طلب الكود…",
                 githubDeviceCode = "",
                 githubVerificationUrl = "",
                 githubJustLinked = false,
@@ -132,7 +132,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 _state.update {
                     it.copy(
-                        githubLinkStatus = "أدخل الكود في GitHub ووافق على الصلاحيات",
+                        githubLinkStatus = "أدخل الكود في GitHub",
                         githubDeviceCode = authorization.userCode,
                         githubVerificationUrl = authorization.verificationUri
                     )
@@ -145,7 +145,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 _state.update {
                     it.copy(
-                        githubLinkStatus = "تمت الموافقة، جاري تحميل مشاريعك…"
+                        githubLinkStatus = "جاري تحميل المشاريع…"
                     )
                 }
 
@@ -169,7 +169,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         repositories = repositories,
                         selectedRepository = selectedRepository,
                         githubJustLinked = true,
-                        message = "تم ربط GitHub. اختر المشروع الذي تريد العمل عليه"
+                        message = "تم ربط GitHub"
                     )
                 }
             } catch (_: CancellationException) {
@@ -276,7 +276,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val available = _state.value.repositories.firstOrNull {
             it.fullName == repository.fullName
         } ?: run {
-            _state.update { it.copy(error = "هذا المشروع لم يعد متاحًا في حساب GitHub") }
+            _state.update { it.copy(error = "المشروع غير متاح") }
             return
         }
 
@@ -284,7 +284,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update {
             it.copy(
                 selectedRepository = available,
-                message = "تم حفظ المشروع: ${available.fullName}"
+                message = "تم حفظ المشروع"
             )
         }
     }
@@ -339,8 +339,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val needsRepo = needsRepositoryContext(prompt)
                 val repositoryUrl = _state.value.selectedRepository?.htmlUrl.orEmpty()
                 val context = if (needsRepo) {
-                    if (repositoryUrl.isBlank()) error("اختر المشروع عشان أقرأه")
-                    val token = resolveGitHubToken() ?: error("اربط GitHub عشان أقرأ المشروع")
+                    if (repositoryUrl.isBlank()) error("اختر مشروعًا")
+                    val token = resolveGitHubToken() ?: error("اربط GitHub")
                     val github = GitHubClient(token)
                     withContext(Dispatchers.IO) {
                         val repo = github.parseRepository(repositoryUrl)
@@ -391,7 +391,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun runProgramming(requirements: String) {
         val repositoryUrl = _state.value.selectedRepository?.htmlUrl.orEmpty()
         if (repositoryUrl.isBlank()) {
-            _state.update { it.copy(error = "اختر المشروع واحفظه أولًا") }
+            _state.update { it.copy(error = "اختر مشروعًا أولًا") }
             return
         }
         if (!_state.value.hasGitHubToken) {
@@ -458,7 +458,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         running = false,
                         programming = false,
                         error = t.message?.takeIf { message -> message.isNotBlank() }
-                            ?: "تعذر إكمال المهمة. حاول مرة ثانية"
+                            ?: "تعذر إكمال المهمة"
                     )
                 }
             }
@@ -532,10 +532,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val raw = t.message.orEmpty()
         return when {
             raw.contains("إلغاء") -> "تم إلغاء الربط"
-            raw.contains("مهلة") -> "انتهت المهلة، حاول مرة ثانية"
-            raw.contains("timeout", true) || raw.contains("مهلة") -> "انتهت المهلة، حاول مرة ثانية"
-            raw.contains("تعذر إنشاء ربط GitHub") -> "GitHub رفض إنشاء الربط، حاول مرة ثانية"
-            else -> "تعذر ربط GitHub، حاول مرة ثانية"
+            raw.contains("مهلة") -> "انتهت المهلة"
+            raw.contains("timeout", true) || raw.contains("مهلة") -> "انتهت المهلة"
+            raw.contains("تعذر إنشاء ربط GitHub") -> "تعذر إنشاء الربط"
+            else -> "تعذر ربط GitHub"
         }
     }
 
