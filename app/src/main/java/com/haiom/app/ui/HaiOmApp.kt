@@ -94,13 +94,16 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -138,6 +141,7 @@ fun HaiOmApp(
 ) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val snackbar = remember { SnackbarHostState() }
     var draft by remember { mutableStateOf("") }
     val selectedRepo = state.selectedRepository
@@ -393,14 +397,17 @@ fun HaiOmApp(
 
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
+                        .align(AbsoluteAlignment.TopRight)
                         .statusBarsPadding()
-                        .padding(top = 0.dp, start = 4.dp)
+                        .padding(top = 0.dp, end = 0.dp)
                         .size(80.dp)
                         .clickable(
                             interactionSource = autoExecuteTouchSource,
                             indication = null
                         ) {
+                            haptics.performHapticFeedback(
+                                HapticFeedbackType.TextHandleMove
+                            )
                             showAutoExecuteControl = true
                         }
                 )
@@ -408,9 +415,9 @@ fun HaiOmApp(
                 AnimatedVisibility(
                     visible = showAutoExecuteControl,
                     modifier = Modifier
-                        .align(Alignment.TopStart)
+                        .align(AbsoluteAlignment.TopRight)
                         .statusBarsPadding()
-                        .padding(top = 3.dp, start = 8.dp),
+                        .padding(top = 3.dp, end = 8.dp),
                     enter = slideInVertically(
                         initialOffsetY = { -it },
                         animationSpec = tween(170)
@@ -444,9 +451,9 @@ fun HaiOmApp(
                         showAutoExecuteConfirm = false
                     },
                     modifier = Modifier
-                        .align(Alignment.TopStart)
+                        .align(AbsoluteAlignment.TopRight)
                         .statusBarsPadding()
-                        .padding(top = 46.dp, start = 8.dp, end = 12.dp)
+                        .padding(top = 46.dp, end = 8.dp)
                 )
             }
 
