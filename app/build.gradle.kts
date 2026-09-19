@@ -31,6 +31,12 @@ val imageApiKey = providers.environmentVariable("IMAGE_API_KEY")
     ?.trim()
     .orEmpty()
 
+val aiHordeApiKey = providers.environmentVariable("AI_HORDE_API_KEY")
+    .orElse(providers.gradleProperty("AI_HORDE_API_KEY"))
+    .orNull
+    ?.trim()
+    .orEmpty()
+
 fun buildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
