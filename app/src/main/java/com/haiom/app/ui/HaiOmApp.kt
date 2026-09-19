@@ -731,8 +731,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 private fun MessageBlock(turn: ChatTurn) {
     val user = turn.role == "user"
     val fence = 96.toChar().toString().repeat(3)
-    val codeLike = turn.text.contains(fence)
-    val messageText = if (codeLike) turn.text.replace(fence, "") else turn.text
+    val messageText = turn.text.replace(fence, "")
 
     Box(
         modifier = Modifier.fillMaxWidth(),
@@ -742,102 +741,87 @@ private fun MessageBlock(turn: ChatTurn) {
             AbsoluteAlignment.CenterLeft
         }
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(if (user) 0.88f else 0.94f),
-            horizontalArrangement = if (user) Arrangement.End else Arrangement.Start,
-            verticalAlignment = Alignment.Bottom
+        Surface(
+            modifier = Modifier.fillMaxWidth(
+                if (user) 0.78f else 0.86f
+            ),
+            color = if (user) Peach else SurfaceElevated,
+            shape = if (user) {
+                RoundedCornerShape(
+                    topStart = 24.dp,
+                    topEnd = 24.dp,
+                    bottomStart = 24.dp,
+                    bottomEnd = 8.dp
+                )
+            } else {
+                RoundedCornerShape(
+                    topStart = 24.dp,
+                    topEnd = 24.dp,
+                    bottomStart = 8.dp,
+                    bottomEnd = 24.dp
+                )
+            },
+            border = BorderStroke(
+                1.dp,
+                if (user) Color(0xFFFFD9CD) else Line
+            ),
+            shadowElevation = 5.dp
         ) {
-            if (!user) {
-                Surface(
-                    modifier = Modifier.size(34.dp),
-                    color = BlueSoft,
-                    shape = CircleShape,
-                    border = BorderStroke(1.dp, Color(0xFFD7DFFF))
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Outlined.AutoAwesome,
-                            contentDescription = null,
-                            tint = Blue,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-            }
-
-            Surface(
-                modifier = Modifier.weight(1f, fill = false),
-                color = if (user) Peach else SurfaceElevated,
-                shape = if (user) {
-                    RoundedCornerShape(
-                        topStart = 24.dp,
-                        topEnd = 24.dp,
-                        bottomStart = 24.dp,
-                        bottomEnd = 7.dp
-                    )
-                } else {
-                    RoundedCornerShape(
-                        topStart = 24.dp,
-                        topEnd = 24.dp,
-                        bottomStart = 7.dp,
-                        bottomEnd = 24.dp
-                    )
-                },
-                border = BorderStroke(
-                    1.dp,
-                    if (user) Color(0xFFFFD9CD) else Line
-                ),
-                shadowElevation = 5.dp
+            CompositionLocalProvider(
+                LocalLayoutDirection provides LayoutDirection.Rtl
             ) {
                 Column(
                     modifier = Modifier.padding(
-                        horizontal = 14.dp,
-                        vertical = 11.dp
-                    )
+                        horizontal = 15.dp,
+                        vertical = 12.dp
+                    ),
+                    horizontalAlignment = Alignment.End
                 ) {
-                    Text(
-                        if (user) "أنت" else "HAI",
-                        color = if (user) Color(0xFFB66A55) else Blue,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    Spacer(Modifier.height(5.dp))
-                    CompositionLocalProvider(
-                        LocalLayoutDirection provides if (codeLike) {
-                            LayoutDirection.Ltr
-                        } else {
-                            LayoutDirection.Rtl
-                        }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            messageText,
-                            color = Ink,
-                            fontSize = if (codeLike) 12.sp else 15.sp,
-                            lineHeight = if (codeLike) 18.sp else 23.sp,
-                            fontFamily = if (codeLike) FontFamily.Monospace else FontFamily.Default,
-                            textAlign = if (codeLike) TextAlign.Left else TextAlign.Right
+                            if (user) "أنت" else "HAI",
+                            color = if (user) Color(0xFFB66A55) else Blue,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            textAlign = TextAlign.Right
                         )
-                    }
-                }
-            }
 
-            if (user) {
-                Spacer(Modifier.width(8.dp))
-                Surface(
-                    modifier = Modifier.size(34.dp),
-                    color = Peach,
-                    shape = CircleShape,
-                    border = BorderStroke(1.dp, Color(0xFFFFD9CD))
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Outlined.AccountCircle,
-                            contentDescription = null,
-                            tint = Color(0xFFB66A55),
-                            modifier = Modifier.size(19.dp)
-                        )
+                        Spacer(Modifier.width(7.dp))
+
+                        Surface(
+                            modifier = Modifier.size(28.dp),
+                            color = if (user) Color.White.copy(alpha = 0.72f) else BlueSoft,
+                            shape = CircleShape
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    if (user) {
+                                        Icons.Outlined.AccountCircle
+                                    } else {
+                                        Icons.Outlined.AutoAwesome
+                                    },
+                                    contentDescription = null,
+                                    tint = if (user) Color(0xFFB66A55) else Blue,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
+
+                    Spacer(Modifier.height(7.dp))
+
+                    Text(
+                        messageText,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Ink,
+                        fontSize = 15.sp,
+                        lineHeight = 23.sp,
+                        textAlign = TextAlign.Right
+                    )
                 }
             }
         }
@@ -1094,23 +1078,25 @@ private fun AnimatedToolDock(
             )
         }
 
-        Surface(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .size(38.dp)
-                .clickable(onClick = onToggle),
-            color = SurfaceElevated,
-            shape = CircleShape,
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 8.dp
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    if (open) Icons.Outlined.Close else Icons.Outlined.MoreVert,
-                    contentDescription = null,
-                    tint = Blue,
-                    modifier = Modifier.size(19.dp)
-                )
+        if (!open) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .size(38.dp)
+                    .clickable(onClick = onToggle),
+                color = SurfaceElevated,
+                shape = CircleShape,
+                border = BorderStroke(1.dp, Line),
+                shadowElevation = 8.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Outlined.MoreVert,
+                        contentDescription = "فتح الأدوات",
+                        tint = Blue,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
             }
         }
     }
