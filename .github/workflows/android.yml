@@ -35,20 +35,19 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Validate GitHub Device Flow configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${GITHUB_OAUTH_CLIENT_ID:-}" ]; then
-            echo "::error::GITHUB_OAUTH_CLIENT_ID is empty. Set it under Settings > Secrets and variables > Actions > Variables, or provide it when running this workflow manually."
-            exit 1
-          fi
-
       - name: Unit tests and APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 
   publish:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (
+        (github.event_name == 'push' && vars.GITHUB_OAUTH_CLIENT_ID != '') ||
+        (
+          github.event_name == 'workflow_dispatch' &&
+          (inputs.github_oauth_client_id != '' || vars.GITHUB_OAUTH_CLIENT_ID != '')
+        )
+      )
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 25
