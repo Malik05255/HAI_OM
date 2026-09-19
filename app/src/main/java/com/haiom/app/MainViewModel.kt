@@ -792,6 +792,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         "&model=flux" +
                         "&seed=$seed" +
                         "&nologo=true" +
+                        "&private=true" +
                         "&safe=true" +
                         "&enhance=true"
 
