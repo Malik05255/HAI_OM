@@ -395,11 +395,20 @@ fun HaiOmApp(
     }
 
     fun startVoiceRecognition() {
-        val silentStarted = startSilentInjectedRecognition()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val silentStarted = startSilentInjectedRecognition()
 
-        if (!silentStarted) {
-            startLegacyVoiceRecognition()
+            if (!silentStarted) {
+                Toast.makeText(
+                    context,
+                    "تعذر تشغيل التسجيل الصامت",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            return
         }
+
+        startLegacyVoiceRecognition()
     }
 
     val microphonePermission = rememberLauncherForActivityResult(
