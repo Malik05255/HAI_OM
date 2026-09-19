@@ -137,6 +137,7 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
 import coil.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.delay
+import java.io.File
 
 private val Canvas = Color(0xFFF8FBFF)
 private val SurfaceSoft = Color(0xFFFFFFFF)
@@ -314,6 +315,7 @@ fun HaiOmApp(
                 "ar-SA"
             )
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(
                 RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
@@ -426,8 +428,10 @@ fun HaiOmApp(
                     lastVoicePartial = ""
 
                     if (text.isNotBlank()) {
+                        draft = ""
                         sendRecognizedVoice(text)
                     } else {
+                        draft = ""
                         Toast.makeText(
                             context,
                             "لم يتم التقاط كلام واضح",
@@ -449,6 +453,7 @@ fun HaiOmApp(
 
                     if (partial.isNotBlank()) {
                         lastVoicePartial = partial
+                        draft = partial
                     }
                 }
 
@@ -1098,16 +1103,28 @@ private fun copyCode(context: Context, code: String) {
 @Composable
 private fun MessageBlock(turn: ChatTurn) {
     val user = turn.role == "user"
-    val generatedImageUrl = if (
+    val generatedImageModel: Any? = when {
         turn.role == "assistant" &&
-        turn.text.startsWith("[[HAI_IMAGE]]")
-    ) {
-        turn.text.removePrefix("[[HAI_IMAGE]]").trim()
-    } else {
-        null
+            turn.text.startsWith("[[HAI_IMAGE_FILE]]") -> {
+            turn.text
+                .removePrefix("[[HAI_IMAGE_FILE]]")
+                .trim()
+                .takeIf { it.isNotBlank() }
+                ?.let(::File)
+        }
+
+        turn.role == "assistant" &&
+            turn.text.startsWith("[[HAI_IMAGE]]") -> {
+            turn.text
+                .removePrefix("[[HAI_IMAGE]]")
+                .trim()
+                .takeIf { it.isNotBlank() }
+        }
+
+        else -> null
     }
 
-    if (!generatedImageUrl.isNullOrBlank()) {
+    if (generatedImageModel != null) {
         Box(
             modifier = Modifier.fillMaxWidth(),
             contentAlignment = AbsoluteAlignment.CenterLeft
@@ -1138,7 +1155,7 @@ private fun MessageBlock(turn: ChatTurn) {
                     Spacer(Modifier.height(8.dp))
 
                     SubcomposeAsyncImage(
-                        model = generatedImageUrl,
+                        model = generatedImageModel,
                         contentDescription = "صورة مولدة بواسطة HAI",
                         modifier = Modifier
                             .fillMaxWidth()
