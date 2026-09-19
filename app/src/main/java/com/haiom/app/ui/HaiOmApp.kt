@@ -396,7 +396,7 @@ fun HaiOmApp(
                         .align(Alignment.TopStart)
                         .statusBarsPadding()
                         .padding(top = 0.dp, start = 4.dp)
-                        .size(60.dp)
+                        .size(80.dp)
                         .clickable(
                             interactionSource = autoExecuteTouchSource,
                             indication = null
