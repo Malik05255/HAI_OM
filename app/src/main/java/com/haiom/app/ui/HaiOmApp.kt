@@ -116,9 +116,7 @@ private data class PickedMedia(val uri: Uri, val name: String)
 
 @Composable
 fun HaiOmApp(
-    vm: MainViewModel = viewModel(),
-    oauthCallback: String? = null,
-    onOAuthCallbackConsumed: () -> Unit = {}
+    vm: MainViewModel = viewModel()
 ) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
@@ -178,15 +176,11 @@ fun HaiOmApp(
         vm.consumeGitHubLaunch()
     }
 
-    LaunchedEffect(oauthCallback) {
-        val callback = oauthCallback ?: return@LaunchedEffect
-        vm.completeGitHubOAuth(callback)
-        onOAuthCallbackConsumed()
-    }
-
     if (state.githubLinking) {
         GitHubLinkDialog(
             status = state.githubLinkStatus,
+            userCode = state.githubDeviceCode,
+            onOpenGitHub = vm::openGitHubVerification,
             onCancel = vm::cancelGitHubLink
         )
     }
@@ -282,7 +276,6 @@ fun HaiOmApp(
                         panel = null
                     },
                     onConnect = vm::startGitHubLink,
-                    onTokenConnect = vm::connectGitHubToken,
                     onCancelLink = vm::cancelGitHubLink,
                     onDisconnect = vm::disconnectGitHub,
                     onCheckUpdate = vm::checkForUpdate,
@@ -828,7 +821,6 @@ private fun ToolScreen(
     onBack: () -> Unit,
     onSelectRepo: (GitHubRepository) -> Unit,
     onConnect: () -> Unit,
-    onTokenConnect: (String) -> Unit,
     onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit,
@@ -859,7 +851,6 @@ private fun ToolScreen(
                 oauthAvailable = oauthAvailable,
                 onSelect = onSelectRepo,
                 onConnect = onConnect,
-                onTokenConnect = onTokenConnect,
                 onCancelLink = onCancelLink
             )
             ToolPanel.HISTORY -> HistoryContent(
@@ -879,7 +870,6 @@ private fun ToolScreen(
                 oauthAvailable = oauthAvailable,
                 checkingUpdate = checkingUpdate,
                 onConnect = onConnect,
-                onTokenConnect = onTokenConnect,
                 onCancelLink = onCancelLink,
                 onDisconnect = onDisconnect,
                 onCheckUpdate = onCheckUpdate
@@ -912,7 +902,6 @@ private fun ProjectsContent(
     oauthAvailable: Boolean,
     onSelect: (GitHubRepository) -> Unit,
     onConnect: () -> Unit,
-    onTokenConnect: (String) -> Unit,
     onCancelLink: () -> Unit
 ) {
     if (!connected) {
@@ -921,7 +910,6 @@ private fun ProjectsContent(
             status = linkingStatus,
             oauthAvailable = oauthAvailable,
             onConnect = onConnect,
-            onTokenConnect = onTokenConnect,
             onCancel = onCancelLink
         )
         return
@@ -1095,7 +1083,6 @@ private fun SettingsContent(
     oauthAvailable: Boolean,
     checkingUpdate: Boolean,
     onConnect: () -> Unit,
-    onTokenConnect: (String) -> Unit,
     onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit
@@ -1154,7 +1141,6 @@ private fun SettingsContent(
             status = linkingStatus,
             oauthAvailable = oauthAvailable,
             onConnect = onConnect,
-            onTokenConnect = onTokenConnect,
             onCancel = onCancelLink
         )
     }
@@ -1192,11 +1178,8 @@ private fun GitHubConnectCard(
     status: String,
     oauthAvailable: Boolean,
     onConnect: () -> Unit,
-    onTokenConnect: (String) -> Unit,
     onCancel: () -> Unit
 ) {
-    val context = LocalContext.current
-
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color(0xFFF5F7FD),
@@ -1241,11 +1224,11 @@ private fun GitHubConnectCard(
                     )
                     Text(
                         if (linking) {
-                            status.ifBlank { "جاري ربط GitHub…" }
+                            status.ifBlank { "جاري تجهيز كود الربط…" }
                         } else if (oauthAvailable) {
-                            "اضغط ربط GitHub، ثم وافق على الصلاحيات فقط."
+                            "سيعطيك OM كودًا قصيرًا. أدخله في GitHub ووافق على الصلاحيات فقط."
                         } else {
-                            "ربط OAuth غير مهيأ في هذا البناء. استخدم الربط اليدوي مؤقتًا."
+                            "ربط GitHub بالكود غير مهيأ في هذه النسخة."
                         },
                         color = Muted,
                         fontSize = 12.sp,
@@ -1268,7 +1251,7 @@ private fun GitHubConnectCard(
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        status.ifBlank { "جاري التحقق…" },
+                        status.ifBlank { "بانتظار GitHub…" },
                         modifier = Modifier.weight(1f),
                         color = Ink,
                         fontSize = 13.sp
@@ -1280,48 +1263,14 @@ private fun GitHubConnectCard(
             } else {
                 Button(
                     onClick = onConnect,
+                    enabled = oauthAvailable,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp)
                 ) {
                     Icon(Icons.Outlined.Link, null)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (oauthAvailable) "ربط GitHub" else "فتح GitHub للربط اليدوي")
+                    Text("ربط GitHub بالكود")
                 }
-
-                if (!oauthAvailable) {
-                    Spacer(Modifier.height(8.dp))
-
-                    OutlinedButton(
-                        onClick = {
-                            val clipboard = context.getSystemService(
-                                Context.CLIPBOARD_SERVICE
-                            ) as ClipboardManager
-                            val token = clipboard.primaryClip
-                                ?.getItemAt(0)
-                                ?.coerceToText(context)
-                                ?.toString()
-                                .orEmpty()
-                            onTokenConnect(token)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp)
-                    ) {
-                        Text("لصق وربط")
-                    }
-                }
-
-                Spacer(Modifier.height(9.dp))
-
-                Text(
-                    if (oauthAvailable) {
-                        "سيستخدم GitHub الحساب المفتوح في المتصفح. بعد الموافقة سيعود OM تلقائيًا ويعرض مشاريعك."
-                    } else {
-                        "الربط اليدوي مؤقت حتى يتم ضبط OAuth في نسخة البناء."
-                    },
-                    color = Muted,
-                    fontSize = 11.sp,
-                    lineHeight = 17.sp
-                )
             }
         }
     }
@@ -1341,29 +1290,91 @@ private fun EmptyToolCard(title: String, subtitle: String) {
 @Composable
 private fun GitHubLinkDialog(
     status: String,
+    userCode: String,
+    onOpenGitHub: () -> Unit,
     onCancel: () -> Unit
 ) {
+    val context = LocalContext.current
+
     AlertDialog(
         onDismissRequest = {},
         title = { Text("ربط GitHub") },
         text = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    strokeWidth = 2.dp,
-                    color = Blue
-                )
-                Spacer(Modifier.width(12.dp))
+                if (userCode.isBlank()) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp),
+                        strokeWidth = 2.dp,
+                        color = Blue
+                    )
+                    Spacer(Modifier.height(12.dp))
+                } else {
+                    Text(
+                        "الكود",
+                        color = Muted,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Surface(
+                        color = Lavender,
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Line)
+                    ) {
+                        Text(
+                            userCode,
+                            modifier = Modifier.padding(
+                                horizontal = 22.dp,
+                                vertical = 14.dp
+                            ),
+                            color = Ink,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
                 Text(
-                    status.ifBlank { "جاري التحقق من الرمز…" },
+                    status.ifBlank { "بانتظار موافقتك في GitHub…" },
                     color = Ink,
+                    textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold
                 )
+                if (userCode.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "اضغط الزر أدناه، ألصق الكود في GitHub، ثم وافق على الصلاحيات. OM سيتابع الربط تلقائيًا.",
+                        color = Muted,
+                        textAlign = TextAlign.Center,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+                }
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            if (userCode.isNotBlank()) {
+                Button(
+                    onClick = {
+                        val clipboard = context.getSystemService(
+                            Context.CLIPBOARD_SERVICE
+                        ) as ClipboardManager
+                        clipboard.setPrimaryClip(
+                            android.content.ClipData.newPlainText(
+                                "GitHub code",
+                                userCode
+                            )
+                        )
+                        onOpenGitHub()
+                    }
+                ) {
+                    Text("نسخ الكود وفتح GitHub")
+                }
+            }
+        },
         dismissButton = {
             TextButton(onClick = onCancel) {
                 Text("إلغاء")
