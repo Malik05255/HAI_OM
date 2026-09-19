@@ -392,7 +392,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 else -> {
                     autoTaskStore.setAwaitingConfirmation(false)
-                    if (isProgrammingRequest(text)) {
+                    if (isAutoTaskRequest(text)) {
                         collectAutomaticRequirements(text, askToStartAfter = false)
                     } else {
                         runChat(text)
