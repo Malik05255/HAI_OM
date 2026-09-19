@@ -7,12 +7,9 @@ import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.os.Bundle
 import android.speech.RecognitionListener
@@ -140,7 +137,6 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
 import coil.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.delay
-import java.util.concurrent.atomic.AtomicBoolean
 
 private val Canvas = Color(0xFFF8FBFF)
 private val SurfaceSoft = Color(0xFFFFFFFF)
@@ -181,183 +177,117 @@ fun HaiOmApp(
     var runtimeNow by remember { mutableStateOf(System.currentTimeMillis()) }
     val media = remember { mutableStateListOf<PickedMedia>() }
     var voiceListening by remember { mutableStateOf(false) }
-    var voiceAudioRecord by remember { mutableStateOf<AudioRecord?>(null) }
-    var voiceAudioReadPipe by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
-    var voiceAudioWritePipe by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
-    var voiceCaptureThread by remember { mutableStateOf<Thread?>(null) }
-    var voiceCaptureActive by remember {
-        mutableStateOf<AtomicBoolean?>(null)
+    var lastVoicePartial by remember { mutableStateOf("") }
+
+    val audioManager = remember(context) {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+
+    var voiceSystemVolume by remember { mutableStateOf<Int?>(null) }
+    var voiceMusicVolume by remember { mutableStateOf<Int?>(null) }
+    var voiceNotificationVolume by remember { mutableStateOf<Int?>(null) }
+
+    fun muteRecognitionSounds() {
+        if (voiceSystemVolume != null) return
+
+        voiceSystemVolume = runCatching {
+            audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM)
+        }.getOrNull()
+
+        voiceMusicVolume = runCatching {
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        }.getOrNull()
+
+        voiceNotificationVolume = runCatching {
+            audioManager.getStreamVolume(AudioManager.STREAM_NOTIFICATION)
+        }.getOrNull()
+
+        runCatching {
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_SYSTEM,
+                0,
+                0
+            )
+        }
+        runCatching {
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                0,
+                0
+            )
+        }
+        runCatching {
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_NOTIFICATION,
+                0,
+                0
+            )
+        }
+    }
+
+    fun restoreRecognitionSounds() {
+        voiceSystemVolume?.let { value ->
+            runCatching {
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_SYSTEM,
+                    value,
+                    0
+                )
+            }
+        }
+        voiceMusicVolume?.let { value ->
+            runCatching {
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    value,
+                    0
+                )
+            }
+        }
+        voiceNotificationVolume?.let { value ->
+            runCatching {
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_NOTIFICATION,
+                    value,
+                    0
+                )
+            }
+        }
+
+        voiceSystemVolume = null
+        voiceMusicVolume = null
+        voiceNotificationVolume = null
     }
 
     val speechRecognizer = remember(context) {
-        if (SpeechRecognizer.isRecognitionAvailable(context)) {
-            SpeechRecognizer.createSpeechRecognizer(context)
-        } else {
-            null
-        }
-    }
-
-    fun stopSilentVoiceCapture() {
-        voiceCaptureActive?.set(false)
-        voiceCaptureActive = null
-
-        runCatching {
-            voiceAudioRecord?.takeIf {
-                it.recordingState == AudioRecord.RECORDSTATE_RECORDING
-            }?.stop()
-        }
-        runCatching { voiceAudioRecord?.release() }
-        voiceAudioRecord = null
-
-        runCatching { voiceAudioWritePipe?.close() }
-        voiceAudioWritePipe = null
-
-        runCatching { voiceAudioReadPipe?.close() }
-        voiceAudioReadPipe = null
-
-        voiceCaptureThread = null
-    }
-
-    fun startSilentInjectedRecognition(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return false
-        }
-
-        val recognizer = speechRecognizer ?: return false
-        val sampleRate = 16_000
-        val minBuffer = AudioRecord.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        ).coerceAtLeast(4_096)
-
-        val recorder = runCatching {
-            AudioRecord.Builder()
-                .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                        .build()
-                )
-                .setBufferSizeInBytes(minBuffer * 2)
-                .build()
-        }.getOrNull() ?: return false
-
-        if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-            runCatching { recorder.release() }
-            return false
-        }
-
-        val pipe = runCatching {
-            ParcelFileDescriptor.createPipe()
-        }.getOrNull() ?: run {
-            runCatching { recorder.release() }
-            return false
-        }
-
-        val readPipe = pipe[0]
-        val writePipe = pipe[1]
-        val captureActive = AtomicBoolean(true)
-
-        voiceAudioRecord = recorder
-        voiceAudioReadPipe = readPipe
-        voiceAudioWritePipe = writePipe
-        voiceCaptureActive = captureActive
-        voiceListening = true
-
-        val intent = Intent(
-            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-        ).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
-                "ar-SA"
-            )
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-
-            putExtra(
-                RecognizerIntent.EXTRA_AUDIO_SOURCE,
-                readPipe
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT,
-                1
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING,
-                AudioFormat.ENCODING_PCM_16BIT
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE,
-                sampleRate
-            )
-        }
-
-        val captureThread = Thread(
-            {
-                val output = ParcelFileDescriptor.AutoCloseOutputStream(
-                    writePipe
-                )
-                val buffer = ByteArray(minBuffer)
-
-                try {
-                    recorder.startRecording()
-
-                    while (
-                        captureActive.get() &&
-                        recorder.recordingState ==
-                        AudioRecord.RECORDSTATE_RECORDING
-                    ) {
-                        val count = recorder.read(
-                            buffer,
-                            0,
-                            buffer.size
-                        )
-
-                        if (count > 0) {
-                            output.write(buffer, 0, count)
-                        }
-                    }
-                } catch (_: Throwable) {
-                    // Recognition callbacks own the user-visible error.
-                } finally {
-                    runCatching { output.flush() }
-                    runCatching { output.close() }
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                SpeechRecognizer.isOnDeviceRecognitionAvailable(context) -> {
+                runCatching {
+                    SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                }.getOrElse {
+                    SpeechRecognizer.createSpeechRecognizer(context)
                 }
-            },
-            "HAI-SilentVoiceCapture"
-        ).apply {
-            isDaemon = true
-            start()
+            }
+
+            SpeechRecognizer.isRecognitionAvailable(context) -> {
+                SpeechRecognizer.createSpeechRecognizer(context)
+            }
+
+            else -> null
         }
-
-        voiceCaptureThread = captureThread
-
-        val started = runCatching {
-            recognizer.startListening(intent)
-            true
-        }.getOrElse {
-            false
-        }
-
-        if (!started) {
-            stopSilentVoiceCapture()
-            voiceListening = false
-            return false
-        }
-
-        return true
     }
 
-    fun startLegacyVoiceRecognition() {
+    fun sendRecognizedVoice(text: String) {
+        val cleaned = text.trim()
+        if (cleaned.isBlank()) return
+        draft = ""
+        vm.runAgent(cleaned)
+    }
+
+    fun startVoiceRecognition() {
         val recognizer = speechRecognizer
+
         if (recognizer == null) {
             Toast.makeText(
                 context,
@@ -367,6 +297,10 @@ fun HaiOmApp(
             return
         }
 
+        lastVoicePartial = ""
+        muteRecognitionSounds()
+        voiceListening = true
+
         val intent = Intent(
             RecognizerIntent.ACTION_RECOGNIZE_SPEECH
         ).apply {
@@ -380,37 +314,32 @@ fun HaiOmApp(
                 "ar-SA"
             )
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
+                500L
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                1100L
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                700L
+            )
         }
 
-        voiceListening = true
         runCatching {
             recognizer.startListening(intent)
         }.onFailure {
             voiceListening = false
+            restoreRecognitionSounds()
             Toast.makeText(
                 context,
-                "تعذر بدء التسجيل الصوتي",
+                "تعذر بدء التعرف على الصوت",
                 Toast.LENGTH_SHORT
             ).show()
         }
-    }
-
-    fun startVoiceRecognition() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val silentStarted = startSilentInjectedRecognition()
-
-            if (!silentStarted) {
-                Toast.makeText(
-                    context,
-                    "تعذر تشغيل التسجيل الصامت",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-            return
-        }
-
-        startLegacyVoiceRecognition()
     }
 
     val microphonePermission = rememberLauncherForActivityResult(
@@ -440,36 +369,50 @@ fun HaiOmApp(
 
                 override fun onRmsChanged(rmsdB: Float) = Unit
                 override fun onBufferReceived(buffer: ByteArray?) = Unit
-
-                override fun onEndOfSpeech() {
-                    if (
-                        Build.VERSION.SDK_INT >=
-                        Build.VERSION_CODES.TIRAMISU &&
-                        voiceAudioRecord != null
-                    ) {
-                        stopSilentVoiceCapture()
-                    }
-                }
+                override fun onEndOfSpeech() = Unit
 
                 override fun onError(error: Int) {
-                    stopSilentVoiceCapture()
+                    val partial = lastVoicePartial.trim()
                     voiceListening = false
+                    restoreRecognitionSounds()
 
                     if (
+                        partial.isNotBlank() &&
+                        (error == SpeechRecognizer.ERROR_NO_MATCH ||
+                            error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
+                    ) {
+                        sendRecognizedVoice(partial)
+                        lastVoicePartial = ""
+                        return
+                    }
+
+                    lastVoicePartial = ""
+
+                    if (
+                        error != SpeechRecognizer.ERROR_CLIENT &&
                         error != SpeechRecognizer.ERROR_NO_MATCH &&
                         error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                     ) {
                         Toast.makeText(
                             context,
-                            "تعذر فهم الصوت، حاول مرة أخرى",
+                            "تعذر التعرف على الصوت، حاول مرة أخرى",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else if (
+                        error == SpeechRecognizer.ERROR_NO_MATCH ||
+                        error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                    ) {
+                        Toast.makeText(
+                            context,
+                            "لم يتم التقاط كلام واضح",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                 }
 
                 override fun onResults(results: Bundle?) {
-                    stopSilentVoiceCapture()
                     voiceListening = false
+                    restoreRecognitionSounds()
 
                     val text = results
                         ?.getStringArrayList(
@@ -478,9 +421,12 @@ fun HaiOmApp(
                         ?.firstOrNull()
                         ?.trim()
                         .orEmpty()
+                        .ifBlank { lastVoicePartial.trim() }
+
+                    lastVoicePartial = ""
 
                     if (text.isNotBlank()) {
-                        vm.runAgent(text)
+                        sendRecognizedVoice(text)
                     } else {
                         Toast.makeText(
                             context,
@@ -492,7 +438,19 @@ fun HaiOmApp(
 
                 override fun onPartialResults(
                     partialResults: Bundle?
-                ) = Unit
+                ) {
+                    val partial = partialResults
+                        ?.getStringArrayList(
+                            SpeechRecognizer.RESULTS_RECOGNITION
+                        )
+                        ?.firstOrNull()
+                        ?.trim()
+                        .orEmpty()
+
+                    if (partial.isNotBlank()) {
+                        lastVoicePartial = partial
+                    }
+                }
 
                 override fun onEvent(
                     eventType: Int,
@@ -502,17 +460,15 @@ fun HaiOmApp(
         )
 
         onDispose {
-            stopSilentVoiceCapture()
             runCatching { speechRecognizer?.cancel() }
             runCatching { speechRecognizer?.destroy() }
+            restoreRecognitionSounds()
         }
     }
 
     val requestVoiceInput: () -> Unit = {
         if (voiceListening) {
-            stopSilentVoiceCapture()
             runCatching { speechRecognizer?.stopListening() }
-            voiceListening = false
         } else if (
             ContextCompat.checkSelfPermission(
                 context,
