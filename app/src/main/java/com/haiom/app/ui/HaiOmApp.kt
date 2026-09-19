@@ -13,7 +13,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -380,12 +382,14 @@ fun HaiOmApp(
             }
 
             if (panel == null && !state.autoQueueStarted) {
+                // منطقة لمس صغيرة على حافة اليمين؛ لا تعيق محتوى الدردشة.
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
+                        .align(Alignment.TopEnd)
                         .statusBarsPadding()
-                        .height(72.dp)
+                        .padding(top = 78.dp)
+                        .width(34.dp)
+                        .height(330.dp)
                         .clickable {
                             showAutoExecuteControl = true
                         }
@@ -394,15 +398,15 @@ fun HaiOmApp(
                 AnimatedVisibility(
                     visible = showAutoExecuteControl,
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
+                        .align(Alignment.TopEnd)
                         .statusBarsPadding()
-                        .padding(top = 2.dp),
-                    enter = slideInVertically(
-                        initialOffsetY = { -it },
+                        .padding(top = 118.dp, end = 8.dp),
+                    enter = slideInHorizontally(
+                        initialOffsetX = { it },
                         animationSpec = tween(180)
                     ) + fadeIn(animationSpec = tween(140)),
-                    exit = slideOutVertically(
-                        targetOffsetY = { -it },
+                    exit = slideOutHorizontally(
+                        targetOffsetX = { it },
                         animationSpec = tween(180)
                     ) + fadeOut(animationSpec = tween(120))
                 ) {
@@ -430,18 +434,18 @@ fun HaiOmApp(
                         showAutoExecuteConfirm = false
                     },
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
+                        .align(Alignment.TopEnd)
                         .statusBarsPadding()
-                        .padding(top = 50.dp, start = 18.dp, end = 18.dp)
+                        .padding(top = 160.dp, start = 18.dp, end = 10.dp)
                 )
             }
 
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 val screenHeight = LocalConfiguration.current.screenHeightDp
                 val railTop = when {
-                    screenHeight < 650 -> 92.dp
-                    screenHeight < 780 -> 122.dp
-                    else -> 150.dp
+                    screenHeight < 650 -> 82.dp
+                    screenHeight < 780 -> 104.dp
+                    else -> 122.dp
                 }
 
                 Box(Modifier.fillMaxSize()) {
@@ -926,8 +930,8 @@ private fun AnimatedToolDock(
     onModels: () -> Unit,
     onSettings: () -> Unit
 ) {
-    val panelWidth = 66.dp
-    val handleWidth = 19.dp
+    val panelWidth = 58.dp
+    val handleWidth = 17.dp
     val panelOffset by animateDpAsState(
         targetValue = if (open) 0.dp else -panelWidth,
         animationSpec = tween(durationMillis = 280),
@@ -942,7 +946,7 @@ private fun AnimatedToolDock(
     Box(
         modifier = modifier
             .width(panelWidth + handleWidth)
-            .height(330.dp)
+            .height(292.dp)
     ) {
         Surface(
             modifier = Modifier
@@ -950,19 +954,19 @@ private fun AnimatedToolDock(
                 .offset(x = panelOffset),
             color = SurfaceSoft,
             shape = RoundedCornerShape(
-                topEnd = 30.dp,
-                bottomEnd = 30.dp
+                topEnd = 24.dp,
+                bottomEnd = 24.dp
             ),
             border = BorderStroke(1.dp, Line),
             shadowElevation = 8.dp
         ) {
             Column(
                 modifier = Modifier.padding(
-                    vertical = 12.dp,
-                    horizontal = 8.dp
+                    vertical = 10.dp,
+                    horizontal = 7.dp
                 ),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(7.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 DockIcon(
                     Icons.Outlined.ChatBubbleOutline,
@@ -985,7 +989,7 @@ private fun AnimatedToolDock(
                     onModels
                 )
                 HorizontalDivider(
-                    modifier = Modifier.width(34.dp),
+                    modifier = Modifier.width(30.dp),
                     color = Line
                 )
                 DockIcon(
@@ -1001,12 +1005,12 @@ private fun AnimatedToolDock(
                 .align(Alignment.CenterStart)
                 .offset(x = handleOffset)
                 .width(handleWidth)
-                .height(80.dp)
+                .height(62.dp)
                 .clickable(onClick = onToggle),
             color = Blue,
             shape = RoundedCornerShape(
-                topEnd = 12.dp,
-                bottomEnd = 12.dp
+                topEnd = 10.dp,
+                bottomEnd = 10.dp
             ),
             shadowElevation = 2.dp
         ) {
@@ -1015,7 +1019,7 @@ private fun AnimatedToolDock(
                     Icons.Outlined.MoreVert,
                     if (open) "إغلاق الأدوات" else "فتح الأدوات",
                     tint = Color.White,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(13.dp)
                 )
             }
         }
@@ -1028,13 +1032,13 @@ private fun DockIcon(
     onClick: () -> Unit
 ) {
     Surface(
-        modifier = Modifier.size(43.dp),
+        modifier = Modifier.size(39.dp),
         color = Color.White,
         shape = CircleShape,
         border = BorderStroke(1.dp, Line)
     ) {
         IconButton(onClick = onClick) {
-            Icon(icon, label, tint = Ink, modifier = Modifier.size(23.dp))
+            Icon(icon, label, tint = Ink, modifier = Modifier.size(21.dp))
         }
     }
 }
@@ -1802,7 +1806,7 @@ private fun AutoRuntimeStatusBar(
         ) {
             if (!paused && (remoteLive || controllerLive)) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(14.dp),
                     strokeWidth = 2.dp,
                     color = Blue
                 )
@@ -1894,22 +1898,36 @@ private fun AutoExecuteTopControl(
     modifier: Modifier = Modifier
 ) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Row(
-            modifier = modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            modifier = modifier
+                .widthIn(min = 104.dp, max = 116.dp)
+                .clickable { onToggle(!checked) },
+            color = Color.White,
+            shape = RoundedCornerShape(17.dp),
+            border = BorderStroke(1.dp, Line),
+            shadowElevation = 4.dp
         ) {
-            AutoExecuteCheckBox(
-                checked = checked,
-                onClick = { onToggle(!checked) }
-            )
-            Spacer(Modifier.width(5.dp))
-            Text(
-                "تنفيذ تلقائي",
-                modifier = Modifier.clickable { onToggle(!checked) },
-                color = Ink,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Row(
+                modifier = Modifier.padding(
+                    horizontal = 9.dp,
+                    vertical = 7.dp
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                AutoExecuteCheckBox(
+                    checked = checked,
+                    onClick = { onToggle(!checked) }
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    "تنفيذ تلقائي",
+                    color = Ink,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
         }
     }
 }
@@ -1921,7 +1939,7 @@ private fun AutoExecuteCheckBox(
 ) {
     Surface(
         modifier = Modifier
-            .size(20.dp)
+            .size(18.dp)
             .clickable(onClick = onClick),
         color = if (checked) BlueSoft else Color.White,
         shape = RoundedCornerShape(5.dp),
