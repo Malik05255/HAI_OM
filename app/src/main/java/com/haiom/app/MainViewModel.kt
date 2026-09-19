@@ -435,12 +435,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         askToStartAfter: Boolean
     ) {
         appendChat("user", text)
+        val resumeExecution = autoTaskStore.snapshot().started
 
         viewModelScope.launch {
             val planned = planAutomaticTasks(text)
             autoTaskStore.replaceWaitingTasks(planned)
 
-            if (autoTaskStore.snapshot().started) {
+            if (resumeExecution) {
+                autoTaskStore.setStarted(true)
                 AutoTaskWorker.enqueue(getApplication())
             }
 
