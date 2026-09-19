@@ -136,6 +136,7 @@ fun HaiOmApp(
     var panel by remember { mutableStateOf<ToolPanel?>(null) }
     var showAutoExecuteConfirm by remember { mutableStateOf(false) }
     var showAutoExecuteControl by remember { mutableStateOf(false) }
+    var runtimeNow by remember { mutableStateOf(System.currentTimeMillis()) }
     val media = remember { mutableStateListOf<PickedMedia>() }
 
     val mediaPicker = rememberLauncherForActivityResult(
@@ -190,6 +191,13 @@ fun HaiOmApp(
         if (showAutoExecuteControl) {
             delay(2_000)
             showAutoExecuteControl = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            runtimeNow = System.currentTimeMillis()
+            delay(2_000)
         }
     }
 
@@ -259,7 +267,14 @@ fun HaiOmApp(
                     running = state.running,
                     programming = state.programming,
                     progressText = state.logs.lastOrNull(),
-                    autoEvents = state.autoEvents
+                    autoEvents = state.autoEvents,
+                    autoTasks = state.autoTasks,
+                    autoQueueStarted = state.autoQueueStarted,
+                    autoWorkerActive = state.autoWorkerActive,
+                    autoWorkerHeartbeatAt = state.autoWorkerHeartbeatAt,
+                    autoWorkerMessage = state.autoWorkerMessage,
+                    autoWorkerError = state.autoWorkerError,
+                    runtimeNow = runtimeNow
                 )
             } else {
                 ToolScreen(
@@ -281,6 +296,11 @@ fun HaiOmApp(
                     autoExecuteEnabled = state.autoExecuteEnabled,
                     autoTasks = state.autoTasks,
                     autoQueueStarted = state.autoQueueStarted,
+                    autoWorkerActive = state.autoWorkerActive,
+                    autoWorkerHeartbeatAt = state.autoWorkerHeartbeatAt,
+                    autoWorkerMessage = state.autoWorkerMessage,
+                    autoWorkerError = state.autoWorkerError,
+                    runtimeNow = runtimeNow,
                     onBack = { panel = null },
                     onSaveRepo = {
                         vm.saveSelectedRepository(it)
@@ -427,11 +447,23 @@ private fun ChatCanvas(
     running: Boolean,
     programming: Boolean,
     progressText: String?,
-    autoEvents: List<String>
+    autoEvents: List<String>,
+    autoTasks: List<AutoTaskItem>,
+    autoQueueStarted: Boolean,
+    autoWorkerActive: Boolean,
+    autoWorkerHeartbeatAt: Long,
+    autoWorkerMessage: String,
+    autoWorkerError: String,
+    runtimeNow: Long
 ) {
     val lastAnswer = history.lastOrNull { it.role == "assistant" }?.text
     val extraAnswer = standaloneAnswer?.takeIf { it.isNotBlank() && it != lastAnswer }
-    val empty = history.isEmpty() && extraAnswer == null && !running
+    val empty =
+        history.isEmpty() &&
+            extraAnswer == null &&
+            !running &&
+            autoEvents.isEmpty() &&
+            !autoQueueStarted
     val listState = rememberLazyListState()
     val renderedItemCount =
         history.size +
@@ -456,6 +488,19 @@ private fun ChatCanvas(
             .padding(horizontal = 18.dp)
     ) {
         Spacer(Modifier.height(8.dp))
+
+        if (autoQueueStarted || autoWorkerError.isNotBlank()) {
+            AutoRuntimeStatusBar(
+                tasks = autoTasks,
+                queueStarted = autoQueueStarted,
+                workerActive = autoWorkerActive,
+                heartbeatAt = autoWorkerHeartbeatAt,
+                workerMessage = autoWorkerMessage,
+                workerError = autoWorkerError,
+                now = runtimeNow
+            )
+            Spacer(Modifier.height(8.dp))
+        }
 
         if (empty) {
             Box(
@@ -931,6 +976,11 @@ private fun ToolScreen(
     autoExecuteEnabled: Boolean,
     autoTasks: List<AutoTaskItem>,
     autoQueueStarted: Boolean,
+    autoWorkerActive: Boolean,
+    autoWorkerHeartbeatAt: Long,
+    autoWorkerMessage: String,
+    autoWorkerError: String,
+    runtimeNow: Long,
     onBack: () -> Unit,
     onSaveRepo: (GitHubRepository) -> Unit,
     onOpenProjects: () -> Unit,
@@ -1023,6 +1073,11 @@ private fun ToolScreen(
                 SettingsPage.AUTOMATION -> AutomaticTasksContent(
                     tasks = autoTasks,
                     running = autoQueueStarted,
+                    workerActive = autoWorkerActive,
+                    heartbeatAt = autoWorkerHeartbeatAt,
+                    workerMessage = autoWorkerMessage,
+                    workerError = autoWorkerError,
+                    now = runtimeNow,
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 )
             }
