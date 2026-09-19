@@ -115,7 +115,11 @@ private enum class ToolPanel { PROJECTS, HISTORY, MODELS, SETTINGS }
 private data class PickedMedia(val uri: Uri, val name: String)
 
 @Composable
-fun HaiOmApp(vm: MainViewModel = viewModel()) {
+fun HaiOmApp(
+    vm: MainViewModel = viewModel(),
+    oauthCallback: String? = null,
+    onOAuthCallbackConsumed: () -> Unit = {}
+) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
@@ -172,6 +176,12 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
             )
         }
         vm.consumeGitHubLaunch()
+    }
+
+    LaunchedEffect(oauthCallback) {
+        val callback = oauthCallback ?: return@LaunchedEffect
+        vm.completeGitHubOAuth(callback)
+        onOAuthCallbackConsumed()
     }
 
     if (state.githubLinking) {
@@ -258,6 +268,7 @@ fun HaiOmApp(vm: MainViewModel = viewModel()) {
                     login = state.githubLogin,
                     linking = state.githubLinking,
                     linkingStatus = state.githubLinkStatus,
+                    oauthAvailable = state.githubOAuthAvailable,
                     repositoryCount = state.repositories.size,
                     logs = state.logs,
                     answer = state.result?.answer,
@@ -806,6 +817,7 @@ private fun ToolScreen(
     login: String,
     linking: Boolean,
     linkingStatus: String,
+    oauthAvailable: Boolean,
     repositoryCount: Int,
     logs: List<String>,
     answer: String?,
@@ -844,6 +856,7 @@ private fun ToolScreen(
                 connected = connected,
                 linking = linking,
                 linkingStatus = linkingStatus,
+                oauthAvailable = oauthAvailable,
                 onSelect = onSelectRepo,
                 onConnect = onConnect,
                 onTokenConnect = onTokenConnect,
@@ -863,6 +876,7 @@ private fun ToolScreen(
                 repositoryCount = repositoryCount,
                 linking = linking,
                 linkingStatus = linkingStatus,
+                oauthAvailable = oauthAvailable,
                 checkingUpdate = checkingUpdate,
                 onConnect = onConnect,
                 onTokenConnect = onTokenConnect,
@@ -895,6 +909,7 @@ private fun ProjectsContent(
     connected: Boolean,
     linking: Boolean,
     linkingStatus: String,
+    oauthAvailable: Boolean,
     onSelect: (GitHubRepository) -> Unit,
     onConnect: () -> Unit,
     onTokenConnect: (String) -> Unit,
@@ -904,6 +919,7 @@ private fun ProjectsContent(
         GitHubConnectCard(
             linking = linking,
             status = linkingStatus,
+            oauthAvailable = oauthAvailable,
             onConnect = onConnect,
             onTokenConnect = onTokenConnect,
             onCancel = onCancelLink
@@ -1076,6 +1092,7 @@ private fun SettingsContent(
     repositoryCount: Int,
     linking: Boolean,
     linkingStatus: String,
+    oauthAvailable: Boolean,
     checkingUpdate: Boolean,
     onConnect: () -> Unit,
     onTokenConnect: (String) -> Unit,
@@ -1135,6 +1152,7 @@ private fun SettingsContent(
         GitHubConnectCard(
             linking = linking,
             status = linkingStatus,
+            oauthAvailable = oauthAvailable,
             onConnect = onConnect,
             onTokenConnect = onTokenConnect,
             onCancel = onCancelLink
@@ -1172,6 +1190,7 @@ private fun SettingsContent(
 private fun GitHubConnectCard(
     linking: Boolean,
     status: String,
+    oauthAvailable: Boolean,
     onConnect: () -> Unit,
     onTokenConnect: (String) -> Unit,
     onCancel: () -> Unit
@@ -1222,9 +1241,11 @@ private fun GitHubConnectCard(
                     )
                     Text(
                         if (linking) {
-                            status.ifBlank { "جاري التحقق…" }
+                            status.ifBlank { "جاري ربط GitHub…" }
+                        } else if (oauthAvailable) {
+                            "اضغط ربط GitHub، ثم وافق على الصلاحيات فقط."
                         } else {
-                            "افتح GitHub واختر All repositories، أنشئ الرمز وانسخه، ثم ارجع واضغط لصق وربط."
+                            "ربط OAuth غير مهيأ في هذا البناء. استخدم الربط اليدوي مؤقتًا."
                         },
                         color = Muted,
                         fontSize = 12.sp,
@@ -1264,33 +1285,39 @@ private fun GitHubConnectCard(
                 ) {
                     Icon(Icons.Outlined.Link, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("فتح GitHub وإنشاء الرمز")
+                    Text(if (oauthAvailable) "ربط GitHub" else "فتح GitHub للربط اليدوي")
                 }
 
-                Spacer(Modifier.height(8.dp))
+                if (!oauthAvailable) {
+                    Spacer(Modifier.height(8.dp))
 
-                OutlinedButton(
-                    onClick = {
-                        val clipboard = context.getSystemService(
-                            Context.CLIPBOARD_SERVICE
-                        ) as ClipboardManager
-                        val token = clipboard.primaryClip
-                            ?.getItemAt(0)
-                            ?.coerceToText(context)
-                            ?.toString()
-                            .orEmpty()
-                        onTokenConnect(token)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Text("لصق وربط")
+                    OutlinedButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(
+                                Context.CLIPBOARD_SERVICE
+                            ) as ClipboardManager
+                            val token = clipboard.primaryClip
+                                ?.getItemAt(0)
+                                ?.coerceToText(context)
+                                ?.toString()
+                                .orEmpty()
+                            onTokenConnect(token)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Text("لصق وربط")
+                    }
                 }
 
                 Spacer(Modifier.height(9.dp))
 
                 Text(
-                    "سيطلب GitHub صلاحيات المشروع فقط: تعديل الملفات، Pull Requests، قراءة Actions، وتعديل Workflows. الرمز يُحفظ مشفرًا داخل جهازك.",
+                    if (oauthAvailable) {
+                        "سيستخدم GitHub الحساب المفتوح في المتصفح. بعد الموافقة سيعود OM تلقائيًا ويعرض مشاريعك."
+                    } else {
+                        "الربط اليدوي مؤقت حتى يتم ضبط OAuth في نسخة البناء."
+                    },
                     color = Muted,
                     fontSize = 11.sp,
                     lineHeight = 17.sp
