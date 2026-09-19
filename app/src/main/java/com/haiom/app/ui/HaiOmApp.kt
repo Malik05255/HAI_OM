@@ -383,15 +383,15 @@ fun HaiOmApp(
                 )
             }
 
-            if (panel == null && !state.autoQueueStarted) {
+            if (panel == null) {
                 // منطقة لمس صغيرة على حافة اليمين؛ لا تعيق محتوى الدردشة.
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .statusBarsPadding()
-                        .padding(top = 78.dp)
-                        .width(34.dp)
-                        .height(330.dp)
+                        .padding(top = 44.dp)
+                        .width(38.dp)
+                        .height(250.dp)
                         .clickable {
                             showAutoExecuteControl = true
                         }
@@ -402,7 +402,7 @@ fun HaiOmApp(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .statusBarsPadding()
-                        .padding(top = 118.dp, end = 8.dp),
+                        .padding(top = 76.dp, end = 8.dp),
                     enter = slideInHorizontally(
                         initialOffsetX = { it },
                         animationSpec = tween(180)
@@ -438,7 +438,7 @@ fun HaiOmApp(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .statusBarsPadding()
-                        .padding(top = 160.dp, start = 18.dp, end = 10.dp)
+                        .padding(top = 118.dp, start = 18.dp, end = 10.dp)
                 )
             }
 
@@ -588,10 +588,9 @@ private fun ChatCanvas(
                         now = runtimeNow,
                         onTogglePause = onTogglePause,
                         onOpenTasks = onOpenTasks,
-                        modifier = Modifier.widthIn(
-                            min = 150.dp,
-                            max = 220.dp
-                        )
+                        modifier = Modifier
+                            .fillMaxWidth(0.54f)
+                            .offset(x = (-10).dp)
                     )
                 }
             }
@@ -1819,63 +1818,81 @@ private fun AutoRuntimeStatusBar(
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, Line)
     ) {
-        Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+        CompositionLocalProvider(
+            LocalLayoutDirection provides LayoutDirection.Ltr
         ) {
-            if (!paused && (remoteLive || controllerLive)) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(14.dp),
-                    strokeWidth = 2.dp,
-                    color = Blue
-                )
-            } else {
-                Box(
-                    Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(if (status == "تم") Blue else Muted)
-                )
-            }
-
-            Spacer(Modifier.width(9.dp))
-
-            Text(
-                status,
-                modifier = Modifier.weight(1f),
-                color = if (!paused && (remoteLive || controllerLive)) Blue else Ink,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            if (queueStarted) {
-                Surface(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clickable(onClick = onTogglePause),
-                    color = Color.White,
-                    shape = CircleShape,
-                    border = BorderStroke(1.dp, Line)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            if (paused) {
-                                Icons.Outlined.PlayArrow
-                            } else {
-                                Icons.Outlined.Pause
-                            },
-                            contentDescription = if (paused) {
-                                "متابعة"
-                            } else {
-                                "إيقاف مؤقت"
-                            },
-                            tint = Blue,
-                            modifier = Modifier.size(18.dp)
-                        )
+            Row(
+                Modifier.padding(
+                    start = 8.dp,
+                    end = 12.dp,
+                    top = 9.dp,
+                    bottom = 9.dp
+                ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (queueStarted) {
+                    Surface(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clickable(onClick = onTogglePause),
+                        color = Color.White,
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, Line)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                if (paused) {
+                                    Icons.Outlined.PlayArrow
+                                } else {
+                                    Icons.Outlined.Pause
+                                },
+                                contentDescription = if (paused) {
+                                    "متابعة"
+                                } else {
+                                    "إيقاف مؤقت"
+                                },
+                                tint = Blue,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
+                    Spacer(Modifier.width(10.dp))
+                }
+
+                CompositionLocalProvider(
+                    LocalLayoutDirection provides LayoutDirection.Rtl
+                ) {
+                    Text(
+                        status,
+                        modifier = Modifier.weight(1f),
+                        color = if (
+                            !paused && (remoteLive || controllerLive)
+                        ) Blue else Ink,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Right
+                    )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                if (!paused && (remoteLive || controllerLive)) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = Blue
+                    )
+                } else {
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (status == "تم") Blue else Muted
+                            )
+                    )
                 }
             }
-
         }
     }
     }
