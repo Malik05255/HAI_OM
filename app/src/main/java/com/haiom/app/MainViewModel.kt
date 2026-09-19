@@ -1,6 +1,7 @@
 package com.haiom.app
 
 import android.app.Application
+import android.content.Context
 import com.haiom.app.agent.RemoteAgentRunner
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,7 @@ import com.haiom.app.model.FreeProviderRanking
 import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.GitHubAccountClient
 import com.haiom.app.network.GitHubClient
+import com.haiom.app.network.GitHubOAuthClient
 import com.haiom.app.network.GitHubAppLinker
 import com.haiom.app.network.DirectChatClient
 import com.haiom.app.network.ChatTurn
@@ -37,6 +39,7 @@ data class MainUiState(
     val githubLinking: Boolean = false,
     val githubLaunchUrl: String? = null,
     val githubLinkStatus: String = "",
+    val githubOAuthAvailable: Boolean = false,
     val githubJustLinked: Boolean = false,
     val omniReady: Boolean = false,
     val strictFreeVerified: Boolean = false,
@@ -53,10 +56,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val secrets = SecretStore(application)
     private val updater = AppUpdateManager(application)
     private val githubAppLinker = GitHubAppLinker()
+    private val githubOAuthClient = GitHubOAuthClient(
+        clientId = BuildConfig.GITHUB_OAUTH_CLIENT_ID,
+        clientSecret = BuildConfig.GITHUB_OAUTH_CLIENT_SECRET
+    )
+    private val githubOAuthPrefs = application.getSharedPreferences(
+        "github_oauth_pending",
+        Context.MODE_PRIVATE
+    )
     private val directChat = DirectChatClient()
     private var githubLinkJob: Job? = null
     private val _state = MutableStateFlow(
-        MainUiState(hasGitHubToken = secrets.githubToken().isNotBlank() || secrets.hasGitHubApp())
+        MainUiState(
+            hasGitHubToken = secrets.githubToken().isNotBlank() || secrets.hasGitHubApp(),
+            githubOAuthAvailable = githubOAuthClient.configured
+        )
     )
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
@@ -85,14 +99,133 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startGitHubLink() {
         if (_state.value.running || _state.value.githubLinking) return
+
+        if (!githubOAuthClient.configured) {
+            _state.update {
+                it.copy(
+                    githubLaunchUrl = GITHUB_TOKEN_TEMPLATE_URL,
+                    githubLinkStatus = "في GitHub اختر Repository access → All repositories، أنشئ الرمز وانسخه، ثم ارجع واضغط لصق وربط",
+                    githubJustLinked = false,
+                    error = null,
+                    message = null
+                )
+            }
+            return
+        }
+
+        val session = runCatching {
+            githubOAuthClient.createSession()
+        }.getOrElse { throwable ->
+            _state.update {
+                it.copy(
+                    error = throwable.message ?: "تعذر بدء ربط GitHub"
+                )
+            }
+            return
+        }
+
+        githubOAuthPrefs.edit()
+            .putString(OAUTH_STATE_KEY, session.state)
+            .putString(OAUTH_VERIFIER_KEY, session.verifier)
+            .apply()
+
         _state.update {
             it.copy(
-                githubLaunchUrl = GITHUB_TOKEN_TEMPLATE_URL,
-                githubLinkStatus = "في GitHub اختر Repository access → All repositories، أنشئ الرمز وانسخه، ثم ارجع واضغط لصق وربط",
+                githubLinking = true,
+                githubLaunchUrl = session.authorizationUrl,
+                githubLinkStatus = "وافق على صلاحيات OM في GitHub",
                 githubJustLinked = false,
                 error = null,
                 message = null
             )
+        }
+    }
+
+    fun completeGitHubOAuth(callbackUrl: String) {
+        if (!githubOAuthClient.configured) return
+
+        githubLinkJob?.cancel()
+        _state.update {
+            it.copy(
+                githubLinking = true,
+                githubLinkStatus = "جاري اعتماد حساب GitHub…",
+                githubLaunchUrl = null,
+                error = null,
+                message = null
+            )
+        }
+
+        githubLinkJob = viewModelScope.launch {
+            try {
+                val (code, returnedState) =
+                    githubOAuthClient.parseCallback(callbackUrl)
+
+                val expectedState = githubOAuthPrefs
+                    .getString(OAUTH_STATE_KEY, null)
+                    .orEmpty()
+                val verifier = githubOAuthPrefs
+                    .getString(OAUTH_VERIFIER_KEY, null)
+                    .orEmpty()
+
+                if (
+                    expectedState.isBlank() ||
+                    verifier.isBlank() ||
+                    returnedState != expectedState
+                ) {
+                    error("تعذر التحقق من جلسة GitHub")
+                }
+
+                val token = githubOAuthClient.exchangeCode(
+                    code = code,
+                    verifier = verifier
+                )
+
+                _state.update {
+                    it.copy(
+                        githubLinkStatus = "جاري تحميل مشاريعك…"
+                    )
+                }
+
+                val account = GitHubAccountClient(token)
+                val login = account.login()
+                val repositories = account.repositories()
+
+                secrets.clearGitHubApp()
+                secrets.saveGitHubToken(token)
+                clearPendingOAuth()
+
+                _state.update {
+                    it.copy(
+                        githubLinking = false,
+                        githubLinkStatus = "",
+                        hasGitHubToken = true,
+                        githubLogin = login,
+                        repositories = repositories,
+                        githubJustLinked = true,
+                        message = "تم ربط GitHub. اختر المشروع الذي تريد العمل عليه"
+                    )
+                }
+            } catch (_: CancellationException) {
+                clearPendingOAuth()
+                _state.update {
+                    it.copy(
+                        githubLinking = false,
+                        githubLinkStatus = ""
+                    )
+                }
+            } catch (t: Throwable) {
+                clearPendingOAuth()
+                _state.update {
+                    it.copy(
+                        githubLinking = false,
+                        githubLinkStatus = "",
+                        error = t.message?.takeIf { message -> message.isNotBlank() }
+                            ?: "تعذر ربط GitHub"
+                    )
+                }
+            } finally {
+                githubLinkJob = null
+            }
         }
     }
 
@@ -172,6 +305,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelGitHubLink() {
         githubLinkJob?.cancel()
         githubLinkJob = null
+        clearPendingOAuth()
         _state.update {
             it.copy(
                 githubLinking = false,
@@ -194,6 +328,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         githubLinkJob = null
         secrets.clearGitHubToken()
         secrets.clearGitHubApp()
+        clearPendingOAuth()
         _state.update {
             it.copy(
                 hasGitHubToken = false,
@@ -430,6 +565,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun clearPendingOAuth() {
+        githubOAuthPrefs.edit().clear().apply()
+    }
+
     private fun appendLog(message: String) {
         val simple = when {
             message.contains("قراءة المستودع", true) -> "قراءة المشروع"
@@ -498,6 +637,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearError() = _state.update { it.copy(error = null) }
 
     companion object {
+        private const val OAUTH_STATE_KEY = "state"
+        private const val OAUTH_VERIFIER_KEY = "verifier"
+
         private const val GITHUB_TOKEN_TEMPLATE_URL =
             "https://github.com/settings/personal-access-tokens/new" +
                 "?name=OM-Mobile" +
