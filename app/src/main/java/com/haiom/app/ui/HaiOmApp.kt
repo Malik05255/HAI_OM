@@ -1865,7 +1865,7 @@ private fun AutomaticTasksContent(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(14.dp))
 
         if (tasks.isEmpty()) {
             Box(
@@ -1874,7 +1874,11 @@ private fun AutomaticTasksContent(
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                Text("لا توجد مهام", color = Muted, fontSize = 13.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("◇", color = Blue, fontSize = 30.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("لا توجد مهام", color = Muted, fontSize = 13.sp)
+                }
             }
             return@Column
         }
@@ -1884,7 +1888,7 @@ private fun AutomaticTasksContent(
                 .weight(1f)
                 .fillMaxWidth(),
             contentPadding = PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
             items(tasks.sortedBy { it.order }, key = { it.id }) { task ->
                 val staleRunning =
@@ -1894,68 +1898,84 @@ private fun AutomaticTasksContent(
                         !controllerLive
 
                 val statusText = when {
-                    staleRunning -> "متوقف"
-                    task.status == AutoTaskStatus.WAITING -> "في الانتظار"
-                    task.status == AutoTaskStatus.RUNNING && paused -> "متوقف مؤقتًا"
-                    task.status == AutoTaskStatus.RUNNING -> "يعمل"
-                    task.status == AutoTaskStatus.SUCCESS -> "تم"
-                    else -> "فشل"
+                    staleRunning -> "STOP"
+                    task.status == AutoTaskStatus.WAITING -> "WAIT"
+                    task.status == AutoTaskStatus.RUNNING && paused -> "PAUSE"
+                    task.status == AutoTaskStatus.RUNNING -> "RUN"
+                    task.status == AutoTaskStatus.SUCCESS -> "DONE"
+                    else -> "FAIL"
                 }
 
-                val statusIcon = when {
-                    staleRunning -> Icons.Outlined.Close
-                    task.status == AutoTaskStatus.WAITING -> Icons.Outlined.MoreVert
-                    task.status == AutoTaskStatus.RUNNING -> Icons.Outlined.AutoAwesome
-                    task.status == AutoTaskStatus.SUCCESS -> Icons.Outlined.CheckCircle
-                    else -> Icons.Outlined.Close
+                val statusColor = when {
+                    staleRunning -> Muted
+                    task.status == AutoTaskStatus.RUNNING -> Blue
+                    task.status == AutoTaskStatus.SUCCESS -> Color(0xFF68F0B5)
+                    task.status == AutoTaskStatus.FAILED -> Color(0xFFFF7588)
+                    else -> Violet
                 }
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = if (task.status == AutoTaskStatus.RUNNING && remoteLive) {
-                        BlueSoft
-                    } else {
-                        Color.White
-                    },
-                    shape = RoundedCornerShape(15.dp),
-                    border = BorderStroke(1.dp, Line)
+                    color = if (
+                        task.status == AutoTaskStatus.RUNNING && remoteLive
+                    ) BlueSoft else SurfaceElevated,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        if (
+                            task.status == AutoTaskStatus.RUNNING && remoteLive
+                        ) Blue.copy(alpha = 0.55f) else Line
+                    )
                 ) {
                     Row(
                         Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "${task.order}",
-                            color = Muted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Surface(
+                            modifier = Modifier.size(34.dp),
+                            color = Color(0xFF0D1219),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Line)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    "${task.order}",
+                                    color = statusColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
                         Spacer(Modifier.width(10.dp))
+
                         Column(Modifier.weight(1f)) {
                             Text(
                                 task.title,
                                 color = Ink,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(3.dp))
                             Text(
                                 statusText,
-                                color = if (
-                                    task.status == AutoTaskStatus.RUNNING &&
-                                    remoteLive
-                                ) Blue else Muted,
-                                fontSize = 11.sp
+                                color = statusColor,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.1.sp
                             )
                         }
-                        Icon(
-                            statusIcon,
-                            statusText,
-                            tint = if (
-                                (task.status == AutoTaskStatus.RUNNING && remoteLive) ||
-                                task.status == AutoTaskStatus.SUCCESS
-                            ) Blue else Muted,
-                            modifier = Modifier.size(19.dp)
+
+                        Text(
+                            when (statusText) {
+                                "RUN" -> "●"
+                                "DONE" -> "✓"
+                                "FAIL" -> "×"
+                                "PAUSE" -> "Ⅱ"
+                                else -> "○"
+                            },
+                            color = statusColor,
+                            fontSize = 16.sp
                         )
                     }
                 }
@@ -2162,37 +2182,38 @@ private fun AutoExecuteTopControl(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Surface(
-            modifier = modifier
-                .wrapContentWidth()
-                .clickable { onToggle(!checked) },
-            color = Color.White,
-            shape = RoundedCornerShape(17.dp),
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 4.dp
+    Surface(
+        modifier = modifier
+            .wrapContentWidth()
+            .clickable { onToggle(!checked) },
+        color = Color(0xEE10151D),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(
+            1.dp,
+            if (checked) Blue.copy(alpha = 0.55f) else Line
+        ),
+        shadowElevation = 10.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(
+                horizontal = 9.dp,
+                vertical = 6.dp
+            ),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.padding(
-                    horizontal = 8.dp,
-                    vertical = 5.dp
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                AutoExecuteCheckBox(
-                    checked = checked,
-                    onClick = { onToggle(!checked) }
-                )
-                Spacer(Modifier.width(5.dp))
-                Text(
-                    "تنفيذ تلقائي",
-                    color = Ink,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1
-                )
-            }
+            Text(
+                if (checked) "●" else "○",
+                color = if (checked) Blue else Muted,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "AUTO",
+                color = if (checked) Blue else Ink,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
         }
     }
 }
@@ -2202,27 +2223,17 @@ private fun AutoExecuteCheckBox(
     checked: Boolean,
     onClick: () -> Unit
 ) {
-    Surface(
+    Box(
         modifier = Modifier
-            .size(18.dp)
+            .size(16.dp)
             .clickable(onClick = onClick),
-        color = if (checked) BlueSoft else Color.White,
-        shape = RoundedCornerShape(5.dp),
-        border = BorderStroke(
-            1.dp,
-            if (checked) Blue else Color(0xFFCFC9D2)
-        )
+        contentAlignment = Alignment.Center
     ) {
-        if (checked) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Outlined.CheckCircle,
-                    "مفعّل",
-                    tint = Blue,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
+        Text(
+            if (checked) "●" else "○",
+            color = if (checked) Blue else Muted,
+            fontSize = 11.sp
+        )
     }
 }
 
@@ -2232,61 +2243,38 @@ private fun AutoExecuteConfirmBanner(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        Surface(
-            modifier = modifier.wrapContentWidth(),
-            color = Color.White,
-            shape = RoundedCornerShape(11.dp),
-            border = BorderStroke(1.dp, Line),
-            shadowElevation = 3.dp
+    Surface(
+        modifier = modifier.wrapContentWidth(),
+        color = SurfaceElevated,
+        shape = RoundedCornerShape(13.dp),
+        border = BorderStroke(1.dp, Line),
+        shadowElevation = 12.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                modifier = Modifier.padding(
-                    horizontal = 9.dp,
-                    vertical = 6.dp
-                ),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    "تفعيل التنفيذ التلقائي؟",
-                    color = Ink,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1
-                )
-
-                Spacer(Modifier.height(2.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(
-                        onClick = onCancel,
-                        contentPadding = PaddingValues(
-                            horizontal = 7.dp,
-                            vertical = 1.dp
-                        )
-                    ) {
-                        Text("إلغاء", fontSize = 10.sp)
-                    }
-
-                    Spacer(Modifier.width(2.dp))
-
-                    Button(
-                        onClick = onConfirm,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(
-                            horizontal = 10.dp,
-                            vertical = 3.dp
-                        )
-                    ) {
-                        Text("موافق", fontSize = 10.sp)
-                    }
-                }
-            }
+            Text(
+                "تفعيل AUTO؟",
+                color = Ink,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "×",
+                modifier = Modifier.clickable(onClick = onCancel),
+                color = Muted,
+                fontSize = 18.sp
+            )
+            Spacer(Modifier.width(9.dp))
+            Text(
+                "✓",
+                modifier = Modifier.clickable(onClick = onConfirm),
+                color = Blue,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -2301,33 +2289,28 @@ private fun GitHubConnectCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFFF5F7FD),
-        shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(
-            1.dp,
-            Color(0xFFE0E6F4)
-        )
+        color = SurfaceElevated,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Line)
     ) {
         Column(
-            modifier = Modifier.padding(18.dp)
+            modifier = Modifier.padding(16.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    modifier = Modifier.size(42.dp),
-                    shape = CircleShape,
-                    color = Color.White,
-                    border = BorderStroke(1.dp, Line)
+                    modifier = Modifier.size(44.dp),
+                    color = BlueSoft,
+                    shape = RoundedCornerShape(13.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E4A58))
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Outlined.Link,
-                            null,
-                            tint = Ink,
-                            modifier = Modifier.size(22.dp)
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            "@",
+                            color = Blue,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -2336,22 +2319,21 @@ private fun GitHubConnectCard(
 
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "ربط GitHub",
+                        "GitHub",
                         color = Ink,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp
+                        fontSize = 16.sp
                     )
                     Text(
                         if (linking) {
-                            status.ifBlank { "جاري تجهيز كود الربط…" }
+                            status.ifBlank { "جاري الربط" }
                         } else if (oauthAvailable) {
-                            "اربط حسابك للمتابعة"
+                            "ربط مساحة العمل"
                         } else {
-                            "الربط غير متاح"
+                            "غير متاح"
                         },
                         color = Muted,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp
+                        fontSize = 11.sp
                     )
                 }
             }
@@ -2364,31 +2346,40 @@ private fun GitHubConnectCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
                         color = Blue
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(9.dp))
                     Text(
-                        status.ifBlank { "بانتظار GitHub…" },
+                        status.ifBlank { "بانتظار الموافقة" },
                         modifier = Modifier.weight(1f),
                         color = Ink,
-                        fontSize = 13.sp
+                        fontSize = 12.sp
                     )
-                    TextButton(onClick = onCancel) {
-                        Text("إلغاء")
-                    }
+                    Text(
+                        "×",
+                        modifier = Modifier.clickable(onClick = onCancel),
+                        color = Muted,
+                        fontSize = 18.sp
+                    )
                 }
             } else {
-                Button(
-                    onClick = onConnect,
-                    enabled = oauthAvailable,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = oauthAvailable, onClick = onConnect),
+                    color = if (oauthAvailable) Blue else Line,
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Outlined.Link, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("ربط GitHub")
+                    Text(
+                        "ربط الحساب",
+                        modifier = Modifier.padding(vertical = 11.dp),
+                        color = if (oauthAvailable) Canvas else Muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
