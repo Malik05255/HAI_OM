@@ -39,7 +39,12 @@ data class AutoQueueSnapshot(
     val workerActive: Boolean = false,
     val workerHeartbeatAt: Long = 0L,
     val workerMessage: String = "",
-    val workerError: String = ""
+    val workerError: String = "",
+    val remoteRepository: String = "",
+    val remoteRunId: Long = 0L,
+    val remoteRunUrl: String = "",
+    val remoteState: String = "",
+    val remoteStage: String = ""
 )
 
 class AutoTaskStore(context: Context) {
@@ -85,6 +90,46 @@ class AutoTaskStore(context: Context) {
 
     fun setAwaitingConfirmation(value: Boolean) {
         write(snapshot().copy(awaitingConfirmation = value))
+    }
+
+    fun updateRemoteExecution(
+        repository: String,
+        runId: Long?,
+        state: String,
+        stage: String
+    ) {
+        val current = snapshot()
+        val id = runId ?: current.remoteRunId
+        val url = if (repository.isNotBlank() && id > 0L) {
+            "https://github.com/$repository/actions/runs/$id"
+        } else {
+            current.remoteRunUrl
+        }
+
+        write(
+            current.copy(
+                remoteRepository = repository.ifBlank {
+                    current.remoteRepository
+                },
+                remoteRunId = id,
+                remoteRunUrl = url,
+                remoteState = state,
+                remoteStage = stage
+            )
+        )
+    }
+
+    fun clearRemoteExecution(repository: String = "") {
+        val current = snapshot()
+        write(
+            current.copy(
+                remoteRepository = repository,
+                remoteRunId = 0L,
+                remoteRunUrl = "",
+                remoteState = "waiting",
+                remoteStage = "بانتظار GitHub Actions"
+            )
+        )
     }
 
     fun markWorkerStarting(message: String = "جاري البدء") {
