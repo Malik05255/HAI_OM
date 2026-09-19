@@ -102,6 +102,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.haiom.app.MainViewModel
+import com.haiom.app.automation.AutoTaskItem
+import com.haiom.app.automation.AutoTaskStatus
 import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
 import kotlinx.coroutines.delay
@@ -225,14 +227,14 @@ fun HaiOmApp(
                     CompactComposer(
                         value = draft,
                         onValueChange = { draft = it },
-                        enabled = !state.running,
+                        enabled = !state.running || state.autoExecuteEnabled,
                         onMedia = {
                             mediaPicker.launch(
                                 arrayOf("image/*", "video/*", "application/pdf", "text/plain")
                             )
                         },
                         onSend = {
-                            if (draft.isBlank() || state.running) return@CompactComposer
+                            if (draft.isBlank() || (state.running && !state.autoExecuteEnabled)) return@CompactComposer
                             val attachmentNote = if (media.isEmpty()) "" else
                                 "\n\nالمرفقات المختارة: " + media.joinToString(", ") { it.name }
                             vm.runAgent(
@@ -256,7 +258,8 @@ fun HaiOmApp(
                     standaloneAnswer = state.result?.answer,
                     running = state.running,
                     programming = state.programming,
-                    progressText = state.logs.lastOrNull()
+                    progressText = state.logs.lastOrNull(),
+                    autoEvents = state.autoEvents
                 )
             } else {
                 ToolScreen(
@@ -276,6 +279,8 @@ fun HaiOmApp(
                     omniReady = state.omniReady,
                     checkingUpdate = state.checkingUpdate,
                     autoExecuteEnabled = state.autoExecuteEnabled,
+                    autoTasks = state.autoTasks,
+                    autoQueueStarted = state.autoQueueStarted,
                     onBack = { panel = null },
                     onSaveRepo = {
                         vm.saveSelectedRepository(it)
@@ -421,7 +426,8 @@ private fun ChatCanvas(
     standaloneAnswer: String?,
     running: Boolean,
     programming: Boolean,
-    progressText: String?
+    progressText: String?,
+    autoEvents: List<String>
 ) {
     val lastAnswer = history.lastOrNull { it.role == "assistant" }?.text
     val extraAnswer = standaloneAnswer?.takeIf { it.isNotBlank() && it != lastAnswer }
@@ -430,6 +436,7 @@ private fun ChatCanvas(
     val renderedItemCount =
         history.size +
             if (extraAnswer != null) 1 else 0 +
+            autoEvents.takeLast(8).size +
             if (running) 1 else 0
 
     LaunchedEffect(
@@ -478,6 +485,10 @@ private fun ChatCanvas(
                     item {
                         MessageBlock(ChatTurn("assistant", answer))
                     }
+                }
+
+                items(autoEvents.takeLast(8)) { event ->
+                    AutoEventLine(event)
                 }
 
                 if (running) {
@@ -597,6 +608,34 @@ private fun MessageBlock(turn: ChatTurn) {
         }
     }
 }
+@Composable
+private fun AutoEventLine(text: String) {
+    val icon = when {
+        text.contains("— تم") || text.contains("✓") -> Icons.Outlined.CheckCircle
+        text.contains("فشل") -> Icons.Outlined.Close
+        text.contains("قيد المعالجة") -> Icons.Outlined.AutoAwesome
+        else -> Icons.Outlined.MoreVert
+    }
+
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            null,
+            tint = if (text.contains("فشل")) Muted else Blue,
+            modifier = Modifier.size(15.dp)
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text,
+            color = Muted,
+            fontSize = 12.sp
+        )
+    }
+}
+
 @Composable
 private fun RunningLine(programming: Boolean, progressText: String?) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -890,6 +929,8 @@ private fun ToolScreen(
     omniReady: Boolean,
     checkingUpdate: Boolean,
     autoExecuteEnabled: Boolean,
+    autoTasks: List<AutoTaskItem>,
+    autoQueueStarted: Boolean,
     onBack: () -> Unit,
     onSaveRepo: (GitHubRepository) -> Unit,
     onOpenProjects: () -> Unit,
@@ -980,6 +1021,8 @@ private fun ToolScreen(
                 )
 
                 SettingsPage.AUTOMATION -> AutomaticTasksContent(
+                    tasks = autoTasks,
+                    running = autoQueueStarted,
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 )
             }
@@ -1393,9 +1436,82 @@ private fun GitHubSettingsContent(
 
 @Composable
 private fun AutomaticTasksContent(
+    tasks: List<AutoTaskItem>,
+    running: Boolean,
     modifier: Modifier = Modifier
 ) {
-    Box(modifier = modifier)
+    if (tasks.isEmpty()) {
+        Box(
+            modifier = modifier,
+            contentAlignment = Alignment.Center
+        ) {
+            Text("لا توجد مهام", color = Muted, fontSize = 13.sp)
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(tasks.sortedBy { it.order }, key = { it.id }) { task ->
+            val statusText = when (task.status) {
+                AutoTaskStatus.WAITING -> "في الانتظار"
+                AutoTaskStatus.RUNNING -> "قيد المعالجة"
+                AutoTaskStatus.SUCCESS -> "تم"
+                AutoTaskStatus.FAILED -> "فشل"
+            }
+            val statusIcon = when (task.status) {
+                AutoTaskStatus.WAITING -> Icons.Outlined.MoreVert
+                AutoTaskStatus.RUNNING -> Icons.Outlined.AutoAwesome
+                AutoTaskStatus.SUCCESS -> Icons.Outlined.CheckCircle
+                AutoTaskStatus.FAILED -> Icons.Outlined.Close
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (task.status == AutoTaskStatus.RUNNING) BlueSoft else Color.White,
+                shape = RoundedCornerShape(15.dp),
+                border = BorderStroke(1.dp, Line)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${task.order}",
+                        color = Muted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            task.title,
+                            color = Ink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            statusText,
+                            color = if (task.status == AutoTaskStatus.RUNNING) Blue else Muted,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Icon(
+                        statusIcon,
+                        statusText,
+                        tint = if (task.status == AutoTaskStatus.RUNNING ||
+                            task.status == AutoTaskStatus.SUCCESS
+                        ) Blue else Muted,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1472,7 +1588,7 @@ private fun AutoExecuteConfirmBanner(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "سوف يتم تنفيذ كل المهام بشكل تلقائي",
+                "تفعيل التنفيذ التلقائي؟",
                 color = Ink,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
