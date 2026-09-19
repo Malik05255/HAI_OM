@@ -1728,81 +1728,98 @@ private fun GitHubSettingsContent(
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Lavender,
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, LavenderStrong)
+            color = SurfaceElevated,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Line)
         ) {
-            Row(
-                Modifier.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Outlined.AccountCircle,
-                    null,
-                    tint = Blue,
-                    modifier = Modifier.size(28.dp)
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        login.ifBlank { "GitHub" },
-                        color = Ink,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "$repositoryCount مشروع",
-                        color = Muted,
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        selectedRepo?.let {
-                            "الحالي: ${it.fullName.substringAfter('/')}"
-                        } ?: "اختر مشروعًا",
-                        color = if (selectedRepo == null) Muted else Blue,
-                        fontSize = 12.sp,
-                        fontWeight = if (selectedRepo == null) FontWeight.Normal else FontWeight.SemiBold
-                    )
+            Column(Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        modifier = Modifier.size(46.dp),
+                        color = BlueSoft,
+                        shape = RoundedCornerShape(13.dp),
+                        border = BorderStroke(1.dp, Color(0xFF1E4A58))
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                "@",
+                                color = Blue,
+                                fontSize = 21.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            login.ifBlank { "GitHub" },
+                            color = Ink,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            "${repositoryCount} مستودع",
+                            color = Muted,
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    Text("●", color = Blue, fontSize = 13.sp)
                 }
-                Icon(
-                    if (selectedRepo == null) {
-                        Icons.Outlined.FolderOpen
-                    } else {
-                        Icons.Outlined.CheckCircle
-                    },
-                    null,
-                    tint = Blue
+
+                Spacer(Modifier.height(14.dp))
+
+                Text(
+                    "المشروع النشط",
+                    color = Muted,
+                    fontSize = 10.sp,
+                    letterSpacing = 1.sp
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    selectedRepo?.fullName ?: "لم يتم اختيار مشروع",
+                    color = if (selectedRepo == null) Muted else Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
 
         Spacer(Modifier.height(12.dp))
 
-        OutlinedButton(
-            onClick = onOpenProjects,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.FolderOpen, null)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                if (selectedRepo == null) {
-                    "المشاريع"
-                } else {
-                    "تغيير المشروع"
-                }
-            )
-        }
+        SettingsTile(
+            glyph = "□",
+            title = if (selectedRepo == null) "اختيار مشروع" else "تغيير المشروع",
+            subtitle = selectedRepo?.fullName?.substringAfter('/') ?: "حدد مساحة العمل",
+            onClick = onOpenProjects
+        )
 
         Spacer(Modifier.height(10.dp))
 
-        OutlinedButton(
-            onClick = onDisconnect,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onDisconnect),
+            color = Color(0xFF1A1216),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color(0xFF4A2932))
         ) {
-            Icon(Icons.Outlined.Logout, null)
-            Spacer(Modifier.width(8.dp))
-            Text("فصل GitHub")
+            Row(
+                Modifier.padding(13.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("×", color = Color(0xFFFF7588), fontSize = 20.sp)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "فصل الحساب",
+                    color = Color(0xFFFFA6B2),
+                    fontSize = 13.sp
+                )
+            }
         }
     }
 }
@@ -1983,106 +2000,95 @@ private fun AutoRuntimeStatusBar(
     }
 
     val status = when {
-        paused -> "متوقف مؤقتًا"
-        remoteState == "failure" -> "حدث خطأ"
-        remoteState == "success" -> "تم"
-        remoteState == "queued" || remoteState == "waiting" -> "في الانتظار"
-        remoteState == "not_found" -> "لم يبدأ"
-        workerError.isNotBlank() -> "متوقف"
-        remoteStage.contains("يصلح") || remoteStage.contains("إصلاح") -> "يقوم بالإصلاح"
-        remoteStage.contains("كود") || remoteStage.contains("يكتب") -> "يعمل"
-        remoteStage.contains("يفحص") -> "يفحص التغييرات"
-        remoteStage.contains("يحفظ") -> "يحفظ التغييرات"
-        remoteStage.contains("يجهز") -> "يجهز"
-        remoteStage.contains("يفتح") -> "يفتح المشروع"
-        queueStarted && (remoteLive || controllerLive) -> "يعمل"
-        tasks.isNotEmpty() && doneCount == tasks.size -> "تم"
-        else -> "في الانتظار"
+        paused -> "PAUSED"
+        remoteState == "failure" -> "ERROR"
+        remoteState == "success" -> "DONE"
+        remoteState == "queued" || remoteState == "waiting" -> "QUEUED"
+        remoteState == "not_found" -> "IDLE"
+        workerError.isNotBlank() -> "STOPPED"
+        remoteStage.contains("يصلح") || remoteStage.contains("إصلاح") -> "REPAIR"
+        remoteStage.contains("يفحص") -> "VERIFY"
+        remoteStage.contains("يحفظ") -> "SAVE"
+        remoteStage.contains("يجهز") -> "PREP"
+        queueStarted && (remoteLive || controllerLive) -> "RUN"
+        tasks.isNotEmpty() && doneCount == tasks.size -> "DONE"
+        else -> "IDLE"
     }
 
-    CompositionLocalProvider(
-        LocalLayoutDirection provides LayoutDirection.Rtl
+    Surface(
+        modifier = modifier.clickable(onClick = onOpenTasks),
+        color = SurfaceElevated,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(
+            1.dp,
+            if (remoteLive && !paused) Blue.copy(alpha = 0.55f) else Line
+        )
     ) {
-        Surface(
-        modifier = modifier
-            .clickable(onClick = onOpenTasks),
-        color = if (paused) Color.White else BlueSoft,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, Line)
-    ) {
-        CompositionLocalProvider(
-            LocalLayoutDirection provides LayoutDirection.Ltr
+        Row(
+            Modifier.padding(
+                start = 5.dp,
+                end = 11.dp,
+                top = 7.dp,
+                bottom = 7.dp
+            ),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                Modifier.padding(
-                    start = 1.dp,
-                    end = 10.dp,
-                    top = 8.dp,
-                    bottom = 8.dp
-                ),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (queueStarted) {
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .clickable(onClick = onTogglePause),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            if (paused) {
-                                Icons.Outlined.PlayArrow
-                            } else {
-                                Icons.Outlined.Pause
-                            },
-                            contentDescription = if (paused) {
-                                "متابعة"
-                            } else {
-                                "إيقاف مؤقت"
-                            },
-                            tint = Blue,
-                            modifier = Modifier.size(17.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(6.dp))
-                }
-
-                CompositionLocalProvider(
-                    LocalLayoutDirection provides LayoutDirection.Rtl
+            if (queueStarted) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clickable(onClick = onTogglePause),
+                    contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        status,
-                        modifier = Modifier.weight(1f),
-                        color = if (
-                            !paused && (remoteLive || controllerLive)
-                        ) Blue else Ink,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Right
+                        if (paused) "▶" else "Ⅱ",
+                        color = Blue,
+                        fontSize = if (paused) 15.sp else 13.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
+                Spacer(Modifier.width(6.dp))
+            }
 
-                Spacer(Modifier.width(8.dp))
-
-                if (!paused && (remoteLive || controllerLive)) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                        color = Blue
-                    )
-                } else {
-                    Box(
-                        Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (status == "تم") Blue else Muted
-                            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    status,
+                    color = if (remoteLive && !paused) Blue else Ink,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp
+                )
+                val detail = when {
+                    paused -> "متوقف مؤقتًا"
+                    workerError.isNotBlank() -> workerError
+                    remoteStage.isNotBlank() -> remoteStage
+                    queueStarted -> "المهمة قيد التنفيذ"
+                    else -> ""
+                }
+                if (detail.isNotBlank()) {
+                    Text(
+                        detail,
+                        color = Muted,
+                        fontSize = 10.sp,
+                        maxLines = 1
                     )
                 }
             }
+
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(
+                        when {
+                            paused -> Violet
+                            remoteLive -> Blue
+                            status == "DONE" -> Color(0xFF68F0B5)
+                            else -> Muted
+                        }
+                    )
+            )
         }
-    }
     }
 }
 
@@ -2113,20 +2119,39 @@ private fun LiveCodePreview(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFFFAFAFC),
+            color = Color(0xFF070A0E),
             shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Line)
+            border = BorderStroke(1.dp, Color(0xFF1A3440))
         ) {
-            Text(
-                text = typed + cursor,
-                modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
-                color = Ink,
-                fontSize = 11.sp,
-                lineHeight = 16.sp,
-                fontFamily = FontFamily.Monospace,
-                textAlign = TextAlign.Left,
-                maxLines = 22
-            )
+            Column {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0D141C))
+                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "LIVE",
+                        color = Blue,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.4.sp
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text("●", color = Color(0xFF68F0B5), fontSize = 9.sp)
+                }
+                Text(
+                    text = typed + cursor,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                    color = Color(0xFFD5F7FF),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Left,
+                    maxLines = 22
+                )
+            }
         }
     }
 }
