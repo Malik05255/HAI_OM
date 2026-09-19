@@ -119,7 +119,8 @@ class AutoTaskWorker(
                                     "${task.order}. GitHub Actions$visibleId — $stage"
                                 )
                                 store.heartbeat(stage)
-                            }
+                            },
+                            autoMerge = true
                         )
 
                         workingBranch =
