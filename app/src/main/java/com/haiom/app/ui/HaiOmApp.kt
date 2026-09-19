@@ -148,14 +148,12 @@ fun HaiOmApp(
 ) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
     val snackbar = remember { SnackbarHostState() }
     var draft by remember { mutableStateOf("") }
     val selectedRepo = state.selectedRepository
     var dockOpen by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<ToolPanel?>(null) }
     var showAutoExecuteConfirm by remember { mutableStateOf(false) }
-    var showAutoExecuteControl by remember { mutableStateOf(false) }
     var openAutomationSettings by remember { mutableStateOf(false) }
     var lastHomeBackAt by remember { mutableStateOf(0L) }
     var runtimeNow by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -209,13 +207,6 @@ fun HaiOmApp(
         )
     }
 
-    LaunchedEffect(showAutoExecuteControl) {
-        if (showAutoExecuteControl) {
-            delay(2_000)
-            showAutoExecuteControl = false
-        }
-    }
-
     LaunchedEffect(Unit) {
         while (true) {
             runtimeNow = System.currentTimeMillis()
@@ -226,7 +217,6 @@ fun HaiOmApp(
     BackHandler(enabled = panel == null) {
         when {
             showAutoExecuteConfirm -> showAutoExecuteConfirm = false
-            showAutoExecuteControl -> showAutoExecuteControl = false
             dockOpen -> dockOpen = false
             else -> {
                 val now = System.currentTimeMillis()
@@ -396,58 +386,6 @@ fun HaiOmApp(
                 )
             }
 
-            if (panel == null) {
-                // نقطة لمس مخفية فقط في أعلى يمين الشاشة.
-                val autoExecuteTouchSource = remember {
-                    MutableInteractionSource()
-                }
-
-                Box(
-                    modifier = Modifier
-                        .align(AbsoluteAlignment.TopRight)
-                        .statusBarsPadding()
-                        .padding(top = 0.dp, end = 0.dp)
-                        .size(80.dp)
-                        .clickable(
-                            interactionSource = autoExecuteTouchSource,
-                            indication = null
-                        ) {
-                            haptics.performHapticFeedback(
-                                HapticFeedbackType.TextHandleMove
-                            )
-                            showAutoExecuteControl = true
-                        }
-                )
-
-                AnimatedVisibility(
-                    visible = showAutoExecuteControl,
-                    modifier = Modifier
-                        .align(AbsoluteAlignment.TopRight)
-                        .statusBarsPadding()
-                        .padding(top = 3.dp, end = 8.dp),
-                    enter = slideInVertically(
-                        initialOffsetY = { -it },
-                        animationSpec = tween(170)
-                    ) + fadeIn(animationSpec = tween(130)),
-                    exit = slideOutVertically(
-                        targetOffsetY = { -it },
-                        animationSpec = tween(160)
-                    ) + fadeOut(animationSpec = tween(110))
-                ) {
-                    AutoExecuteTopControl(
-                        checked = state.autoExecuteEnabled,
-                        onToggle = { enabled ->
-                            if (enabled) {
-                                showAutoExecuteConfirm = true
-                            } else {
-                                vm.setAutoExecuteEnabled(false)
-                            }
-                            showAutoExecuteControl = false
-                        }
-                    )
-                }
-            }
-
             if (showAutoExecuteConfirm) {
                 AutoExecuteConfirmBanner(
                     onConfirm = {
@@ -489,7 +427,16 @@ fun HaiOmApp(
                             .padding(top = railTop),
                         open = dockOpen,
                         connected = state.hasGitHubToken,
+                        autoEnabled = state.autoExecuteEnabled,
                         onToggle = { dockOpen = !dockOpen },
+                        onAutoExecute = {
+                            if (state.autoExecuteEnabled) {
+                                vm.setAutoExecuteEnabled(false)
+                            } else {
+                                showAutoExecuteConfirm = true
+                            }
+                            dockOpen = false
+                        },
                         onNewChat = {
                             vm.clearChat()
                             draft = ""
@@ -582,7 +529,7 @@ private fun ChatCanvas(
     Column(
         modifier = modifier
             .statusBarsPadding()
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 14.dp)
     ) {
         Spacer(Modifier.height(8.dp))
 
@@ -637,7 +584,7 @@ private fun ChatCanvas(
                     top = 18.dp,
                     bottom = 10.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(history) { turn ->
                     MessageBlock(turn)
@@ -733,95 +680,77 @@ private fun MessageBlock(turn: ChatTurn) {
     val fence = 96.toChar().toString().repeat(3)
     val messageText = turn.text.replace(fence, "")
 
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = if (user) {
-            AbsoluteAlignment.CenterRight
-        } else {
-            AbsoluteAlignment.CenterLeft
-        }
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(
-                if (user) 0.78f else 0.86f
-            ),
-            color = if (user) Peach else SurfaceElevated,
-            shape = if (user) {
-                RoundedCornerShape(
-                    topStart = 24.dp,
-                    topEnd = 24.dp,
-                    bottomStart = 24.dp,
-                    bottomEnd = 8.dp
-                )
+        val cardMaxWidth = maxWidth * if (user) 0.72f else 0.82f
+
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = if (user) {
+                AbsoluteAlignment.CenterRight
             } else {
-                RoundedCornerShape(
-                    topStart = 24.dp,
-                    topEnd = 24.dp,
-                    bottomStart = 8.dp,
-                    bottomEnd = 24.dp
-                )
-            },
-            border = BorderStroke(
-                1.dp,
-                if (user) Color(0xFFFFD9CD) else Line
-            ),
-            shadowElevation = 5.dp
+                AbsoluteAlignment.CenterLeft
+            }
         ) {
-            CompositionLocalProvider(
-                LocalLayoutDirection provides LayoutDirection.Rtl
+            Surface(
+                modifier = Modifier.widthIn(
+                    min = 92.dp,
+                    max = cardMaxWidth
+                ),
+                color = if (user) Peach else SurfaceElevated,
+                shape = if (user) {
+                    RoundedCornerShape(
+                        topStart = 18.dp,
+                        topEnd = 18.dp,
+                        bottomStart = 18.dp,
+                        bottomEnd = 6.dp
+                    )
+                } else {
+                    RoundedCornerShape(
+                        topStart = 18.dp,
+                        topEnd = 18.dp,
+                        bottomStart = 6.dp,
+                        bottomEnd = 18.dp
+                    )
+                },
+                border = BorderStroke(
+                    1.dp,
+                    if (user) Color(0xFFFFD9CD) else Line
+                ),
+                shadowElevation = 3.dp
             ) {
-                Column(
-                    modifier = Modifier.padding(
-                        horizontal = 15.dp,
-                        vertical = 12.dp
-                    ),
-                    horizontalAlignment = Alignment.End
+                CompositionLocalProvider(
+                    LocalLayoutDirection provides LayoutDirection.Rtl
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(
+                            horizontal = 12.dp,
+                            vertical = 9.dp
+                        ),
+                        horizontalAlignment = Alignment.End
                     ) {
                         Text(
                             if (user) "أنت" else "HAI",
                             color = if (user) Color(0xFFB66A55) else Blue,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold,
                             textAlign = TextAlign.Right
                         )
 
-                        Spacer(Modifier.width(7.dp))
+                        Spacer(Modifier.height(4.dp))
 
-                        Surface(
-                            modifier = Modifier.size(28.dp),
-                            color = if (user) Color.White.copy(alpha = 0.72f) else BlueSoft,
-                            shape = CircleShape
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    if (user) {
-                                        Icons.Outlined.AccountCircle
-                                    } else {
-                                        Icons.Outlined.AutoAwesome
-                                    },
-                                    contentDescription = null,
-                                    tint = if (user) Color(0xFFB66A55) else Blue,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
+                        Text(
+                            messageText,
+                            modifier = Modifier.widthIn(
+                                max = cardMaxWidth - 24.dp
+                            ),
+                            color = Ink,
+                            fontSize = 14.sp,
+                            lineHeight = 21.sp,
+                            textAlign = TextAlign.Right
+                        )
                     }
-
-                    Spacer(Modifier.height(7.dp))
-
-                    Text(
-                        messageText,
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Ink,
-                        fontSize = 15.sp,
-                        lineHeight = 23.sp,
-                        textAlign = TextAlign.Right
-                    )
                 }
             }
         }
@@ -1021,7 +950,9 @@ private fun AnimatedToolDock(
     modifier: Modifier,
     open: Boolean,
     connected: Boolean,
+    autoEnabled: Boolean,
     onToggle: () -> Unit,
+    onAutoExecute: () -> Unit,
     onNewChat: () -> Unit,
     onProjects: () -> Unit,
     onHistory: () -> Unit,
@@ -1037,7 +968,7 @@ private fun AnimatedToolDock(
     Box(
         modifier = modifier
             .width(76.dp)
-            .height(300.dp)
+            .height(342.dp)
     ) {
         Column(
             modifier = Modifier
@@ -1075,6 +1006,12 @@ private fun AnimatedToolDock(
                 tint = Color(0xFF566274),
                 background = Color(0xFFF0F3F7),
                 onClick = onSettings
+            )
+            PearlAction(
+                icon = Icons.Outlined.AutoAwesome,
+                tint = if (autoEnabled) Blue else Violet,
+                background = if (autoEnabled) BlueSoft else Lavender,
+                onClick = onAutoExecute
             )
         }
 
