@@ -196,7 +196,7 @@ class AutoTaskStore(context: Context) {
         write(
             current.copy(
                 started = value,
-                paused = if (value) false else current.paused,
+                paused = false,
                 awaitingConfirmation = if (value) false else current.awaitingConfirmation,
                 workerError = if (value) "" else current.workerError
             )
