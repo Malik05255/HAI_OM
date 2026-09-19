@@ -111,6 +111,7 @@ private val Ink = Color(0xFF1B181D)
 private val Muted = Color(0xFF98929C)
 
 private enum class ToolPanel { PROJECTS, HISTORY, MODELS, SETTINGS }
+private enum class SettingsPage { ROOT, GITHUB, AUTOMATION }
 
 private data class PickedMedia(val uri: Uri, val name: String)
 
@@ -863,21 +864,38 @@ private fun ToolScreen(
     onRequestAutoExecute: (Boolean) -> Unit,
     onOpenPr: (String) -> Unit
 ) {
+    var settingsPage by remember(panel) { mutableStateOf(SettingsPage.ROOT) }
+
+    val title = when (panel) {
+        ToolPanel.PROJECTS -> "المشاريع"
+        ToolPanel.HISTORY -> "السجل والتعديلات"
+        ToolPanel.MODELS -> "النماذج"
+        ToolPanel.SETTINGS -> when (settingsPage) {
+            SettingsPage.ROOT -> "الإعدادات"
+            SettingsPage.GITHUB -> "GitHub"
+            SettingsPage.AUTOMATION -> "المهام التلقائية"
+        }
+    }
+
+    val handleBack: () -> Unit = {
+        if (panel == ToolPanel.SETTINGS && settingsPage != SettingsPage.ROOT) {
+            settingsPage = SettingsPage.ROOT
+        } else {
+            onBack()
+        }
+    }
+
     Column(
-        Modifier.fillMaxSize().background(Canvas)
-            .statusBarsPadding().navigationBarsPadding()
+        Modifier
+            .fillMaxSize()
+            .background(Canvas)
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(horizontal = 18.dp)
     ) {
-        ToolHeader(
-            when (panel) {
-                ToolPanel.PROJECTS -> "المشاريع"
-                ToolPanel.HISTORY -> "السجل والتعديلات"
-                ToolPanel.MODELS -> "النماذج"
-                ToolPanel.SETTINGS -> "الإعدادات"
-            },
-            onBack
-        )
+        ToolHeader(title, handleBack)
         Spacer(Modifier.height(18.dp))
+
         when (panel) {
             ToolPanel.PROJECTS -> ProjectsContent(
                 repositories = repositories,
@@ -890,6 +908,7 @@ private fun ToolScreen(
                 onConnect = onConnect,
                 onCancelLink = onCancelLink
             )
+
             ToolPanel.HISTORY -> HistoryContent(
                 logs = logs,
                 answer = answer,
@@ -897,24 +916,37 @@ private fun ToolScreen(
                 onOpenPr = onOpenPr,
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )
+
             ToolPanel.MODELS -> ModelsContent(models, omniReady)
-            ToolPanel.SETTINGS -> SettingsContent(
-                connected = connected,
-                login = login,
-                repositoryCount = repositoryCount,
-                selectedRepo = selectedRepo,
-                linking = linking,
-                linkingStatus = linkingStatus,
-                oauthAvailable = oauthAvailable,
-                checkingUpdate = checkingUpdate,
-                autoExecuteEnabled = autoExecuteEnabled,
-                onConnect = onConnect,
-                onCancelLink = onCancelLink,
-                onDisconnect = onDisconnect,
-                onCheckUpdate = onCheckUpdate,
-                onOpenProjects = onOpenProjects,
-                onRequestAutoExecute = onRequestAutoExecute
-            )
+
+            ToolPanel.SETTINGS -> when (settingsPage) {
+                SettingsPage.ROOT -> SettingsRootContent(
+                    checkingUpdate = checkingUpdate,
+                    onOpenGitHub = { settingsPage = SettingsPage.GITHUB },
+                    onOpenAutomation = { settingsPage = SettingsPage.AUTOMATION },
+                    onCheckUpdate = onCheckUpdate,
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
+
+                SettingsPage.GITHUB -> GitHubSettingsContent(
+                    connected = connected,
+                    login = login,
+                    repositoryCount = repositoryCount,
+                    selectedRepo = selectedRepo,
+                    linking = linking,
+                    linkingStatus = linkingStatus,
+                    oauthAvailable = oauthAvailable,
+                    onConnect = onConnect,
+                    onCancelLink = onCancelLink,
+                    onDisconnect = onDisconnect,
+                    onOpenProjects = onOpenProjects,
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
+
+                SettingsPage.AUTOMATION -> AutomaticTasksContent(
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
+            }
         }
     }
 }
@@ -1155,7 +1187,71 @@ private fun ModelsContent(models: List<String>, ready: Boolean) {
 }
 
 @Composable
-private fun SettingsContent(
+private fun SettingsRootContent(
+    checkingUpdate: Boolean,
+    onOpenGitHub: () -> Unit,
+    onOpenAutomation: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        OutlinedButton(
+            onClick = onOpenGitHub,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Icon(Icons.Outlined.Link, null)
+            Spacer(Modifier.width(8.dp))
+            Text("GitHub")
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onOpenAutomation,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Icon(Icons.Outlined.AutoAwesome, null)
+            Spacer(Modifier.width(8.dp))
+            Text("المهام التلقائية")
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        OutlinedButton(
+            onClick = onCheckUpdate,
+            enabled = !checkingUpdate,
+            modifier = Modifier.widthIn(min = 220.dp, max = 330.dp),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            if (checkingUpdate) {
+                CircularProgressIndicator(
+                    Modifier.size(17.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(Icons.Outlined.Refresh, null)
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (checkingUpdate) {
+                    "جاري البحث…"
+                } else {
+                    "البحث عن تحديث"
+                }
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun GitHubSettingsContent(
     connected: Boolean,
     login: String,
     repositoryCount: Int,
@@ -1163,57 +1259,26 @@ private fun SettingsContent(
     linking: Boolean,
     linkingStatus: String,
     oauthAvailable: Boolean,
-    checkingUpdate: Boolean,
-    autoExecuteEnabled: Boolean,
     onConnect: () -> Unit,
     onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
-    onCheckUpdate: () -> Unit,
     onOpenProjects: () -> Unit,
-    onRequestAutoExecute: (Boolean) -> Unit
+    modifier: Modifier = Modifier
 ) {
-    Text(
-        "GitHub",
-        color = Ink,
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Bold
-    )
-    Spacer(Modifier.height(7.dp))
-
-    OutlinedButton(
-        onClick = if (connected) onOpenProjects else onConnect,
-        enabled = connected || (oauthAvailable && !linking),
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        if (linking) {
-            CircularProgressIndicator(
-                Modifier.size(17.dp),
-                strokeWidth = 2.dp
+    Column(modifier = modifier) {
+        if (!connected) {
+            GitHubConnectCard(
+                linking = linking,
+                status = linkingStatus,
+                oauthAvailable = oauthAvailable,
+                onConnect = onConnect,
+                onCancel = onCancelLink
             )
-        } else {
-            Icon(
-                if (connected) Icons.Outlined.FolderOpen else Icons.Outlined.Link,
-                null
-            )
+            return@Column
         }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            when {
-                linking -> "جاري ربط GitHub…"
-                connected -> "GitHub"
-                else -> "ربط GitHub"
-            }
-        )
-    }
 
-    Spacer(Modifier.height(8.dp))
-
-    if (connected) {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onOpenProjects),
+            modifier = Modifier.fillMaxWidth(),
             color = Lavender,
             shape = RoundedCornerShape(18.dp),
             border = BorderStroke(1.dp, LavenderStrong)
@@ -1243,21 +1308,43 @@ private fun SettingsContent(
                     Text(
                         selectedRepo?.let {
                             "المشروع الحالي: ${it.fullName.substringAfter('/')}"
-                        } ?: "اضغط لاختيار المشروع",
+                        } ?: "لم يتم اختيار مشروع",
                         color = if (selectedRepo == null) Muted else Blue,
                         fontSize = 12.sp,
                         fontWeight = if (selectedRepo == null) FontWeight.Normal else FontWeight.SemiBold
                     )
                 }
                 Icon(
-                    if (selectedRepo == null) Icons.Outlined.FolderOpen else Icons.Outlined.CheckCircle,
+                    if (selectedRepo == null) {
+                        Icons.Outlined.FolderOpen
+                    } else {
+                        Icons.Outlined.CheckCircle
+                    },
                     null,
                     tint = Blue
                 )
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onOpenProjects,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Icon(Icons.Outlined.FolderOpen, null)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (selectedRepo == null) {
+                    "المشاريع"
+                } else {
+                    "المشاريع / تغيير المشروع"
+                }
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
 
         OutlinedButton(
             onClick = onDisconnect,
@@ -1268,122 +1355,14 @@ private fun SettingsContent(
             Spacer(Modifier.width(8.dp))
             Text("فصل GitHub")
         }
-    } else if (linking) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = BlueSoft,
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Row(
-                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    linkingStatus.ifBlank { "بانتظار GitHub…" },
-                    modifier = Modifier.weight(1f),
-                    color = Ink,
-                    fontSize = 12.sp
-                )
-                TextButton(onClick = onCancelLink) {
-                    Text("إلغاء")
-                }
-            }
-        }
-    } else {
-        Text(
-            if (oauthAvailable) {
-                "سيظهر لك كود قصير للموافقة على الربط في GitHub."
-            } else {
-                "ربط GitHub غير مهيأ في هذه النسخة."
-            },
-            modifier = Modifier.fillMaxWidth(),
-            color = Muted,
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center
-        )
     }
+}
 
-    Spacer(Modifier.height(18.dp))
-
-    Text(
-        "المهام التلقائية",
-        color = Ink,
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Bold
-    )
-    Spacer(Modifier.height(7.dp))
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onRequestAutoExecute(!autoExecuteEnabled) },
-        color = Color.White,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, Line)
-    ) {
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Row(
-                Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AutoExecuteCheckBox(
-                    checked = autoExecuteEnabled,
-                    onClick = { onRequestAutoExecute(!autoExecuteEnabled) }
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "تنفيذ تلقائي",
-                        color = Ink,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        if (autoExecuteEnabled) {
-                            "مفعّل: سيكمل HAI خطوات المهمة تلقائيًا"
-                        } else {
-                            "غير مفعّل"
-                        },
-                        color = Muted,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-        }
-    }
-
-    Spacer(Modifier.height(18.dp))
-
-    Text(
-        "التحديث",
-        color = Ink,
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Bold
-    )
-    Spacer(Modifier.height(7.dp))
-
-    OutlinedButton(
-        onClick = onCheckUpdate,
-        enabled = !checkingUpdate,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        if (checkingUpdate) {
-            CircularProgressIndicator(
-                Modifier.size(17.dp),
-                strokeWidth = 2.dp
-            )
-        } else {
-            Icon(Icons.Outlined.Refresh, null)
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            if (checkingUpdate) {
-                "جاري البحث…"
-            } else {
-                "البحث عن تحديث"
-            }
-        )
-    }
+@Composable
+private fun AutomaticTasksContent(
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier)
 }
 
 @Composable
