@@ -95,9 +95,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     private val directChat = DirectChatClient()
     private val imageClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(150, TimeUnit.SECONDS)
-        .callTimeout(180, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(40, TimeUnit.SECONDS)
+        .callTimeout(45, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
@@ -1027,6 +1027,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
     }
 
+    private fun cancelAiHordeRequest(
+        requestId: String,
+        clientAgent: String
+    ) {
+        val request = Request.Builder()
+            .url(
+                "https://aihorde.net/api/v2/generate/status/" +
+                    requestId
+            )
+            .header("Client-Agent", clientAgent)
+            .delete()
+            .build()
+
+        runCatching {
+            imageClient.newCall(request)
+                .execute()
+                .close()
+        }
+    }
+
     private suspend fun requestAiHordeImage(
         prompt: String,
         seed: Long
@@ -1045,9 +1065,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 "params",
                 JSONObject().apply {
                     put("n", 1)
-                    put("width", 768)
-                    put("height", 768)
-                    put("steps", 24)
+                    put("width", 512)
+                    put("height", 512)
+                    put("steps", 16)
                     put("cfg_scale", 7.0)
                     put("sampler_name", "k_euler_a")
                     put("seed", seed.toString())
@@ -1097,7 +1117,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
             }
 
-        repeat(72) {
+        repeat(6) {
             kotlinx.coroutines.delay(2_500L)
 
             val checkRequest = Request.Builder()
@@ -1135,8 +1155,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 check.has("is_possible") &&
                 !check.optBoolean("is_possible", true)
             ) {
+                cancelAiHordeRequest(requestId, clientAgent)
                 throw ImageProviderException(
                     "لا يوجد عامل متاح لهذا الطلب على AI Horde",
+                    true
+                )
+            }
+
+            val waitTime = check.optInt("wait_time", 0)
+            val queuePosition = check.optInt("queue_position", 0)
+
+            if (
+                !check.optBoolean("done", false) &&
+                (waitTime > 18 || queuePosition > 6)
+            ) {
+                cancelAiHordeRequest(requestId, clientAgent)
+                throw ImageProviderException(
+                    "AI Horde مزدحم، يتم التحويل للمزود الاحتياطي",
                     true
                 )
             }
@@ -1193,8 +1228,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
         }
 
+        cancelAiHordeRequest(requestId, clientAgent)
         throw ImageProviderException(
-            "انتهت مهلة انتظار AI Horde",
+            "AI Horde بطيء الآن، يتم استخدام المزود الاحتياطي",
             true
         )
     }
@@ -1366,12 +1402,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 throw error
                             }
 
-                            runCatching {
+                            try {
                                 requestAiHordeImage(
                                     cleanPrompt,
                                     seed
                                 )
-                            }.getOrElse {
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Throwable) {
                                 requestDefaultImage(
                                     cleanPrompt,
                                     seed
@@ -1380,12 +1418,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
 
                         else -> {
-                            runCatching {
+                            try {
                                 requestAiHordeImage(
                                     cleanPrompt,
                                     seed
                                 )
-                            }.getOrElse {
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Throwable) {
                                 requestDefaultImage(
                                     cleanPrompt,
                                     seed
