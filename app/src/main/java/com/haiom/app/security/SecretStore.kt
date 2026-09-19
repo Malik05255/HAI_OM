@@ -27,6 +27,12 @@ class SecretStore(context: Context) {
     fun clearSelectedRepository() =
         prefs.edit().remove("selected_repository_full_name").apply()
 
+    fun saveAutoExecuteEnabled(value: Boolean) =
+        prefs.edit().putBoolean("auto_execute_enabled", value).apply()
+
+    fun autoExecuteEnabled(): Boolean =
+        prefs.getBoolean("auto_execute_enabled", false)
+
     fun saveGitHubApp(
         appId: Long,
         slug: String,
