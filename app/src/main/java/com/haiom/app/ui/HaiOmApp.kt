@@ -1330,26 +1330,40 @@ private fun ProjectsContent(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Text(
-            "اختر المشروع",
-            color = Ink,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 15.sp
-        )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            "${repositories.size} مشروع",
-            color = Muted,
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.height(12.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "WORKSPACE",
+                    color = Blue,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Text(
+                    "اختر المشروع النشط",
+                    color = Ink,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Text(
+                "${repositories.size}",
+                color = Muted,
+                fontSize = 12.sp
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
 
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
-            contentPadding = PaddingValues(bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
+            contentPadding = PaddingValues(bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(repositories) { repo ->
                 val pending = pendingFullName == repo.fullName
@@ -1357,71 +1371,74 @@ private fun ProjectsContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { pendingFullName = repo.fullName },
-                    color = if (pending) Lavender else Color.White,
-                    shape = RoundedCornerShape(18.dp),
+                    color = if (pending) BlueSoft else SurfaceElevated,
+                    shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(
                         1.dp,
-                        if (pending) Blue.copy(alpha = 0.45f) else Line
+                        if (pending) Blue.copy(alpha = 0.55f) else Line
                     )
                 ) {
                     Row(
-                        Modifier.padding(15.dp),
+                        Modifier.padding(13.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Outlined.FolderOpen,
-                            null,
-                            tint = Blue
-                        )
+                        Surface(
+                            modifier = Modifier.size(36.dp),
+                            color = if (pending) Blue else Color(0xFF1B2430),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    repo.fullName.substringAfter('/').take(1).uppercase(),
+                                    color = if (pending) Canvas else Blue,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                         Spacer(Modifier.width(11.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
                                 repo.fullName.substringAfter('/'),
                                 color = Ink,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
                             )
                             Text(
-                                repo.fullName,
+                                repo.fullName.substringBefore('/'),
                                 color = Muted,
-                                fontSize = 11.sp
+                                fontSize = 10.sp
                             )
                         }
-                        if (pending) {
-                            Icon(
-                                Icons.Outlined.CheckCircle,
-                                "محدد",
-                                tint = Blue
-                            )
-                        }
+                        Text(
+                            if (pending) "●" else "○",
+                            color = if (pending) Blue else Muted,
+                            fontSize = 16.sp
+                        )
                     }
                 }
             }
         }
 
-        pendingRepository?.let { repo ->
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    enabled = pendingRepository != null,
+                    onClick = { pendingRepository?.let(onSave) }
+                ),
+            color = if (pendingRepository != null) Blue else Line,
+            shape = RoundedCornerShape(14.dp)
+        ) {
             Text(
-                "المحدد: ${repo.fullName.substringAfter('/')}",
-                modifier = Modifier.fillMaxWidth(),
-                color = Muted,
-                fontSize = 12.sp,
+                "اعتماد المشروع",
+                modifier = Modifier.padding(vertical = 13.dp),
+                color = if (pendingRepository != null) Canvas else Muted,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(8.dp))
         }
-
-        Button(
-            onClick = {
-                pendingRepository?.let(onSave)
-            },
-            enabled = pendingRepository != null,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.CheckCircle, null)
-            Spacer(Modifier.width(8.dp))
-            Text("حفظ")
-        }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
     }
 }
 
@@ -1437,71 +1454,135 @@ private fun HistoryContent(
         EmptyToolCard("السجل فارغ", "")
         return
     }
+
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(bottom = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         items(logs.reversed()) { log ->
-            Surface(
+            Row(
                 Modifier.fillMaxWidth(),
-                color = Color.White,
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, Line)
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(Blue))
-                    Spacer(Modifier.width(10.dp))
-                    Text(log, color = Ink, fontSize = 13.sp)
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Blue)
+                )
+                Spacer(Modifier.width(10.dp))
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    color = SurfaceElevated,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Line)
+                ) {
+                    Text(
+                        log,
+                        modifier = Modifier.padding(11.dp),
+                        color = Ink,
+                        fontSize = 12.sp
+                    )
                 }
             }
         }
+
         answer?.takeIf { it.isNotBlank() }?.let { text ->
             item {
                 Surface(
                     Modifier.fillMaxWidth(),
-                    color = Lavender,
-                    shape = RoundedCornerShape(18.dp)
+                    color = BlueSoft,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1D4654))
                 ) {
-                    Text(text, Modifier.padding(15.dp), color = Ink, fontSize = 14.sp)
+                    Text(
+                        text,
+                        Modifier.padding(14.dp),
+                        color = Ink,
+                        fontSize = 13.sp
+                    )
                 }
             }
         }
     }
+
     if (!prUrl.isNullOrBlank()) {
-        OutlinedButton(
-            onClick = { onOpenPr(prUrl) },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onOpenPr(prUrl) },
+            color = SurfaceElevated,
+            shape = RoundedCornerShape(13.dp),
+            border = BorderStroke(1.dp, Line)
         ) {
-            Icon(Icons.Outlined.Code, null)
-            Spacer(Modifier.width(8.dp))
-            Text("فتح آخر تعديل")
+            Text(
+                "فتح آخر تعديل  ↗",
+                modifier = Modifier.padding(12.dp),
+                color = Blue,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center
+            )
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
 private fun ModelsContent(models: List<String>, ready: Boolean) {
-    EmptyToolCard(
-        if (ready) "النماذج جاهزة" else "النماذج غير جاهزة",
-        ""
-    )
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (ready) BlueSoft else SurfaceElevated,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, if (ready) Color(0xFF1D4654) else Line)
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                if (ready) "●" else "○",
+                color = if (ready) Blue else Muted,
+                fontSize = 16.sp
+            )
+            Spacer(Modifier.width(9.dp))
+            Text(
+                if (ready) "المحرك جاهز" else "المحرك غير جاهز",
+                color = Ink,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+
     if (models.isNotEmpty()) {
         Spacer(Modifier.height(12.dp))
         models.take(12).forEachIndexed { index, model ->
             Surface(
-                Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                color = Color.White,
-                shape = RoundedCornerShape(16.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 7.dp),
+                color = SurfaceElevated,
+                shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, Line)
             ) {
-                Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.AutoAwesome, null, tint = Blue)
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "#${index + 1}",
+                        color = Blue,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(Modifier.width(10.dp))
-                    Text(model, Modifier.weight(1f), color = Ink)
-                    Text("#" + (index + 1), color = Muted, fontSize = 11.sp)
+                    Text(
+                        model,
+                        Modifier.weight(1f),
+                        color = Ink,
+                        fontSize = 13.sp
+                    )
+                    Text("✦", color = Violet, fontSize = 14.sp)
                 }
             }
         }
