@@ -17,15 +17,42 @@ There is no manual Personal Access Token flow in the UI.
 
 ## One-time developer setup
 
-Create one OAuth App in the GitHub account that owns OM and enable **Device Flow** in that app's settings.
+GitHub Device Flow always requires a Client ID. A client secret is not required.
 
-Configure the repository Actions variable:
+Create one OAuth App or GitHub App for OM and enable **Device Flow** in its GitHub settings. Then copy its **Client ID**.
+
+For normal CI builds, configure the repository Actions variable:
 
 - `GITHUB_OAUTH_CLIENT_ID`
 
-No client secret is required for GitHub Device Flow.
+Path in GitHub:
+
+**Repository > Settings > Secrets and variables > Actions > Variables > New repository variable**
+
+Use:
+
+- Name: `GITHUB_OAUTH_CLIENT_ID`
+- Value: the Client ID from the GitHub app registration
+
+The workflow now refuses to publish an APK when this value is empty, so a broken build with a disabled GitHub button cannot be released again.
+
+## Manual build fallback
+
+The Android workflow also supports **Run workflow** and accepts `github_oauth_client_id` as an input. This can be used to build and publish from `main` without first storing the repository variable.
+
+## Local builds
+
+You can provide the Client ID either as an environment variable:
+
+`GITHUB_OAUTH_CLIENT_ID=...`
+
+or as a Gradle property:
+
+`-PGITHUB_OAUTH_CLIENT_ID=...`
 
 ## Requested OAuth scopes
+
+For the OAuth App Device Flow implementation OM requests:
 
 - `repo`
 - `workflow`
