@@ -58,6 +58,7 @@ data class MainUiState(
     val autoExecuteEnabled: Boolean = false,
     val autoTasks: List<AutoTaskItem> = emptyList(),
     val autoQueueStarted: Boolean = false,
+    val autoPaused: Boolean = false,
     val autoAwaitingConfirmation: Boolean = false,
     val autoEvents: List<String> = emptyList(),
     val autoWorkerActive: Boolean = false,
@@ -104,6 +105,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         autoTasks = queue.tasks,
                         autoQueueStarted = queue.started,
+                        autoPaused = queue.paused,
                         autoAwaitingConfirmation = queue.awaitingConfirmation,
                         autoEvents = queue.events,
                         autoWorkerActive = queue.workerActive,
@@ -350,6 +352,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 autoExecuteEnabled = enabled,
                 message = if (enabled) "تم التفعيل" else "تم الإيقاف"
             )
+        }
+    }
+
+    fun toggleAutoPause() {
+        val queue = autoTaskStore.snapshot()
+        if (!queue.started) return
+
+        val paused = !queue.paused
+        autoTaskStore.setPaused(paused)
+
+        viewModelScope.launch {
+            val token = resolveGitHubToken()
+            val repositoryUrl = _state.value.selectedRepository?.htmlUrl.orEmpty()
+            if (token.isNullOrBlank() || repositoryUrl.isBlank()) return@launch
+
+            val github = GitHubClient(token)
+            val repo = runCatching {
+                github.parseRepository(repositoryUrl)
+            }.getOrNull() ?: return@launch
+
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    github.setRuntimePaused(repo, paused)
+                }
+            }.onFailure {
+                if (autoTaskStore.snapshot().remoteRunId > 0L) {
+                    autoTaskStore.setPaused(!paused)
+                    _state.update { current ->
+                        current.copy(
+                            error = if (paused) {
+                                "تعذر إيقاف التنفيذ مؤقتًا"
+                            } else {
+                                "تعذر متابعة التنفيذ"
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 
