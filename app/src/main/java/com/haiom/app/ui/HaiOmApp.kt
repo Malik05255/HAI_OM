@@ -1493,75 +1493,209 @@ private fun GitHubSettingsContent(
 private fun AutomaticTasksContent(
     tasks: List<AutoTaskItem>,
     running: Boolean,
+    workerActive: Boolean,
+    heartbeatAt: Long,
+    workerMessage: String,
+    workerError: String,
+    now: Long,
     modifier: Modifier = Modifier
 ) {
-    if (tasks.isEmpty()) {
-        Box(
-            modifier = modifier,
-            contentAlignment = Alignment.Center
-        ) {
-            Text("لا توجد مهام", color = Muted, fontSize = 13.sp)
-        }
-        return
-    }
+    val live = workerIsLive(workerActive, heartbeatAt, now)
 
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(tasks.sortedBy { it.order }, key = { it.id }) { task ->
-            val statusText = when (task.status) {
-                AutoTaskStatus.WAITING -> "في الانتظار"
-                AutoTaskStatus.RUNNING -> "قيد المعالجة"
-                AutoTaskStatus.SUCCESS -> "تم"
-                AutoTaskStatus.FAILED -> "فشل"
-            }
-            val statusIcon = when (task.status) {
-                AutoTaskStatus.WAITING -> Icons.Outlined.MoreVert
-                AutoTaskStatus.RUNNING -> Icons.Outlined.AutoAwesome
-                AutoTaskStatus.SUCCESS -> Icons.Outlined.CheckCircle
-                AutoTaskStatus.FAILED -> Icons.Outlined.Close
-            }
+    Column(modifier = modifier) {
+        AutoRuntimeStatusBar(
+            tasks = tasks,
+            queueStarted = running,
+            workerActive = workerActive,
+            heartbeatAt = heartbeatAt,
+            workerMessage = workerMessage,
+            workerError = workerError,
+            now = now
+        )
 
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = if (task.status == AutoTaskStatus.RUNNING) BlueSoft else Color.White,
-                shape = RoundedCornerShape(15.dp),
-                border = BorderStroke(1.dp, Line)
+        Spacer(Modifier.height(10.dp))
+
+        if (tasks.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Text("لا توجد مهام", color = Muted, fontSize = 13.sp)
+            }
+            return@Column
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(tasks.sortedBy { it.order }, key = { it.id }) { task ->
+                val staleRunning =
+                    task.status == AutoTaskStatus.RUNNING && !live
+
+                val statusText = when {
+                    staleRunning -> "متوقف"
+                    task.status == AutoTaskStatus.WAITING -> "في الانتظار"
+                    task.status == AutoTaskStatus.RUNNING -> "قيد المعالجة"
+                    task.status == AutoTaskStatus.SUCCESS -> "تم"
+                    else -> "فشل"
+                }
+
+                val statusIcon = when {
+                    staleRunning -> Icons.Outlined.Close
+                    task.status == AutoTaskStatus.WAITING -> Icons.Outlined.MoreVert
+                    task.status == AutoTaskStatus.RUNNING -> Icons.Outlined.AutoAwesome
+                    task.status == AutoTaskStatus.SUCCESS -> Icons.Outlined.CheckCircle
+                    else -> Icons.Outlined.Close
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = if (task.status == AutoTaskStatus.RUNNING && live) {
+                        BlueSoft
+                    } else {
+                        Color.White
+                    },
+                    shape = RoundedCornerShape(15.dp),
+                    border = BorderStroke(1.dp, Line)
                 ) {
-                    Text(
-                        "${task.order}",
-                        color = Muted,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            task.title,
-                            color = Ink,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
+                            "${task.order}",
+                            color = Muted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                task.title,
+                                color = Ink,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                statusText,
+                                color = if (
+                                    task.status == AutoTaskStatus.RUNNING &&
+                                    live
+                                ) Blue else Muted,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Icon(
+                            statusIcon,
                             statusText,
-                            color = if (task.status == AutoTaskStatus.RUNNING) Blue else Muted,
-                            fontSize = 11.sp
+                            tint = if (
+                                (task.status == AutoTaskStatus.RUNNING && live) ||
+                                task.status == AutoTaskStatus.SUCCESS
+                            ) Blue else Muted,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
-                    Icon(
-                        statusIcon,
-                        statusText,
-                        tint = if (task.status == AutoTaskStatus.RUNNING ||
-                            task.status == AutoTaskStatus.SUCCESS
-                        ) Blue else Muted,
-                        modifier = Modifier.size(19.dp)
+                }
+            }
+        }
+    }
+}
+
+private fun workerIsLive(
+    active: Boolean,
+    heartbeatAt: Long,
+    now: Long
+): Boolean =
+    active &&
+        heartbeatAt > 0L &&
+        now - heartbeatAt in 0L..12_000L
+
+@Composable
+private fun AutoRuntimeStatusBar(
+    tasks: List<AutoTaskItem>,
+    queueStarted: Boolean,
+    workerActive: Boolean,
+    heartbeatAt: Long,
+    workerMessage: String,
+    workerError: String,
+    now: Long
+) {
+    val live = workerIsLive(workerActive, heartbeatAt, now)
+    val runningTask = tasks.firstOrNull {
+        it.status == AutoTaskStatus.RUNNING
+    }
+    val doneCount = tasks.count {
+        it.status == AutoTaskStatus.SUCCESS ||
+            it.status == AutoTaskStatus.FAILED
+    }
+
+    val status = when {
+        workerError.isNotBlank() -> "متوقف"
+        live -> "يعمل الآن"
+        queueStarted && heartbeatAt == 0L -> "جاري البدء"
+        queueStarted -> "لا توجد استجابة"
+        tasks.isNotEmpty() && doneCount == tasks.size -> "مكتمل"
+        else -> "متوقف"
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (live) BlueSoft else Color.White,
+        shape = RoundedCornerShape(13.dp),
+        border = BorderStroke(1.dp, Line)
+    ) {
+        Row(
+            Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (live) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = Blue
+                )
+            } else {
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(if (status == "مكتمل") Blue else Muted)
+                )
+            }
+
+            Spacer(Modifier.width(9.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    status,
+                    color = if (live) Blue else Ink,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                val detail = when {
+                    workerError.isNotBlank() -> workerError
+                    live && runningTask != null ->
+                        "${runningTask.order}/${tasks.size}  ${runningTask.title}"
+                    live && workerMessage.isNotBlank() -> workerMessage
+                    queueStarted && heartbeatAt > 0L ->
+                        "آخر نشاط قبل ${((now - heartbeatAt).coerceAtLeast(0L) / 1000L)} ث"
+                    else -> ""
+                }
+
+                if (detail.isNotBlank()) {
+                    Text(
+                        detail,
+                        color = Muted,
+                        fontSize = 10.sp,
+                        maxLines = 1
                     )
                 }
             }
