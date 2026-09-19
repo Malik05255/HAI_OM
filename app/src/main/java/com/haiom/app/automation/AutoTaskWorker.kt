@@ -262,5 +262,10 @@ class AutoTaskWorker(
                     request
                 )
         }
+
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context.applicationContext)
+                .cancelUniqueWork(UNIQUE_WORK)
+        }
     }
 }
