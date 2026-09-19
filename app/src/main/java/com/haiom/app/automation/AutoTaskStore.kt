@@ -35,7 +35,11 @@ data class AutoQueueSnapshot(
     val tasks: List<AutoTaskItem> = emptyList(),
     val started: Boolean = false,
     val awaitingConfirmation: Boolean = false,
-    val events: List<String> = emptyList()
+    val events: List<String> = emptyList(),
+    val workerActive: Boolean = false,
+    val workerHeartbeatAt: Long = 0L,
+    val workerMessage: String = "",
+    val workerError: String = ""
 )
 
 class AutoTaskStore(context: Context) {
@@ -83,12 +87,60 @@ class AutoTaskStore(context: Context) {
         write(snapshot().copy(awaitingConfirmation = value))
     }
 
+    fun markWorkerStarting(message: String = "جاري البدء") {
+        val current = snapshot()
+        write(
+            current.copy(
+                workerActive = false,
+                workerHeartbeatAt = System.currentTimeMillis(),
+                workerMessage = message,
+                workerError = ""
+            )
+        )
+    }
+
+    fun markWorkerRunning(message: String = "يعمل الآن") {
+        val current = snapshot()
+        write(
+            current.copy(
+                workerActive = true,
+                workerHeartbeatAt = System.currentTimeMillis(),
+                workerMessage = message,
+                workerError = ""
+            )
+        )
+    }
+
+    fun heartbeat(message: String? = null) {
+        val current = snapshot()
+        write(
+            current.copy(
+                workerActive = true,
+                workerHeartbeatAt = System.currentTimeMillis(),
+                workerMessage = message?.takeIf { it.isNotBlank() } ?: current.workerMessage
+            )
+        )
+    }
+
+    fun markWorkerStopped(message: String = "متوقف", error: String = "") {
+        val current = snapshot()
+        write(
+            current.copy(
+                workerActive = false,
+                workerHeartbeatAt = System.currentTimeMillis(),
+                workerMessage = message,
+                workerError = error.take(500)
+            )
+        )
+    }
+
     fun setStarted(value: Boolean) {
         val current = snapshot()
         write(
             current.copy(
                 started = value,
-                awaitingConfirmation = if (value) false else current.awaitingConfirmation
+                awaitingConfirmation = if (value) false else current.awaitingConfirmation,
+                workerError = if (value) "" else current.workerError
             )
         )
     }
