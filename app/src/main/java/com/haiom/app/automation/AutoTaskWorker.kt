@@ -79,6 +79,17 @@ class AutoTaskWorker(
                     ?.branch
 
                 while (store.snapshot().started) {
+                    while (
+                        store.snapshot().started &&
+                        store.snapshot().paused
+                    ) {
+                        store.heartbeat("متوقف مؤقتًا")
+                        setForeground(createForegroundInfo("متوقف مؤقتًا"))
+                        delay(750)
+                    }
+
+                    if (!store.snapshot().started) break
+
                     val task = store.nextWaiting() ?: break
 
                     store.updateTask(task.id, AutoTaskStatus.RUNNING)
