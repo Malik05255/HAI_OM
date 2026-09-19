@@ -86,6 +86,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val directChat = DirectChatClient()
     private val autoTaskStore = AutoTaskStore(application)
     private var githubLinkJob: Job? = null
+    private var manualChatJob: Job? = null
+    private var responseGeneration: Long = 0L
     private val _state = MutableStateFlow(
         MainUiState(
             hasGitHubToken = secrets.githubToken().isNotBlank() || secrets.hasGitHubApp(),
@@ -345,6 +347,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setAutoExecuteEnabled(enabled: Boolean) {
+        // Any mode switch invalidates a reply that was already being generated.
+        responseGeneration += 1L
+        manualChatJob?.cancel()
+        manualChatJob = null
         secrets.saveAutoExecuteEnabled(enabled)
 
         if (enabled) {
@@ -352,6 +358,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update {
                 it.copy(
                     autoExecuteEnabled = true,
+                    running = false,
+                    programming = false,
                     message = "التنفيذ التلقائي"
                 )
             }
@@ -712,6 +720,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun runChat(prompt: String) {
+        manualChatJob?.cancel()
+        responseGeneration += 1L
+        val generation = responseGeneration
+
         val existingHistory = _state.value.chatHistory
         val visibleHistory = (
             existingHistory + ChatTurn("user", prompt)
@@ -728,7 +740,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        viewModelScope.launch {
+        manualChatJob = viewModelScope.launch {
             try {
                 val needsRepo = needsRepositoryContext(prompt)
                 val repositoryUrl = _state.value.selectedRepository?.htmlUrl.orEmpty()
@@ -752,8 +764,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     fast = true
                 )
 
+                if (generation != responseGeneration ||
+                    _state.value.autoExecuteEnabled
+                ) {
+                    return@launch
+                }
+
                 val updatedHistory = (
-                    visibleHistory + ChatTurn("assistant", answer)
+                    _state.value.chatHistory +
+                        ChatTurn("assistant", answer)
                     ).takeLast(20)
 
                 _state.update {
@@ -770,14 +789,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     )
                 }
+            } catch (_: CancellationException) {
+                if (generation == responseGeneration) {
+                    _state.update {
+                        it.copy(
+                            running = false,
+                            programming = false
+                        )
+                    }
+                }
             } catch (t: Throwable) {
-                _state.update {
-                    it.copy(
-                        running = false,
-                        programming = false,
-                        error = t.message?.takeIf { message -> message.isNotBlank() }
-                            ?: "تعذر الرد الآن"
-                    )
+                if (generation == responseGeneration &&
+                    !_state.value.autoExecuteEnabled
+                ) {
+                    _state.update {
+                        it.copy(
+                            running = false,
+                            programming = false,
+                            error = t.message?.takeIf { message ->
+                                message.isNotBlank()
+                            } ?: "تعذر الرد الآن"
+                        )
+                    }
+                }
+            } finally {
+                if (generation == responseGeneration) {
+                    manualChatJob = null
                 }
             }
         }
