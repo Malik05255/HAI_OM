@@ -22,6 +22,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -385,15 +386,21 @@ fun HaiOmApp(
             }
 
             if (panel == null) {
-                // منطقة لمس صغيرة على حافة اليمين؛ لا تعيق محتوى الدردشة.
+                // نقطة لمس مخفية فقط في أعلى يمين الشاشة.
+                val autoExecuteTouchSource = remember {
+                    MutableInteractionSource()
+                }
+
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .statusBarsPadding()
-                        .padding(top = 2.dp)
-                        .width(52.dp)
-                        .height(210.dp)
-                        .clickable {
+                        .padding(top = 2.dp, start = 2.dp)
+                        .size(48.dp)
+                        .clickable(
+                            interactionSource = autoExecuteTouchSource,
+                            indication = null
+                        ) {
                             showAutoExecuteControl = true
                         }
                 )
