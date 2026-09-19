@@ -125,6 +125,7 @@ fun HaiOmApp(
     val selectedRepo = state.selectedRepository
     var dockOpen by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<ToolPanel?>(null) }
+    var showAutoExecuteConfirm by remember { mutableStateOf(false) }
     val media = remember { mutableStateListOf<PickedMedia>() }
 
     val mediaPicker = rememberLauncherForActivityResult(
@@ -259,6 +260,7 @@ fun HaiOmApp(
                     models = state.rankings.map { it.modelName },
                     omniReady = state.omniReady,
                     checkingUpdate = state.checkingUpdate,
+                    autoExecuteEnabled = state.autoExecuteEnabled,
                     onBack = { panel = null },
                     onSaveRepo = {
                         vm.saveSelectedRepository(it)
@@ -271,9 +273,49 @@ fun HaiOmApp(
                     onCancelLink = vm::cancelGitHubLink,
                     onDisconnect = vm::disconnectGitHub,
                     onCheckUpdate = vm::checkForUpdate,
+                    onRequestAutoExecute = { enabled ->
+                        if (enabled) {
+                            showAutoExecuteConfirm = true
+                        } else {
+                            vm.setAutoExecuteEnabled(false)
+                        }
+                    },
                     onOpenPr = { url ->
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                     }
+                )
+            }
+
+            if (panel == null) {
+                AutoExecuteTopControl(
+                    checked = state.autoExecuteEnabled,
+                    onToggle = { enabled ->
+                        if (enabled) {
+                            showAutoExecuteConfirm = true
+                        } else {
+                            vm.setAutoExecuteEnabled(false)
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 3.dp)
+                )
+            }
+
+            if (showAutoExecuteConfirm) {
+                AutoExecuteConfirmBanner(
+                    onConfirm = {
+                        vm.setAutoExecuteEnabled(true)
+                        showAutoExecuteConfirm = false
+                    },
+                    onCancel = {
+                        showAutoExecuteConfirm = false
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 50.dp, start = 18.dp, end = 18.dp)
                 )
             }
 
@@ -810,6 +852,7 @@ private fun ToolScreen(
     models: List<String>,
     omniReady: Boolean,
     checkingUpdate: Boolean,
+    autoExecuteEnabled: Boolean,
     onBack: () -> Unit,
     onSaveRepo: (GitHubRepository) -> Unit,
     onOpenProjects: () -> Unit,
@@ -817,6 +860,7 @@ private fun ToolScreen(
     onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit,
+    onRequestAutoExecute: (Boolean) -> Unit,
     onOpenPr: (String) -> Unit
 ) {
     Column(
@@ -863,11 +907,13 @@ private fun ToolScreen(
                 linkingStatus = linkingStatus,
                 oauthAvailable = oauthAvailable,
                 checkingUpdate = checkingUpdate,
+                autoExecuteEnabled = autoExecuteEnabled,
                 onConnect = onConnect,
                 onCancelLink = onCancelLink,
                 onDisconnect = onDisconnect,
                 onCheckUpdate = onCheckUpdate,
-                onOpenProjects = onOpenProjects
+                onOpenProjects = onOpenProjects,
+                onRequestAutoExecute = onRequestAutoExecute
             )
         }
     }
@@ -1118,31 +1164,71 @@ private fun SettingsContent(
     linkingStatus: String,
     oauthAvailable: Boolean,
     checkingUpdate: Boolean,
+    autoExecuteEnabled: Boolean,
     onConnect: () -> Unit,
     onCancelLink: () -> Unit,
     onDisconnect: () -> Unit,
     onCheckUpdate: () -> Unit,
-    onOpenProjects: () -> Unit
+    onOpenProjects: () -> Unit,
+    onRequestAutoExecute: (Boolean) -> Unit
 ) {
+    Text(
+        "GitHub",
+        color = Ink,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold
+    )
+    Spacer(Modifier.height(7.dp))
+
+    OutlinedButton(
+        onClick = if (connected) onOpenProjects else onConnect,
+        enabled = connected || (oauthAvailable && !linking),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        if (linking) {
+            CircularProgressIndicator(
+                Modifier.size(17.dp),
+                strokeWidth = 2.dp
+            )
+        } else {
+            Icon(
+                if (connected) Icons.Outlined.FolderOpen else Icons.Outlined.Link,
+                null
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            when {
+                linking -> "جاري ربط GitHub…"
+                connected -> "GitHub"
+                else -> "ربط GitHub"
+            }
+        )
+    }
+
+    Spacer(Modifier.height(8.dp))
+
     if (connected) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onOpenProjects),
             color = Lavender,
-            shape = RoundedCornerShape(20.dp)
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, LavenderStrong)
         ) {
             Row(
-                Modifier.padding(16.dp),
+                Modifier.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     Icons.Outlined.AccountCircle,
                     null,
                     tint = Blue,
-                    modifier = Modifier.size(30.dp)
+                    modifier = Modifier.size(28.dp)
                 )
-                Spacer(Modifier.width(11.dp))
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         login.ifBlank { "GitHub" },
@@ -1150,51 +1236,28 @@ private fun SettingsContent(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        "$repositoryCount مشروع متاح • اضغط لاختيار المشروع",
+                        "$repositoryCount مشروع متاح",
                         color = Muted,
                         fontSize = 12.sp
                     )
-                    selectedRepo?.let { repo ->
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "المشروع الحالي: ${repo.fullName.substringAfter('/')}",
-                            color = Blue,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    Text(
+                        selectedRepo?.let {
+                            "المشروع الحالي: ${it.fullName.substringAfter('/')}"
+                        } ?: "اضغط لاختيار المشروع",
+                        color = if (selectedRepo == null) Muted else Blue,
+                        fontSize = 12.sp,
+                        fontWeight = if (selectedRepo == null) FontWeight.Normal else FontWeight.SemiBold
+                    )
                 }
                 Icon(
-                    if (selectedRepo == null) {
-                        Icons.Outlined.FolderOpen
-                    } else {
-                        Icons.Outlined.CheckCircle
-                    },
+                    if (selectedRepo == null) Icons.Outlined.FolderOpen else Icons.Outlined.CheckCircle,
                     null,
                     tint = Blue
                 )
             }
         }
 
-        Spacer(Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = onOpenProjects,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.Outlined.FolderOpen, null)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                if (selectedRepo == null) {
-                    "اختيار مشروع"
-                } else {
-                    "تغيير المشروع"
-                }
-            )
-        }
-
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
 
         OutlinedButton(
             onClick = onDisconnect,
@@ -1205,17 +1268,98 @@ private fun SettingsContent(
             Spacer(Modifier.width(8.dp))
             Text("فصل GitHub")
         }
+    } else if (linking) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = BlueSoft,
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Row(
+                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    linkingStatus.ifBlank { "بانتظار GitHub…" },
+                    modifier = Modifier.weight(1f),
+                    color = Ink,
+                    fontSize = 12.sp
+                )
+                TextButton(onClick = onCancelLink) {
+                    Text("إلغاء")
+                }
+            }
+        }
     } else {
-        GitHubConnectCard(
-            linking = linking,
-            status = linkingStatus,
-            oauthAvailable = oauthAvailable,
-            onConnect = onConnect,
-            onCancel = onCancelLink
+        Text(
+            if (oauthAvailable) {
+                "سيظهر لك كود قصير للموافقة على الربط في GitHub."
+            } else {
+                "ربط GitHub غير مهيأ في هذه النسخة."
+            },
+            modifier = Modifier.fillMaxWidth(),
+            color = Muted,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center
         )
     }
 
-    Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(18.dp))
+
+    Text(
+        "المهام التلقائية",
+        color = Ink,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold
+    )
+    Spacer(Modifier.height(7.dp))
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onRequestAutoExecute(!autoExecuteEnabled) },
+        color = Color.White,
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, Line)
+    ) {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Row(
+                Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AutoExecuteCheckBox(
+                    checked = autoExecuteEnabled,
+                    onClick = { onRequestAutoExecute(!autoExecuteEnabled) }
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "تنفيذ تلقائي",
+                        color = Ink,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        if (autoExecuteEnabled) {
+                            "مفعّل: سيكمل HAI خطوات المهمة تلقائيًا"
+                        } else {
+                            "غير مفعّل"
+                        },
+                        color = Muted,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(18.dp))
+
+    Text(
+        "التحديث",
+        color = Ink,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold
+    )
+    Spacer(Modifier.height(7.dp))
 
     OutlinedButton(
         onClick = onCheckUpdate,
@@ -1239,6 +1383,115 @@ private fun SettingsContent(
                 "البحث عن تحديث"
             }
         )
+    }
+}
+
+@Composable
+private fun AutoExecuteTopControl(
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = Color.White,
+        shape = RoundedCornerShape(13.dp),
+        border = BorderStroke(1.dp, Line),
+        shadowElevation = 2.dp
+    ) {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AutoExecuteCheckBox(
+                    checked = checked,
+                    onClick = { onToggle(!checked) }
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    "تنفيذ تلقائي",
+                    modifier = Modifier.clickable { onToggle(!checked) },
+                    color = Ink,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutoExecuteCheckBox(
+    checked: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .size(22.dp)
+            .clickable(onClick = onClick),
+        color = if (checked) BlueSoft else Color.White,
+        shape = RoundedCornerShape(5.dp),
+        border = BorderStroke(
+            1.dp,
+            if (checked) Blue else Color(0xFFCFC9D2)
+        )
+    ) {
+        if (checked) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Outlined.CheckCircle,
+                    "مفعّل",
+                    tint = Blue,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutoExecuteConfirmBanner(
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.widthIn(max = 340.dp),
+        color = Color.White,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Line),
+        shadowElevation = 6.dp
+    ) {
+        Column(
+            Modifier.padding(horizontal = 13.dp, vertical = 10.dp)
+        ) {
+            Text(
+                "سوف يتم تنفيذ كل المهام بشكل تلقائي",
+                modifier = Modifier.fillMaxWidth(),
+                color = Ink,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(7.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onCancel) {
+                    Text("إلغاء")
+                }
+                Spacer(Modifier.width(4.dp))
+                Button(
+                    onClick = onConfirm,
+                    shape = RoundedCornerShape(11.dp)
+                ) {
+                    Text("موافق")
+                }
+            }
+        }
     }
 }
 
