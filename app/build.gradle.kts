@@ -30,8 +30,8 @@ android {
         applicationId = "com.haiom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 43
-        versionName = "0.9.22"
+        versionCode = 44
+        versionName = "0.9.23"
 
         buildConfigField(
             "String",
