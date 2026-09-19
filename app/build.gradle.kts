@@ -9,11 +9,15 @@ val signingStorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").or
 val signingStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
 val signingKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
 val signingKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+
+private const val DEFAULT_GITHUB_OAUTH_CLIENT_ID = "Ov23litmhwBMkI6Uh6IW"
+
 val githubOAuthClientId = providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID")
     .orElse(providers.gradleProperty("GITHUB_OAUTH_CLIENT_ID"))
     .orNull
-    .orEmpty()
-    .trim()
+    ?.trim()
+    .takeUnless { it.isNullOrBlank() }
+    ?: DEFAULT_GITHUB_OAUTH_CLIENT_ID
 
 fun buildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -26,8 +30,8 @@ android {
         applicationId = "com.haiom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.9.2"
+        versionCode = 24
+        versionName = "0.9.3"
 
         buildConfigField(
             "String",
