@@ -124,12 +124,10 @@ class AutoTaskWorker(
                                     state = state,
                                     stage = stage
                                 )
-                                val visibleId =
-                                    runId?.takeIf { it > 0L }?.let { " #$it" }.orEmpty()
-                                store.addEvent(
-                                    "${task.order}. GitHub Actions$visibleId — $stage"
-                                )
                                 store.heartbeat(stage)
+                            },
+                            onLiveCode = { code ->
+                                store.setLiveCode(code)
                             },
                             autoMerge = true
                         )
