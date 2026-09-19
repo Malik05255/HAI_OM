@@ -18,6 +18,15 @@ class SecretStore(context: Context) {
     fun githubToken(): String = getEncrypted("github_token")
     fun clearGitHubToken() = prefs.edit().remove("github_token").apply()
 
+    fun saveSelectedRepositoryFullName(value: String) =
+        putEncrypted("selected_repository_full_name", value.trim())
+
+    fun selectedRepositoryFullName(): String =
+        getEncrypted("selected_repository_full_name")
+
+    fun clearSelectedRepository() =
+        prefs.edit().remove("selected_repository_full_name").apply()
+
     fun saveGitHubApp(
         appId: Long,
         slug: String,
