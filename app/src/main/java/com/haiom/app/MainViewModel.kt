@@ -60,6 +60,10 @@ data class MainUiState(
     val autoQueueStarted: Boolean = false,
     val autoAwaitingConfirmation: Boolean = false,
     val autoEvents: List<String> = emptyList(),
+    val autoWorkerActive: Boolean = false,
+    val autoWorkerHeartbeatAt: Long = 0L,
+    val autoWorkerMessage: String = "",
+    val autoWorkerError: String = "",
     val programming: Boolean = false,
     val chatHistory: List<ChatTurn> = emptyList()
 )
@@ -96,7 +100,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         autoTasks = queue.tasks,
                         autoQueueStarted = queue.started,
                         autoAwaitingConfirmation = queue.awaitingConfirmation,
-                        autoEvents = queue.events
+                        autoEvents = queue.events,
+                        autoWorkerActive = queue.workerActive,
+                        autoWorkerHeartbeatAt = queue.workerHeartbeatAt,
+                        autoWorkerMessage = queue.workerMessage,
+                        autoWorkerError = queue.workerError
                     )
                 }
             }
@@ -380,8 +388,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     autoTaskStore.clearEvents()
                     autoTaskStore.setStarted(true)
-                    appendChat("assistant", "بدأت.")
-                    AutoTaskWorker.enqueue(getApplication())
+                    autoTaskStore.markWorkerStarting()
+                    appendChat("assistant", "جاري البدء…")
+                    runCatching {
+                        AutoTaskWorker.enqueue(getApplication())
+                    }.onFailure { error ->
+                        autoTaskStore.setStarted(false)
+                        autoTaskStore.markWorkerStopped(
+                            message = "تعذر البدء",
+                            error = error.message.orEmpty()
+                        )
+                        appendChat("assistant", "تعذر بدء التنفيذ.")
+                    }
                 }
 
                 isNegativeStart(text) -> {
@@ -443,7 +461,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             if (resumeExecution) {
                 autoTaskStore.setStarted(true)
-                AutoTaskWorker.enqueue(getApplication())
+                if (!_state.value.autoWorkerActive) {
+                    autoTaskStore.markWorkerStarting()
+                }
+                runCatching {
+                    AutoTaskWorker.enqueue(getApplication())
+                }.onFailure { error ->
+                    autoTaskStore.setStarted(false)
+                    autoTaskStore.markWorkerStopped(
+                        message = "تعذر البدء",
+                        error = error.message.orEmpty()
+                    )
+                }
             }
 
             if (askToStartAfter && autoTaskStore.snapshot().tasks.any {
