@@ -359,12 +359,12 @@ class GitHubClient(
     ) {
         applyBatch(
             repo = repo,
-            branch = "hai-om/runtime",
+            branch = "h-agent/runtime",
             batch = EditBatch(
                 summary = if (paused) "إيقاف مؤقت" else "متابعة التنفيذ",
                 files = listOf(
                     FileEdit(
-                        path = ".hai-om/control.json",
+                        path = ".h-agent/control.json",
                         content = """{"paused":$paused}"""
                     )
                 )
@@ -439,7 +439,7 @@ class GitHubClient(
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer $token")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "HAI-OM-Android/0.2")
+            .header("User-Agent", "H-AGENT-Android/0.11")
         val requestBody = body?.toString()?.toRequestBody(JSON)
         when (method) {
             "GET" -> builder.get()
