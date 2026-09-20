@@ -77,7 +77,7 @@ class GitHubAppLinker(
         val baseUrl = "http://127.0.0.1:${server.localPort}"
         val prefix = "/$sessionPath"
         val manifest = buildManifest(
-            name = "OM Mobile $appSuffix",
+            name = "H AGENT Mobile $appSuffix",
             redirectUrl = "$baseUrl$prefix/manifest",
             setupUrl = "$baseUrl$prefix/installed"
         )
@@ -148,7 +148,7 @@ class GitHubAppLinker(
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer $token")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "OM-Android/0.8")
+            .header("User-Agent", "H-AGENT-Android/0.11")
             .build()
 
         client.newCall(request).execute().use { response ->
@@ -179,7 +179,7 @@ class GitHubAppLinker(
         return buildJsonObject {
             put("name", name)
             put("url", "https://github.com/Malik05255/HAI_OM")
-            put("description", "OM Android coding assistant")
+            put("description", "H AGENT Android coding assistant")
             put("redirect_url", redirectUrl)
             put("setup_url", setupUrl)
             put("setup_on_update", false)
@@ -203,7 +203,7 @@ class GitHubAppLinker(
             .url("https://api.github.com/app-manifests/__CODE__/conversions".replace("__CODE__", enc(code)))
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "OM-Android/0.8")
+            .header("User-Agent", "H-AGENT-Android/0.11")
             .post("{}".toRequestBody(JSON))
             .build()
 
@@ -231,7 +231,7 @@ class GitHubAppLinker(
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer $jwt")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "OM-Android/0.8")
+            .header("User-Agent", "H-AGENT-Android/0.11")
             .post("{}".toRequestBody(JSON))
             .build()
 
@@ -364,7 +364,7 @@ class GitHubAppLinker(
                         }
                     }
 
-                    else -> simplePage("OM")
+                    else -> simplePage("H AGENT")
                 }
 
                 val bytes = body.toByteArray(Charsets.UTF_8)
@@ -393,7 +393,7 @@ class GitHubAppLinker(
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width,initial-scale=1">
-              <title>OM</title>
+              <title>H AGENT</title>
             </head>
             <body style="font-family:sans-serif;padding:24px">
               <form id="f" action="$action" method="post">
@@ -415,7 +415,7 @@ class GitHubAppLinker(
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width,initial-scale=1">
               <meta http-equiv="refresh" content="0;url=$safeUrl">
-              <title>OM</title>
+              <title>H AGENT</title>
             </head>
             <body style="font-family:sans-serif;padding:24px">
               <p>جاري إكمال الربط…</p>
@@ -431,7 +431,7 @@ class GitHubAppLinker(
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width,initial-scale=1">
-          <title>OM</title>
+          <title>H AGENT</title>
         </head>
         <body style="font-family:sans-serif;padding:24px">
           <h3>تم ربط GitHub</h3>
@@ -452,7 +452,7 @@ class GitHubAppLinker(
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width,initial-scale=1">
-          <title>OM</title>
+          <title>H AGENT</title>
         </head>
         <body style="font-family:sans-serif;padding:24px"><h3>$message</h3></body>
         </html>
