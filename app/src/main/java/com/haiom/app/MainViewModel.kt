@@ -3,6 +3,9 @@ package com.haiom.app
 import android.app.Application
 import android.net.Uri
 import android.util.Base64
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.TimeUnit
 import com.haiom.app.agent.RemoteAgentRunner
@@ -1300,7 +1303,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
 
-                    resolveImageReference(image)
+                    normalizeRenderableImage(
+                        resolveImageReference(image)
+                    )
                 }
         }
 
@@ -1309,6 +1314,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "AI Horde بطيء الآن، يتم استخدام المزود الاحتياطي",
             true
         )
+    }
+
+    private fun normalizeRenderableImage(
+        payload: ImagePayload
+    ): ImagePayload {
+        if (payload.bytes.size < 1_024) {
+            throw ImageProviderException(
+                "مزود الصور أعاد ملفًا ناقصًا",
+                true
+            )
+        }
+
+        val bitmap = BitmapFactory.decodeByteArray(
+            payload.bytes,
+            0,
+            payload.bytes.size
+        ) ?: throw ImageProviderException(
+            "مزود الصور أعاد بيانات ليست صورة قابلة للعرض",
+            true
+        )
+
+        return try {
+            val output = ByteArrayOutputStream()
+            val compressed = bitmap.compress(
+                Bitmap.CompressFormat.JPEG,
+                92,
+                output
+            )
+
+            if (!compressed) {
+                throw ImageProviderException(
+                    "تعذر تجهيز الصورة للعرض",
+                    true
+                )
+            }
+
+            val bytes = output.toByteArray()
+            if (bytes.size < 1_024) {
+                throw ImageProviderException(
+                    "الصورة الناتجة غير مكتملة",
+                    true
+                )
+            }
+
+            ImagePayload(
+                bytes = bytes,
+                mimeType = "image/jpeg"
+            )
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     private fun requestDefaultImage(
@@ -1334,7 +1390,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         var lastError: Throwable? = null
         for (url in urls) {
             val result = runCatching {
-                downloadImage(url)
+                normalizeRenderableImage(
+                    downloadImage(url)
+                )
             }
             result.getOrNull()?.let { return it }
             lastError = result.exceptionOrNull()
@@ -1390,7 +1448,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val directory = File(
-            getApplication<Application>().cacheDir,
+            getApplication<Application>().filesDir,
             "generated_images"
         ).apply {
             mkdirs()
@@ -1398,7 +1456,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         directory.listFiles()
             ?.sortedByDescending { it.lastModified() }
-            ?.drop(12)
+            ?.drop(24)
             ?.forEach {
                 runCatching { it.delete() }
             }
@@ -1467,7 +1525,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             requestConfiguredImage(
                                 optimizedPrompt,
                                 seed
-                            )
+                            )?.let(::normalizeRenderableImage)
                         }
                     } else {
                         null

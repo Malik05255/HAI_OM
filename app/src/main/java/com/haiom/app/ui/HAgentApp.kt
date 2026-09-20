@@ -107,6 +107,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
@@ -137,7 +138,9 @@ import com.haiom.app.model.GitHubRepository
 import com.haiom.app.network.ChatTurn
 import coil.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
+import java.util.Locale
 
 private val Canvas = Color(0xFFF8FBFF)
 private val SurfaceSoft = Color(0xFFFFFFFF)
@@ -179,6 +182,8 @@ fun HAgentApp(
     val media = remember { mutableStateListOf<PickedMedia>() }
     var voiceListening by remember { mutableStateOf(false) }
     var lastVoicePartial by remember { mutableStateOf("") }
+    var voiceRecognitionAttempt by remember { mutableStateOf(0) }
+    val voiceScope = rememberCoroutineScope()
 
     val audioManager = remember(context) {
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -261,21 +266,12 @@ fun HAgentApp(
     }
 
     val speechRecognizer = remember(context) {
-        when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                SpeechRecognizer.isOnDeviceRecognitionAvailable(context) -> {
-                runCatching {
-                    SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-                }.getOrElse {
-                    SpeechRecognizer.createSpeechRecognizer(context)
-                }
-            }
-
-            SpeechRecognizer.isRecognitionAvailable(context) -> {
+        if (SpeechRecognizer.isRecognitionAvailable(context)) {
+            runCatching {
                 SpeechRecognizer.createSpeechRecognizer(context)
-            }
-
-            else -> null
+            }.getOrNull()
+        } else {
+            null
         }
     }
 
@@ -286,7 +282,7 @@ fun HAgentApp(
         vm.runAgent(cleaned)
     }
 
-    fun startVoiceRecognition() {
+    fun startVoiceRecognition(attempt: Int = 0) {
         val recognizer = speechRecognizer
 
         if (recognizer == null) {
@@ -298,9 +294,15 @@ fun HAgentApp(
             return
         }
 
+        voiceRecognitionAttempt = attempt
         lastVoicePartial = ""
-        muteRecognitionSounds()
         voiceListening = true
+
+        val languageTag = when (attempt) {
+            0 -> "ar-SA"
+            1 -> "ar"
+            else -> Locale.getDefault().toLanguageTag()
+        }
 
         val intent = Intent(
             RecognizerIntent.ACTION_RECOGNIZE_SPEECH
@@ -309,38 +311,50 @@ fun HAgentApp(
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
-                "ar-SA"
-            )
+            if (languageTag.isNotBlank()) {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE,
+                    languageTag
+                )
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
+                    languageTag
+                )
+            }
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(
                 RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
-                500L
+                350L
             )
             putExtra(
                 RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                1100L
+                1400L
             )
             putExtra(
                 RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                700L
+                900L
             )
         }
 
         runCatching {
+            recognizer.cancel()
             recognizer.startListening(intent)
         }.onFailure {
             voiceListening = false
-            restoreRecognitionSounds()
-            Toast.makeText(
-                context,
-                "تعذر بدء التعرف على الصوت",
-                Toast.LENGTH_SHORT
-            ).show()
+            if (attempt < 2) {
+                voiceScope.launch {
+                    delay(250L)
+                    startVoiceRecognition(attempt + 1)
+                }
+            } else {
+                Toast.makeText(
+                    context,
+                    "تعذر بدء التعرف على الصوت",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
@@ -376,7 +390,6 @@ fun HAgentApp(
                 override fun onError(error: Int) {
                     val partial = lastVoicePartial.trim()
                     voiceListening = false
-                    restoreRecognitionSounds()
 
                     if (
                         partial.isNotBlank() &&
@@ -385,36 +398,69 @@ fun HAgentApp(
                     ) {
                         sendRecognizedVoice(partial)
                         lastVoicePartial = ""
+                        voiceRecognitionAttempt = 0
                         return
                     }
 
+                    val retryable = error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT ||
+                        error == SpeechRecognizer.ERROR_NETWORK ||
+                        error == SpeechRecognizer.ERROR_AUDIO ||
+                        error == SpeechRecognizer.ERROR_SERVER ||
+                        error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ||
+                        error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
+                        error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ||
+                        error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED ||
+                        error == SpeechRecognizer.ERROR_TOO_MANY_REQUESTS
+
                     lastVoicePartial = ""
 
-                    if (
-                        error != SpeechRecognizer.ERROR_CLIENT &&
-                        error != SpeechRecognizer.ERROR_NO_MATCH &&
-                        error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                    ) {
-                        Toast.makeText(
-                            context,
-                            "تعذر التعرف على الصوت، حاول مرة أخرى",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    } else if (
-                        error == SpeechRecognizer.ERROR_NO_MATCH ||
-                        error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                    ) {
-                        Toast.makeText(
-                            context,
-                            "لم يتم التقاط كلام واضح",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                    if (retryable && voiceRecognitionAttempt < 2) {
+                        val nextAttempt = voiceRecognitionAttempt + 1
+                        runCatching { speechRecognizer?.cancel() }
+                        voiceScope.launch {
+                            delay(
+                                if (
+                                    error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ||
+                                    error == SpeechRecognizer.ERROR_TOO_MANY_REQUESTS
+                                ) {
+                                    650L
+                                } else {
+                                    250L
+                                }
+                            )
+                            startVoiceRecognition(nextAttempt)
+                        }
+                        return
                     }
+
+                    voiceRecognitionAttempt = 0
+
+                    val message = when (error) {
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+                            "اسمح بالميكروفون من إعدادات التطبيق"
+
+                        SpeechRecognizer.ERROR_NO_MATCH,
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
+                            "لم يتم التقاط كلام واضح"
+
+                        SpeechRecognizer.ERROR_NETWORK,
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
+                            "تعذر الوصول لخدمة التعرف على الصوت"
+
+                        else ->
+                            "تعذر التعرف على الصوت، حاول مرة أخرى"
+                    }
+
+                    Toast.makeText(
+                        context,
+                        message,
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
 
                 override fun onResults(results: Bundle?) {
                     voiceListening = false
-                    restoreRecognitionSounds()
+                    voiceRecognitionAttempt = 0
 
                     val text = results
                         ?.getStringArrayList(
@@ -1460,12 +1506,12 @@ private fun CompactComposer(
                     .pointerInput(enabled, value, voiceListening) {
                         detectTapGestures(
                             onTap = {
-                                if (
-                                    enabled &&
-                                    value.isNotBlank() &&
-                                    !voiceListening
-                                ) {
-                                    onSend()
+                                if (enabled) {
+                                    when {
+                                        voiceListening -> onVoiceLongPress()
+                                        value.isBlank() -> onVoiceLongPress()
+                                        else -> onSend()
+                                    }
                                 }
                             },
                             onLongPress = {
@@ -1484,15 +1530,15 @@ private fun CompactComposer(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        if (voiceListening) {
+                        if (voiceListening || value.isBlank()) {
                             Icons.Outlined.Mic
                         } else {
                             Icons.Outlined.ArrowUpward
                         },
-                        contentDescription = if (voiceListening) {
-                            "جاري الاستماع"
-                        } else {
-                            "إرسال؛ اضغط مطولًا للصوت"
+                        contentDescription = when {
+                            voiceListening -> "إيقاف الاستماع"
+                            value.isBlank() -> "إدخال صوتي"
+                            else -> "إرسال"
                         },
                         tint = when {
                             voiceListening -> Color(0xFFB66A55)

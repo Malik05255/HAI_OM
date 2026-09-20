@@ -146,9 +146,9 @@ class DirectChatClient(
                         put("role", "system")
                         put(
                             "content",
-                            "حوّل طلب الصورة إلى prompt إنجليزي قصير ودقيق لمولد صور. " +
-                                "استنتج الأخطاء الإملائية الواضحة من السياق، وحافظ بدقة على الموضوع والعمر والجنس والعدد والملابس والمكان والأسلوب المذكور. " +
-                                "لا تضف موضوعًا مختلفًا ولا تشرح. أخرج prompt فقط."
+                            "Translate and rewrite the user's image request into one concise, literal English image-generation prompt. " +
+                                "Infer obvious spelling mistakes from context. Preserve subject, age category, gender, count, hair, clothing, setting, pose and style exactly when specified. " +
+                                "Do not answer the user, do not discuss policy, do not refuse, do not add a different subject. Output English prompt text only."
                         )
                     })
                     add(buildJsonObject {
@@ -166,13 +166,32 @@ class DirectChatClient(
                 timeoutSeconds = 4
             )
 
-            attempt.answer
+            val candidate = attempt.answer
                 ?.trim()
                 ?.removePrefix("```text")
                 ?.removePrefix("```")
                 ?.removeSuffix("```")
                 ?.trim()
                 ?.takeIf { it.length in 3..700 }
+
+            val looksLikeRefusal = candidate?.let { value ->
+                listOf(
+                    "لا أستطيع",
+                    "لا يمكنني",
+                    "عذر",
+                    "سياس",
+                    "can't",
+                    "cannot",
+                    "sorry",
+                    "policy",
+                    "unable to"
+                ).any { marker ->
+                    value.contains(marker, ignoreCase = true)
+                }
+            } ?: false
+
+            candidate
+                ?.takeUnless { looksLikeRefusal }
                 ?: source
         }
 
