@@ -1124,7 +1124,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "unreadable text"
         ).joinToString(", ")
 
-        val bodyJson = JSONObject().apply {
+        data class GenerationProfile(
+            val width: Int,
+            val height: Int,
+            val steps: Int,
+            val cfgScale: Double
+        )
+
+        val profiles = listOf(
+            GenerationProfile(
+                width = 512,
+                height = 512,
+                steps = 14,
+                cfgScale = 6.0
+            ),
+            GenerationProfile(
+                width = 384,
+                height = 384,
+                steps = 10,
+                cfgScale = 5.5
+            )
+        )
+
+        fun buildRequestBody(
+            profile: GenerationProfile
+        ): JSONObject = JSONObject().apply {
             put("prompt", "$prompt ### $negativePrompt")
             put("models", JSONArray().put(selectedModel))
             put("nsfw", false)
@@ -1133,15 +1157,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             put("shared", false)
             put("replacement_filter", true)
             put("slow_workers", true)
-            put("allow_downgrade", false)
+            put("allow_downgrade", true)
             put(
                 "params",
                 JSONObject().apply {
                     put("n", 1)
-                    put("width", 768)
-                    put("height", 768)
-                    put("steps", 24)
-                    put("cfg_scale", 6.5)
+                    put("width", profile.width)
+                    put("height", profile.height)
+                    put("steps", profile.steps)
+                    put("cfg_scale", profile.cfgScale)
                     put("sampler_name", "k_euler_a")
                     put("karras", true)
                     put("seed", seed.toString())
@@ -1149,47 +1173,90 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        val submitRequest = Request.Builder()
-            .url("https://aihorde.net/api/v2/generate/async")
-            .header("apikey", apiKey)
-            .header("Client-Agent", clientAgent)
-            .header("Accept", "application/json")
-            .post(
-                bodyJson.toString()
-                    .toRequestBody(
-                        "application/json; charset=utf-8".toMediaType()
-                    )
-            )
-            .build()
+        var lastSubmitError = "تعذر إرسال طلب الصورة"
+        var requestId: String? = null
 
-        val requestId = imageClient.newCall(submitRequest)
-            .execute()
-            .use { response ->
-                val raw = response.body?.string().orEmpty()
+        for ((index, profile) in profiles.withIndex()) {
+            val bodyJson = buildRequestBody(profile)
 
-                if (!response.isSuccessful) {
+            val submitRequest = Request.Builder()
+                .url("https://aihorde.net/api/v2/generate/async")
+                .header("apikey", apiKey)
+                .header("Client-Agent", clientAgent)
+                .header("Accept", "application/json")
+                .post(
+                    bodyJson.toString()
+                        .toRequestBody(
+                            "application/json; charset=utf-8".toMediaType()
+                        )
+                )
+                .build()
+
+            val attempt = imageClient.newCall(submitRequest)
+                .execute()
+                .use { response ->
+                    val raw = response.body?.string().orEmpty()
+
+                    if (response.isSuccessful) {
+                        val id = runCatching {
+                            JSONObject(raw).optString("id")
+                        }.getOrNull().orEmpty()
+
+                        if (id.isNotBlank()) {
+                            return@use Triple(id, false, "")
+                        }
+
+                        return@use Triple(
+                            "",
+                            false,
+                            "AI Horde لم يرجع رقم طلب صالح"
+                        )
+                    }
+
                     val apiMessage = runCatching {
                         JSONObject(raw).optString("message")
                     }.getOrNull().orEmpty()
 
-                    throw ImageProviderException(
-                        message = apiMessage.ifBlank {
-                            "AI Horde: HTTP ${response.code}"
-                        },
-                        allowFallback = response.code >= 500 ||
-                            response.code == 408 ||
-                            response.code == 429
-                    )
+                    val normalizedMessage = apiMessage.lowercase()
+                    val needsKudos =
+                        normalizedMessage.contains("kudos") ||
+                        normalizedMessage.contains("heavy demand") ||
+                        normalizedMessage.contains("work budget") ||
+                        normalizedMessage.contains("642x642")
+
+                    val message = when {
+                        needsKudos ->
+                            "خدمة الصور تحت ضغط مرتفع"
+                        response.code == 429 ->
+                            "خدمة الصور مزدحمة الآن"
+                        response.code in 500..599 ->
+                            "خدمة الصور متعطلة مؤقتًا"
+                        response.code == 408 ->
+                            "انتهت مهلة خدمة الصور"
+                        else ->
+                            "تعذر إرسال طلب الصورة"
+                    }
+
+                    Triple("", needsKudos, message)
                 }
 
-                JSONObject(raw)
-                    .optString("id")
-                    .takeIf { it.isNotBlank() }
-                    ?: throw ImageProviderException(
-                        "AI Horde لم يرجع رقم طلب صالح",
-                        true
-                    )
+            if (attempt.first.isNotBlank()) {
+                requestId = attempt.first
+                break
             }
+
+            lastSubmitError = attempt.third
+
+            if (!attempt.second || index == profiles.lastIndex) {
+                break
+            }
+        }
+
+        val resolvedRequestId = resolvedRequestId
+            ?: throw ImageProviderException(
+                lastSubmitError,
+                true
+            )
 
         repeat(18) {
             kotlinx.coroutines.delay(1_500L)
@@ -1197,7 +1264,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val checkRequest = Request.Builder()
                 .url(
                     "https://aihorde.net/api/v2/generate/check/" +
-                        requestId
+                        resolvedRequestId
                 )
                 .header("Client-Agent", clientAgent)
                 .header("Accept", "application/json")
@@ -1229,7 +1296,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 check.has("is_possible") &&
                 !check.optBoolean("is_possible", true)
             ) {
-                cancelAiHordeRequest(requestId, clientAgent)
+                cancelAiHordeRequest(resolvedRequestId, clientAgent)
                 throw ImageProviderException(
                     "لا يوجد عامل متاح لهذا الطلب على AI Horde",
                     true
@@ -1243,7 +1310,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 !check.optBoolean("done", false) &&
                 (waitTime > 28 || queuePosition > 12)
             ) {
-                cancelAiHordeRequest(requestId, clientAgent)
+                cancelAiHordeRequest(resolvedRequestId, clientAgent)
                 throw ImageProviderException(
                     "AI Horde مزدحم، يتم التحويل للمزود الاحتياطي",
                     true
@@ -1257,7 +1324,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val statusRequest = Request.Builder()
                 .url(
                     "https://aihorde.net/api/v2/generate/status/" +
-                        requestId
+                        resolvedRequestId
                 )
                 .header("Client-Agent", clientAgent)
                 .header("Accept", "application/json")
@@ -1304,9 +1371,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
         }
 
-        cancelAiHordeRequest(requestId, clientAgent)
+        cancelAiHordeRequest(resolvedRequestId, clientAgent)
         throw ImageProviderException(
-            "AI Horde بطيء الآن، يتم استخدام المزود الاحتياطي",
+            "خدمة الصور مزدحمة الآن، حاول مرة أخرى بعد قليل",
             true
         )
     }

@@ -63,4 +63,4 @@ gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 
 ## الإصدار
 
-`0.11.4` — إزالة Pollinations وZ-Image وFlux بالكامل من مسار الصور. يستخدم H AGENT الآن نماذج AI Horde الجديدة المتاحة لحظيًا، مع تفضيل ICBINP وRealistic Vision وJuggernaut XL وAlbedoBase XL واختيار تلقائي حسب نوع الطلب وتوفر العمال.
+`0.11.5` — ضبط توليد AI Horde للعمل بدون Kudos: يبدأ بـ 512×512 و14 خطوة ويعيد المحاولة تلقائيًا بـ 384×384 و10 خطوات عند ضغط الخدمة أو طلب الرصيد، مع منع رسائل الخطأ الإنجليزية الخام.
