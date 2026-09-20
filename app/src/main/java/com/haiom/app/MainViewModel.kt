@@ -1376,15 +1376,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "https://image.pollinations.ai/prompt/" +
                 encoded +
                 "?width=768&height=768" +
-                "&model=flux" +
+                "&model=zimage" +
                 "&seed=$seed" +
                 "&nologo=true" +
                 "&enhance=false",
             "https://image.pollinations.ai/prompt/" +
                 encoded +
                 "?width=768&height=768" +
+                "&model=flux" +
                 "&seed=$seed" +
-                "&nologo=true"
+                "&nologo=true" +
+                "&enhance=false"
         )
 
         var lastError: Throwable? = null

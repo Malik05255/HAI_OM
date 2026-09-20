@@ -63,4 +63,4 @@ gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 
 ## الإصدار
 
-`0.11.2` — إصلاح جذري لمسار الصور: تحقق وفك/إعادة ترميز قبل العرض وتخزين دائم، وتحسين الصوت باستخدام Android SpeechRecognizer المتصل مع fallback تلقائي للغة والمحرك.
+`0.11.3` — تغيير نموذج إنشاء الصور الأساسي إلى Z-Image Turbo، مع إبقاء Flux كمسار احتياطي عند تعطل النموذج الأساسي.
