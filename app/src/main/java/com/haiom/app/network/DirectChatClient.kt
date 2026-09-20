@@ -68,7 +68,7 @@ class DirectChatClient(
                 url = route.url,
                 token = "anonymous",
                 body = kiloBody,
-                extraHeaders = mapOf("X-KILOCODE-EDITORNAME" to "HAI OM"),
+                extraHeaders = mapOf("X-KILOCODE-EDITORNAME" to "H AGENT"),
                 timeoutSeconds = if (fast) 9 else 22
             )
             if (kilo.answer != null) return@withContext kilo.answer
@@ -153,7 +153,7 @@ class DirectChatClient(
                 put(
                     "content",
                     buildString {
-                        append("أنت HAI OM. رد كمساعد محادثة مباشر وواضح وبنفس لغة المستخدم. ")
+                        append("أنت H AGENT. رد كمساعد محادثة مباشر وواضح وبنفس لغة المستخدم. ")
                         if (fast) {
                             append("ابدأ بالجواب مباشرة وبأقصر صياغة مفيدة. لا تكتب خطة طويلة أو مقدمات إلا إذا طلب المستخدم التفاصيل. ")
                         }
@@ -199,7 +199,7 @@ class DirectChatClient(
             .url(DAHL_TOKEN_URL)
             .post("{}".toRequestBody(JSON))
             .header("Content-Type", "application/json")
-            .header("User-Agent", "HAI-OM-Android")
+            .header("User-Agent", "H-AGENT-Android")
             .build()
 
         val call = client.newCall(request)
@@ -230,7 +230,7 @@ class DirectChatClient(
             .url(url)
             .header("Authorization", "Bearer $token")
             .header("Content-Type", "application/json")
-            .header("User-Agent", "HAI-OM-Android")
+            .header("User-Agent", "H-AGENT-Android")
 
         extraHeaders.forEach { (name, value) -> builder.header(name, value) }
 
