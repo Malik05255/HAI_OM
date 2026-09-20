@@ -15,6 +15,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import java.io.IOException
 
 data class ChatTurn(
     val role: String,
@@ -29,9 +30,9 @@ data class ChatTurn(
  */
 class DirectChatClient(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
         .build()
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -68,7 +69,7 @@ class DirectChatClient(
                 token = "anonymous",
                 body = kiloBody,
                 extraHeaders = mapOf("X-KILOCODE-EDITORNAME" to "HAI OM"),
-                timeoutSeconds = if (fast) 9 else null
+                timeoutSeconds = if (fast) 9 else 22
             )
             if (kilo.answer != null) return@withContext kilo.answer
             lastError = kilo.error ?: lastError
@@ -99,7 +100,7 @@ class DirectChatClient(
                 url = DAHL_CHAT_URL,
                 token = dahlToken,
                 body = body,
-                timeoutSeconds = if (fast) 12 else null
+                timeoutSeconds = if (fast) 12 else 26
             )
 
             if (attempt.code == 401) {
@@ -145,7 +146,7 @@ class DirectChatClient(
         put("model", model)
         put("stream", false)
         put("temperature", if (fast) 0.25 else 0.35)
-        put("max_tokens", if (fast) 900 else 4096)
+        put("max_tokens", if (fast) 1200 else 4096)
         put("messages", buildJsonArray {
             add(buildJsonObject {
                 put("role", "system")
@@ -201,7 +202,10 @@ class DirectChatClient(
             .header("User-Agent", "HAI-OM-Android")
             .build()
 
-        client.newCall(request).execute().use { response ->
+        val call = client.newCall(request)
+        call.timeout().timeout(8, TimeUnit.SECONDS)
+
+        call.execute().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
                 error("تعذر تشغيل المزود الاحتياطي")
@@ -239,35 +243,44 @@ class DirectChatClient(
             call.timeout().timeout(it, TimeUnit.SECONDS)
         }
 
-        return call.execute().use { response ->
-            val raw = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                val message = when (response.code) {
-                    429 -> "الخدمة المجانية مشغولة الآن، حاول بعد قليل"
-                    401, 403 -> "المزود المجاني غير متاح الآن"
-                    in 500..599 -> "المزود المجاني متعطل مؤقتًا"
-                    else -> "تعذر الرد الآن"
+        return try {
+            call.execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val message = when (response.code) {
+                        408 -> "انتهت مهلة المزود"
+                        429 -> "الخدمة المجانية مشغولة الآن، جاري تجربة مزود آخر"
+                        401, 403 -> "المزود المجاني غير متاح الآن"
+                        in 500..599 -> "المزود المجاني متعطل مؤقتًا"
+                        else -> "تعذر الرد من هذا المزود"
+                    }
+                    return@use ChatAttempt(response.code, error = message)
                 }
-                return@use ChatAttempt(response.code, error = message)
-            }
 
-            val answer = runCatching {
-                (json.parseToJsonElement(raw).jsonObject["choices"] as? JsonArray)
-                    ?.firstOrNull()
-                    ?.jsonObject
-                    ?.get("message")
-                    ?.jsonObject
-                    ?.get("content")
-                    ?.jsonPrimitive
-                    ?.contentOrNull
-                    ?.trim()
-            }.getOrNull()
+                val answer = runCatching {
+                    (json.parseToJsonElement(raw).jsonObject["choices"] as? JsonArray)
+                        ?.firstOrNull()
+                        ?.jsonObject
+                        ?.get("message")
+                        ?.jsonObject
+                        ?.get("content")
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.trim()
+                }.getOrNull()
 
-            if (answer.isNullOrBlank()) {
-                ChatAttempt(response.code, error = "وصل رد فارغ")
-            } else {
-                ChatAttempt(response.code, answer = answer)
+                if (answer.isNullOrBlank()) {
+                    ChatAttempt(response.code, error = "وصل رد فارغ")
+                } else {
+                    ChatAttempt(response.code, answer = answer)
+                }
             }
+        } catch (_: java.net.SocketTimeoutException) {
+            ChatAttempt(408, error = "انتهت مهلة المزود")
+        } catch (_: java.io.InterruptedIOException) {
+            ChatAttempt(408, error = "انتهت مهلة المزود")
+        } catch (_: IOException) {
+            ChatAttempt(0, error = "تعذر الاتصال بالمزود، جاري تجربة بديل")
         }
     }
 
