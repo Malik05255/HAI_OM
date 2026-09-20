@@ -980,6 +980,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val eta: Int
     )
 
+    private data class GenerationProfile(
+        val width: Int,
+        val height: Int,
+        val steps: Int,
+        val cfgScale: Double
+    )
+
     private fun activeAiHordeModels(
         clientAgent: String
     ): List<HordeImageModel> {
@@ -1124,13 +1131,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "unreadable text"
         ).joinToString(", ")
 
-        data class GenerationProfile(
-            val width: Int,
-            val height: Int,
-            val steps: Int,
-            val cfgScale: Double
-        )
-
         val profiles = listOf(
             GenerationProfile(
                 width = 512,
@@ -1252,7 +1252,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        val resolvedRequestId = resolvedRequestId
+        val resolvedRequestId = requestId
             ?: throw ImageProviderException(
                 lastSubmitError,
                 true
