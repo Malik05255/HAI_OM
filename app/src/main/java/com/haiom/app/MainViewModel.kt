@@ -856,159 +856,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val allowFallback: Boolean
     ) : Exception(message)
 
-    private fun requestConfiguredImage(
-        prompt: String,
-        seed: Long
-    ): ImagePayload? {
-        val endpoint = BuildConfig.IMAGE_API_URL.trim()
-        if (endpoint.isBlank()) return null
-
-        val bodyJson = JSONObject().apply {
-            put("prompt", prompt)
-            put("inputs", prompt)
-            put("negative_prompt", "low quality, distorted")
-            put("steps", 25)
-            put("seed", seed)
-        }
-
-        val builder = Request.Builder()
-            .url(endpoint)
-            .header(
-                "User-Agent",
-                "H-AGENT/${BuildConfig.VERSION_NAME}"
-            )
-            .header("Accept", "application/json,image/*")
-            .post(
-                bodyJson.toString()
-                    .toRequestBody(
-                        "application/json; charset=utf-8".toMediaType()
-                    )
-            )
-
-        BuildConfig.IMAGE_API_KEY
-            .trim()
-            .takeIf { it.isNotBlank() }
-            ?.let { key ->
-                builder.header(
-                    "Authorization",
-                    if (key.startsWith("Bearer ", true)) {
-                        key
-                    } else {
-                        "Bearer $key"
-                    }
-                )
-            }
-
-        imageClient.newCall(builder.build())
-            .execute()
-            .use { response ->
-                val code = response.code
-                if (!response.isSuccessful) {
-                    val message = when (code) {
-                        401, 403 -> "مفتاح خدمة الصور غير صالح أو غير مخول"
-                        429 -> "تم بلوغ حد خدمة الصور مؤقتًا"
-                        400, 422 -> "مزود الصور رفض صيغة الطلب"
-                        in 500..599 -> "مزود الصور متعطل مؤقتًا"
-                        else -> "فشل مزود الصور: HTTP $code"
-                    }
-                    throw ImageProviderException(
-                        message = message,
-                        allowFallback = code >= 500 || code == 408 || code == 429
-                    )
-                }
-
-                val responseBody = response.body
-                    ?: throw ImageProviderException(
-                        "استجابة خدمة الصور فارغة",
-                        true
-                    )
-
-                val mime = responseBody.contentType()
-                    ?.toString()
-                    ?.lowercase()
-                    .orEmpty()
-
-                if (mime.startsWith("image/")) {
-                    return ImagePayload(
-                        bytes = responseBody.bytes(),
-                        mimeType = mime
-                    )
-                }
-
-                val raw = responseBody.string()
-                if (raw.isBlank()) {
-                    throw ImageProviderException(
-                        "استجابة خدمة الصور فارغة",
-                        true
-                    )
-                }
-
-                return parseImageJson(raw)
-            }
-    }
-
-    private fun parseImageJson(raw: String): ImagePayload {
-        val root = runCatching { JSONObject(raw) }
-            .getOrElse {
-                throw ImageProviderException(
-                    "استجابة خدمة الصور غير مفهومة",
-                    true
-                )
-            }
-
-        val candidates = mutableListOf<Any?>()
-        listOf(
-            "url",
-            "image",
-            "image_url",
-            "b64_json",
-            "base64",
-            "image_base64",
-            "output",
-            "images",
-            "data"
-        ).forEach { key ->
-            if (root.has(key)) candidates += root.opt(key)
-        }
-
-        for (candidate in candidates) {
-            extractImageReference(candidate)?.let { reference ->
-                return resolveImageReference(reference)
-            }
-        }
-
-        throw ImageProviderException(
-            "لم يعثر H AGENT على صورة في استجابة المزود",
-            true
-        )
-    }
-
-    private fun extractImageReference(value: Any?): String? {
-        return when (value) {
-            null, JSONObject.NULL -> null
-            is String -> value.takeIf { it.isNotBlank() }
-            is JSONArray -> {
-                for (index in 0 until value.length()) {
-                    extractImageReference(value.opt(index))
-                        ?.let { return it }
-                }
-                null
-            }
-            is JSONObject -> {
-                listOf(
-                    "url",
-                    "b64_json",
-                    "base64",
-                    "image",
-                    "image_url"
-                ).firstNotNullOfOrNull { key ->
-                    extractImageReference(value.opt(key))
-                }
-            }
-            else -> null
-        }
-    }
-
     private fun resolveImageReference(reference: String): ImagePayload {
         val value = reference.trim()
 
@@ -1126,6 +973,129 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private data class HordeImageModel(
+        val name: String,
+        val workers: Int,
+        val jobs: Int,
+        val eta: Int
+    )
+
+    private fun activeAiHordeModels(
+        clientAgent: String
+    ): List<HordeImageModel> {
+        val request = Request.Builder()
+            .url("https://aihorde.net/api/v2/status/models?type=image")
+            .header("Client-Agent", clientAgent)
+            .header("Accept", "application/json")
+            .build()
+
+        return imageClient.newCall(request)
+            .execute()
+            .use { response ->
+                if (!response.isSuccessful) {
+                    throw ImageProviderException(
+                        "تعذر جلب نماذج الصور المتاحة: HTTP ${response.code}",
+                        true
+                    )
+                }
+
+                val raw = response.body?.string().orEmpty()
+                val array = runCatching { JSONArray(raw) }
+                    .getOrElse {
+                        throw ImageProviderException(
+                            "تعذر قراءة قائمة نماذج الصور",
+                            true
+                        )
+                    }
+
+                buildList {
+                    for (index in 0 until array.length()) {
+                        val item = array.optJSONObject(index) ?: continue
+                        val name = item.optString("name").trim()
+                        val workers = item.optInt("count", 0)
+                        if (name.isBlank() || workers <= 0) continue
+
+                        add(
+                            HordeImageModel(
+                                name = name,
+                                workers = workers,
+                                jobs = item.optInt("jobs", 0),
+                                eta = item.optInt("eta", Int.MAX_VALUE)
+                            )
+                        )
+                    }
+                }
+            }
+    }
+
+    private fun selectAiHordeImageModel(
+        prompt: String,
+        clientAgent: String
+    ): String {
+        val active = activeAiHordeModels(clientAgent)
+        if (active.isEmpty()) {
+            throw ImageProviderException(
+                "لا توجد نماذج صور متاحة الآن",
+                true
+            )
+        }
+
+        val portraitRequest = listOf(
+            "girl", "boy", "child", "woman", "man", "person",
+            "portrait", "female", "male", "face", "طفل", "طفله",
+            "طفلة", "بنت", "ولد", "رجل", "امرأة", "امراه", "وجه"
+        ).any { prompt.contains(it, ignoreCase = true) }
+
+        val preferredHints = if (portraitRequest) {
+            listOf(
+                "ICBINP",
+                "Realistic Vision",
+                "Juggernaut XL",
+                "AlbedoBase XL"
+            )
+        } else {
+            listOf(
+                "Juggernaut XL",
+                "AlbedoBase XL",
+                "ICBINP",
+                "Realistic Vision"
+            )
+        }
+
+        for (hint in preferredHints) {
+            active
+                .filter { model ->
+                    model.name.contains(hint, ignoreCase = true)
+                }
+                .minWithOrNull(
+                    compareBy<HordeImageModel> { it.eta }
+                        .thenByDescending { it.workers }
+                        .thenBy { it.jobs }
+                )
+                ?.let { return it.name }
+        }
+
+        val safeFallback = active
+            .filterNot { model ->
+                OLD_IMAGE_MODEL_MARKERS.any { marker ->
+                    model.name.contains(marker, ignoreCase = true)
+                } ||
+                    model.name.contains("nsfw", ignoreCase = true) ||
+                    model.name.contains("anime", ignoreCase = true)
+            }
+            .minWithOrNull(
+                compareBy<HordeImageModel> { it.eta }
+                    .thenByDescending { it.workers }
+                    .thenBy { it.jobs }
+            )
+
+        return safeFallback?.name
+            ?: throw ImageProviderException(
+                "لا يوجد نموذج صور جديد مناسب متاح الآن",
+                true
+            )
+    }
+
     private suspend fun requestAiHordeImage(
         prompt: String,
         seed: Long
@@ -1138,17 +1108,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "H-AGENT:${BuildConfig.VERSION_NAME}:" +
                 "https://github.com/Malik05255/HAI_OM"
 
+        val selectedModel = selectAiHordeImageModel(
+            prompt = prompt,
+            clientAgent = clientAgent
+        )
+
+        val negativePrompt = listOf(
+            "deformed anatomy",
+            "fused body parts",
+            "extra limbs",
+            "duplicate limbs",
+            "distorted face",
+            "malformed hands",
+            "watermark",
+            "unreadable text"
+        ).joinToString(", ")
+
         val bodyJson = JSONObject().apply {
-            put("prompt", prompt)
+            put("prompt", "$prompt ### $negativePrompt")
+            put("models", JSONArray().put(selectedModel))
+            put("nsfw", false)
+            put("censor_nsfw", true)
+            put("r2", true)
+            put("shared", false)
+            put("replacement_filter", true)
+            put("slow_workers", true)
+            put("allow_downgrade", false)
             put(
                 "params",
                 JSONObject().apply {
                     put("n", 1)
-                    put("width", 512)
-                    put("height", 512)
-                    put("steps", 16)
-                    put("cfg_scale", 7.0)
+                    put("width", 768)
+                    put("height", 768)
+                    put("steps", 24)
+                    put("cfg_scale", 6.5)
                     put("sampler_name", "k_euler_a")
+                    put("karras", true)
                     put("seed", seed.toString())
                 }
             )
@@ -1196,7 +1191,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
             }
 
-        repeat(4) {
+        repeat(18) {
             kotlinx.coroutines.delay(1_500L)
 
             val checkRequest = Request.Builder()
@@ -1246,7 +1241,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             if (
                 !check.optBoolean("done", false) &&
-                (waitTime > 10 || queuePosition > 4)
+                (waitTime > 28 || queuePosition > 12)
             ) {
                 cancelAiHordeRequest(requestId, clientAgent)
                 throw ImageProviderException(
@@ -1367,46 +1362,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun requestDefaultImage(
-        prompt: String,
-        seed: Long
-    ): ImagePayload {
-        val encoded = Uri.encode(prompt)
-        val urls = listOf(
-            "https://image.pollinations.ai/prompt/" +
-                encoded +
-                "?width=768&height=768" +
-                "&model=zimage" +
-                "&seed=$seed" +
-                "&nologo=true" +
-                "&enhance=false",
-            "https://image.pollinations.ai/prompt/" +
-                encoded +
-                "?width=768&height=768" +
-                "&model=flux" +
-                "&seed=$seed" +
-                "&nologo=true" +
-                "&enhance=false"
-        )
-
-        var lastError: Throwable? = null
-        for (url in urls) {
-            val result = runCatching {
-                normalizeRenderableImage(
-                    downloadImage(url)
-                )
-            }
-            result.getOrNull()?.let { return it }
-            lastError = result.exceptionOrNull()
-        }
-
-        throw lastError
-            ?: ImageProviderException(
-                "تعذر توليد الصورة",
-                true
-            )
-    }
-
     private fun imageExtension(
         payload: ImagePayload
     ): String {
@@ -1520,65 +1475,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
 
                 val imageFile = withContext(Dispatchers.IO) {
-                    val configuredResult = if (
-                        BuildConfig.IMAGE_API_URL.isNotBlank()
-                    ) {
-                        runCatching {
-                            requestConfiguredImage(
-                                optimizedPrompt,
-                                seed
-                            )?.let(::normalizeRenderableImage)
-                        }
-                    } else {
-                        null
-                    }
-
-                    val configuredPayload =
-                        configuredResult?.getOrNull()
-
-                    val payload = when {
-                        configuredPayload != null -> configuredPayload
-
-                        configuredResult?.exceptionOrNull()
-                            is ImageProviderException -> {
-                            val error =
-                                configuredResult.exceptionOrNull()
-                                    as ImageProviderException
-                            if (!error.allowFallback) {
-                                throw error
-                            }
-
-                            try {
-                                requestDefaultImage(
-                                    optimizedPrompt,
-                                    seed
-                                )
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (_: Throwable) {
-                                requestAiHordeImage(
-                                    optimizedPrompt,
-                                    seed
-                                )
-                            }
-                        }
-
-                        else -> {
-                            try {
-                                requestDefaultImage(
-                                    optimizedPrompt,
-                                    seed
-                                )
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (_: Throwable) {
-                                requestAiHordeImage(
-                                    optimizedPrompt,
-                                    seed
-                                )
-                            }
-                        }
-                    }
+                    val payload = requestAiHordeImage(
+                        optimizedPrompt,
+                        seed
+                    )
 
                     saveGeneratedImage(payload, seed)
                 }
@@ -2038,6 +1938,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Regex("""(^|\s)(سويلي|سولي|صمملي|صمّملي|ارسملي|اعمللي)\s+(صورة|صوره|صور|رسمة|رسمه|تصميم)(\s|$)"""),
             Regex("""^(صورة|صوره|رسمة|رسمه|تصميم)\s+.+"""),
             Regex("""(^|\s)(generate|create|draw|make)\s+(an?\s+)?(image|picture|illustration|artwork)(\s|$)""", RegexOption.IGNORE_CASE)
+        )
+
+        private val OLD_IMAGE_MODEL_MARKERS = setOf(
+            "flux",
+            "z-image",
+            "zimage",
+            "pollinations"
         )
 
         private val IMAGE_ACTION_WORDS = setOf(

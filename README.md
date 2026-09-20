@@ -63,4 +63,4 @@ gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 
 ## الإصدار
 
-`0.11.3` — تغيير نموذج إنشاء الصور الأساسي إلى Z-Image Turbo، مع إبقاء Flux كمسار احتياطي عند تعطل النموذج الأساسي.
+`0.11.4` — إزالة Pollinations وZ-Image وFlux بالكامل من مسار الصور. يستخدم H AGENT الآن نماذج AI Horde الجديدة المتاحة لحظيًا، مع تفضيل ICBINP وRealistic Vision وJuggernaut XL وAlbedoBase XL واختيار تلقائي حسب نوع الطلب وتوفر العمال.
