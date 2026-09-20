@@ -1498,6 +1498,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun isCodeChatRequest(text: String): Boolean {
+        val value = text.trim().lowercase()
+        if (value.isBlank()) return false
+
+        return isProgrammingRequest(text) ||
+            CODE_CHAT_PATTERNS.any { it.containsMatchIn(value) }
+    }
+
     private fun runChat(prompt: String) {
         manualChatJob?.cancel()
         responseGeneration += 1L
@@ -1540,7 +1548,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     prompt = prompt,
                     history = existingHistory,
                     repositoryContext = context,
-                    fast = true
+                    fast = !isCodeChatRequest(prompt)
                 )
 
                 if (generation != responseGeneration ||
@@ -1585,9 +1593,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(
                             running = false,
                             programming = false,
-                            error = t.message?.takeIf { message ->
-                                message.isNotBlank()
-                            } ?: "تعذر الرد الآن"
+                            error = when {
+                                t is java.net.SocketTimeoutException ->
+                                    "الخدمات المجانية مشغولة الآن، أعد المحاولة"
+
+                                t is java.io.InterruptedIOException ->
+                                    "الخدمات المجانية تأخرت في الرد، أعد المحاولة"
+
+                                t.message.equals("timeout", true) ->
+                                    "الخدمات المجانية تأخرت في الرد، أعد المحاولة"
+
+                                else -> t.message?.takeIf { message ->
+                                    message.isNotBlank()
+                                } ?: "تعذر الرد الآن"
+                            }
                         )
                     }
                 }
@@ -1857,6 +1876,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "المشروع", "المستودع", "github", "جيت هب", "قيت هب",
             "repo", "repository", "اتصل بالمستودع", "على المشروع",
             "في المشروع", "داخل المشروع", "ملفات المشروع"
+        )
+
+        private val CODE_CHAT_PATTERNS = listOf(
+            Regex("""(^|\s)(كود|الكود)\s+(ل|لـ|حق|برنامج|تطبيق)(\s|$)"""),
+            Regex("""(^|\s)(اكتب|اكتبلي|اكتب لي|اعطني|أعطني|ابي|أبي|ابغى|أبغى)\s+(لي\s+)?(كود|الكود)(\s|$)"""),
+            Regex("""(^|\s)(برنامج|تطبيق)\s+(حاسبة|حاسبه|آلة حاسبة|اله حاسبه|calculator)(\s|$)"""),
+            Regex("""(^|\s)(write|generate|create)\s+(me\s+)?(code|an?\s+app|program)(\s|$)""", RegexOption.IGNORE_CASE)
         )
 
         private val IMAGE_GENERATION_PATTERNS = listOf(
