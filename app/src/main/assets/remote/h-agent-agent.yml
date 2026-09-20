@@ -1,15 +1,15 @@
-name: HAI OM Agent
+name: H AGENT Agent
 
 on:
   push:
     branches:
-      - "hai-om/runtime"
+      - "h-agent/runtime"
 
 permissions:
   contents: write
 
 concurrency:
-  group: hai-om-runtime
+  group: h-agent-runtime
   cancel-in-progress: false
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 55
 
     steps:
-      - name: Checkout HAI OM runtime
+      - name: Checkout H AGENT runtime
         uses: actions/checkout@v5
         with:
           # Pin this run to the exact task commit that triggered it.
@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          FILE="$GITHUB_WORKSPACE/runtime/.hai-om/task.json"
+          FILE="$GITHUB_WORKSPACE/runtime/.h-agent/task.json"
           test -s "$FILE"
           echo "task_id=$(jq -r '.taskId' "$FILE")" >> "$GITHUB_OUTPUT"
           echo "target_branch=$(jq -r '.targetBranch' "$FILE")" >> "$GITHUB_OUTPUT"
@@ -64,24 +64,24 @@ jobs:
         id: omni-cache
         uses: actions/cache@v4
         with:
-          path: ~/.hai-om/omniroute-lite
-          key: hai-om-omniroute-lite-3.8.50-v1-node22-linux
+          path: ~/.h-agent/omniroute-lite
+          key: h-agent-omniroute-lite-3.8.50-v1-node22-linux
 
       - name: Install OmniRoute runtime
         if: steps.omni-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.hai-om/omniroute-lite"
-          npm install --prefix "$HOME/.hai-om/omniroute-lite" --omit=optional --no-fund --no-audit \
+          mkdir -p "$HOME/.h-agent/omniroute-lite"
+          npm install --prefix "$HOME/.h-agent/omniroute-lite" --omit=optional --no-fund --no-audit \
             omniroute@3.8.50 better-sqlite3@13.0.2 js-tiktoken@1.0.20
 
       - name: Start free AI engine
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$HOME/.hai-om/omniroute-lite/node_modules/.bin:$PATH"
-          export OMNIROOT="$HOME/.hai-om/omniroute-lite/node_modules/omniroute"
+          export PATH="$HOME/.h-agent/omniroute-lite/node_modules/.bin:$PATH"
+          export OMNIROOT="$HOME/.h-agent/omniroute-lite/node_modules/omniroute"
 
           OMNIROUTE_SERVER_HOST=127.0.0.1 nohup omniroute --no-open > "$RUNNER_TEMP/omniroute.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/omniroute.pid"
@@ -165,13 +165,13 @@ jobs:
           sleep 1
 
           if [ -s "$RUNNER_TEMP/dahl-token" ]; then
-            export HAI_DAHL_TOKEN="$(cat "$RUNNER_TEMP/dahl-token")"
+            export H_AGENT_DAHL_TOKEN="$(cat "$RUNNER_TEMP/dahl-token")"
             omniroute providers add dahl \
-              --credential-env HAI_DAHL_TOKEN \
+              --credential-env H_AGENT_DAHL_TOKEN \
               --yes \
               --name hai-free-dahl \
               --default-model MiniMaxAI/MiniMax-M2.7 || true
-            unset HAI_DAHL_TOKEN
+            unset H_AGENT_DAHL_TOKEN
             rm -f "$RUNNER_TEMP/dahl-token"
           fi
 
@@ -179,12 +179,12 @@ jobs:
         working-directory: work
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          HAI_OMNIROUTE_URL: http://127.0.0.1:20128
-          HAI_BRANCH: ${{ steps.task.outputs.target_branch }}
-          HAI_REPOSITORY: ${{ github.repository }}
-          HAI_TASK_PATH: ${{ github.workspace }}/runtime/.hai-om/task.json
-          HAI_RESULT_PATH: ${{ runner.temp }}/hai-om-result.json
-        run: node "$GITHUB_WORKSPACE/runtime/.hai-om/agent.mjs"
+          H_AGENT_OMNIROUTE_URL: http://127.0.0.1:20128
+          H_AGENT_BRANCH: ${{ steps.task.outputs.target_branch }}
+          H_AGENT_REPOSITORY: ${{ github.repository }}
+          H_AGENT_TASK_PATH: ${{ github.workspace }}/runtime/.h-agent/task.json
+          H_AGENT_RESULT_PATH: ${{ runner.temp }}/h-agent-result.json
+        run: node "$GITHUB_WORKSPACE/runtime/.h-agent/agent.mjs"
 
       - name: Publish result
         env:
@@ -193,18 +193,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          FILE="$RUNNER_TEMP/hai-om-result.json"
+          FILE="$RUNNER_TEMP/h-agent-result.json"
           test -s "$FILE"
           CONTENT="$(base64 -w 0 "$FILE")"
           jq -n \
             --arg message "runtime-result: $TASK_ID" \
             --arg content "$CONTENT" \
-            --arg branch "hai-om/runtime" \
+            --arg branch "h-agent/runtime" \
             '{message:$message,content:$content,branch:$branch}' \
             | gh api \
                 --method PUT \
                 -H "Accept: application/vnd.github+json" \
-                "/repos/$GITHUB_REPOSITORY/contents/.hai-om/results/$TASK_ID.json" \
+                "/repos/$GITHUB_REPOSITORY/contents/.h-agent/results/$TASK_ID.json" \
                 --input - >/dev/null
 
       - name: Stop AI engine

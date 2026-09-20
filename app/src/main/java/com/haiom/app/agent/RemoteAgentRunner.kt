@@ -52,7 +52,7 @@ class RemoteAgentRunner(
         ensureRuntime(repo, base, onEvent)
 
         val targetBranch = if (programming) {
-            "hai-agent/$taskId".also {
+            "h-agent/$taskId".also {
                 onEvent("تجهيز فرع البرمجة")
                 github.createBranch(repo, base, it)
             }
@@ -73,7 +73,7 @@ class RemoteAgentRunner(
             repo = repo,
             branch = RUNTIME_BRANCH,
             batch = EditBatch(
-                summary = "تشغيل HAI OM",
+                summary = "تشغيل H AGENT",
                 files = listOf(
                     FileEdit(TASK_PATH, taskJson),
                     FileEdit(CONTROL_PATH, """{"paused":false}""")
@@ -140,7 +140,7 @@ class RemoteAgentRunner(
             CiState.SUCCESS -> Unit
             CiState.FAILURE -> throw IllegalStateException(friendlyFailure(run.logs))
             CiState.NOT_FOUND -> throw IllegalStateException(
-                "لم يبدأ HAI OM. تأكد أن GitHub Actions مفعّل لهذا المشروع."
+                "لم يبدأ H AGENT. تأكد أن GitHub Actions مفعّل لهذا المشروع."
             )
             CiState.PENDING -> throw IllegalStateException("المهمة ما زالت قيد الانتظار")
         }
@@ -152,7 +152,7 @@ class RemoteAgentRunner(
         val resultObject = runCatching {
             json.parseToJsonElement(resultFile.text).jsonObject
         }.getOrElse {
-            throw IllegalStateException("تعذر قراءة نتيجة HAI OM.")
+            throw IllegalStateException("تعذر قراءة نتيجة H AGENT.")
         }
 
         val mode = resultObject["mode"]?.jsonPrimitive?.contentOrNull.orEmpty()
@@ -165,7 +165,7 @@ class RemoteAgentRunner(
                 repo = repo,
                 branch = RUNTIME_BRANCH,
                 batch = EditBatch(
-                    summary = "تنظيف نتيجة HAI OM",
+                    summary = "تنظيف نتيجة H AGENT",
                     files = listOf(
                         FileEdit(TASK_PATH, delete = true),
                         FileEdit(resultPath, delete = true),
@@ -202,9 +202,9 @@ class RemoteAgentRunner(
             repo = repo,
             branch = targetBranch,
             base = base,
-            title = "HAI OM: $shortTitle",
+            title = "H AGENT: $shortTitle",
             body = buildString {
-                appendLine("تم تنفيذ الطلب تلقائيًا بواسطة HAI OM.")
+                appendLine("تم تنفيذ الطلب تلقائيًا بواسطة H AGENT.")
                 appendLine()
                 appendLine("## الطلب")
                 appendLine(requirements.take(3_000))
@@ -218,7 +218,7 @@ class RemoteAgentRunner(
             val merged = github.mergePullRequest(
                 repo = repo,
                 pullRequestUrl = pullRequestUrl,
-                title = "HAI OM: $shortTitle"
+                title = "H AGENT: $shortTitle"
             )
             if (!merged) {
                 throw IllegalStateException("تم تنفيذ التعديل لكن تعذر دمجه تلقائيًا")
@@ -250,8 +250,8 @@ class RemoteAgentRunner(
             github.createBranch(repo, base, RUNTIME_BRANCH)
         }
 
-        val workflow = asset("remote/hai-om-agent.yml")
-        val runner = asset("remote/hai-om-agent.mjs")
+        val workflow = asset("remote/h-agent-agent.yml")
+        val runner = asset("remote/h-agent-agent.mjs")
 
         val updates = mutableListOf<FileEdit>()
         val currentWorkflow = runCatching {
@@ -270,7 +270,7 @@ class RemoteAgentRunner(
                 repo = repo,
                 branch = RUNTIME_BRANCH,
                 batch = EditBatch(
-                    summary = "مزامنة مشغل HAI OM",
+                    summary = "مزامنة مشغل H AGENT",
                     files = updates
                 ),
                 taskId = "runtime-sync",
@@ -313,7 +313,7 @@ class RemoteAgentRunner(
                 "الموديلات المجانية مشغولة أو غير متاحة الآن. حاول مرة ثانية بعد قليل."
 
             "workflow" in lower && "permission" in lower ->
-                "المشروع لا يسمح لـ HAI OM بالتشغيل التلقائي."
+                "المشروع لا يسمح لـ H AGENT بالتشغيل التلقائي."
 
             "resource not accessible by integration" in lower ||
                 "403" in lower ->
@@ -327,14 +327,14 @@ class RemoteAgentRunner(
     }
 
     companion object {
-        private const val RUNTIME_BRANCH = "hai-om/runtime"
-        private const val WORKFLOW_NAME = "HAI OM Agent"
-        private const val WORKFLOW_PATH = ".github/workflows/hai-om-agent.yml"
-        private const val RUNNER_PATH = ".hai-om/agent.mjs"
-        private const val TASK_PATH = ".hai-om/task.json"
-        private const val CONTROL_PATH = ".hai-om/control.json"
-        private const val RESULTS_DIR = ".hai-om/results"
-        private const val LIVE_DIR = ".hai-om/live"
+        private const val RUNTIME_BRANCH = "h-agent/runtime"
+        private const val WORKFLOW_NAME = "H AGENT Agent"
+        private const val WORKFLOW_PATH = ".github/workflows/h-agent.yml"
+        private const val RUNNER_PATH = ".h-agent/agent.mjs"
+        private const val TASK_PATH = ".h-agent/task.json"
+        private const val CONTROL_PATH = ".h-agent/control.json"
+        private const val RESULTS_DIR = ".h-agent/results"
+        private const val LIVE_DIR = ".h-agent/live"
         private const val MAX_REQUIREMENTS_CHARS = 20_000
     }
 }

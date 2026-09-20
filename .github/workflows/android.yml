@@ -2,9 +2,9 @@ name: Android CI
 
 on:
   push:
-    branches: [ main, development ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, development ]
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       github_oauth_client_id:
@@ -35,24 +35,8 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Unit tests and APK
+      - name: Unit tests, lint, and APK
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
-
-      - name: Prepare development APK
-        if: github.ref == 'refs/heads/development'
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp app/build/outputs/apk/debug/app-debug.apk HAI-OM-development.apk
-
-      - name: Upload development APK
-        if: github.ref == 'refs/heads/development'
-        uses: actions/upload-artifact@v4
-        with:
-          name: HAI-OM-development-apk
-          path: HAI-OM-development.apk
-          if-no-files-found: error
-          retention-days: 14
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -74,6 +58,7 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      # Legacy tag/file names are retained so existing installs keep the same signing key.
       - name: Get or create stable signing key
         shell: bash
         run: |
@@ -90,7 +75,7 @@ jobs:
               -keyalg RSA \
               -keysize 3072 \
               -validity 10000 \
-              -dname "CN=HAI OM,O=HAI OM,C=SA"
+              -dname "CN=H AGENT,O=H AGENT,C=SA"
             {
               echo "storePassword=$PASS"
               echo "keyPassword=$PASS"
@@ -98,8 +83,8 @@ jobs:
             } > signing.properties
             gh release create hai-om-signing \
               --draft \
-              --title "HAI OM signing material" \
-              --notes "Private CI signing material. Do not publish." \
+              --title "H AGENT signing material" \
+              --notes "Private CI signing material. Legacy tag retained for update compatibility." \
               hai-om-release.jks signing.properties
           fi
 
@@ -113,13 +98,13 @@ jobs:
           export ANDROID_KEY_ALIAS="$keyAlias"
           export ANDROID_KEY_PASSWORD="$keyPassword"
           gradle --no-daemon assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk HAI-OM.apk
+          cp app/build/outputs/apk/release/app-release.apk H-AGENT.apk
 
       - name: Upload signed APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HAI-OM-signed-release-apk
-          path: HAI-OM.apk
+          name: H-AGENT-signed-release-apk
+          path: H-AGENT.apk
           if-no-files-found: error
 
       - name: Publish app release
@@ -129,11 +114,36 @@ jobs:
           VERSION="$(grep 'versionName = "' app/build.gradle.kts | head -1 | sed -E 's/.*versionName = "([^"]+)".*/\1/')"
           TAG="v$VERSION"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" HAI-OM.apk --clobber
-            gh release edit "$TAG" --latest
+            gh release upload "$TAG" H-AGENT.apk --clobber
+            gh release edit "$TAG" --title "H AGENT $TAG" --latest
           else
-            gh release create "$TAG" HAI-OM.apk \
-              --title "HAI OM $TAG" \
-              --notes "تحديث HAI OM: تفعيل ربط GitHub بالكود" \
+            gh release create "$TAG" H-AGENT.apk \
+              --title "H AGENT $TAG" \
+              --notes "H AGENT release $TAG" \
               --latest
           fi
+
+
+  cleanup-legacy-branches:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'H AGENT 0.11.0')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Delete all legacy branches except main
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t branches < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name'
+          )
+          for branch in "${branches[@]}"; do
+            if [[ "$branch" == "main" ]]; then
+              continue
+            fi
+            echo "Deleting branch: $branch"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" || true
+          done

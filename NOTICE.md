@@ -1,9 +1,11 @@
 # Notices
 
-HAI OM is an independent Android implementation.
+H AGENT is an independent Android application.
 
-Its free-only routing design is informed by public documentation and provider metadata from the MIT-licensed OmniRoute project (https://github.com/diegosouzapw/OmniRoute), including the concepts of free-provider discovery, coding-oriented ranking and fallback routing.
+The project integrates with GitHub APIs and external AI/image providers. Availability, limits, model names, queue behavior, and free tiers are controlled by those providers and may change independently of this repository.
 
-Pollinations model availability and endpoint metadata are expected to change over time. HAI OM intentionally uses a hard allowlist and must be updated when the documented free/keyless set changes.
+AI Horde support is intended for free image generation, while an optional image API endpoint can be supplied at build time. The coding runtime may use provider-routing infrastructure configured by the project/runtime.
 
-No API keys or GitHub tokens are committed to this repository. User-supplied secrets are encrypted locally with Android Keystore.
+No GitHub access token, image API key, or user secret should be committed to this repository. User credentials persisted by the Android app are stored through Android Keystore-backed encryption.
+
+Legacy internal identifiers may remain solely to preserve Android upgrade/signing compatibility and previously encrypted local data.

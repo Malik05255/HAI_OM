@@ -45,7 +45,7 @@ class GitHubOAuthClient(
             val request = Request.Builder()
                 .url(DEVICE_CODE_URL)
                 .header("Accept", "application/json")
-                .header("User-Agent", "OM-Android/0.9")
+                .header("User-Agent", "H-AGENT-Android/0.11")
                 .post(body)
                 .build()
 
@@ -138,7 +138,7 @@ class GitHubOAuthClient(
         val request = Request.Builder()
             .url(ACCESS_TOKEN_URL)
             .header("Accept", "application/json")
-            .header("User-Agent", "OM-Android/0.9")
+            .header("User-Agent", "H-AGENT-Android/0.11")
             .post(body)
             .build()
 
@@ -184,7 +184,7 @@ class GitHubOAuthClient(
 
                 "device_flow_disabled" ->
                     PollResult.Failure(
-                        "يجب تفعيل Device Flow لتطبيق OM في GitHub"
+                        "يجب تفعيل Device Flow لتطبيق H AGENT في GitHub"
                     )
 
                 "incorrect_client_credentials" ->
@@ -205,7 +205,7 @@ class GitHubOAuthClient(
     ): String =
         when (errorCode) {
             "device_flow_disabled" ->
-                "يجب تفعيل Device Flow لتطبيق OM في GitHub"
+                "يجب تفعيل Device Flow لتطبيق H AGENT في GitHub"
 
             "incorrect_client_credentials" ->
                 "Client ID الخاص بـ GitHub غير صحيح"

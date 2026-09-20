@@ -64,7 +64,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -75,7 +75,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
@@ -162,7 +162,7 @@ private enum class SettingsPage { ROOT, GITHUB, AUTOMATION }
 private data class PickedMedia(val uri: Uri, val name: String)
 
 @Composable
-fun HaiOmApp(
+fun HAgentApp(
     vm: MainViewModel = viewModel()
 ) {
     val state by vm.state.collectAsState()
@@ -991,7 +991,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         Spacer(Modifier.height(16.dp))
 
         Text(
-            "HAI",
+            "H AGENT",
             color = Ink,
             fontSize = 26.sp,
             fontWeight = FontWeight.Black
@@ -1090,7 +1090,7 @@ private fun copyCode(context: Context, code: String) {
     ) as ClipboardManager
 
     clipboard.setPrimaryClip(
-        ClipData.newPlainText("HAI code", code)
+        ClipData.newPlainText("H AGENT code", code)
     )
 
     Toast.makeText(
@@ -1105,18 +1105,18 @@ private fun MessageBlock(turn: ChatTurn) {
     val user = turn.role == "user"
     val generatedImageModel: Any? = when {
         turn.role == "assistant" &&
-            turn.text.startsWith("[[HAI_IMAGE_FILE]]") -> {
+            turn.text.startsWith("[[H_AGENT_IMAGE_FILE]]") -> {
             turn.text
-                .removePrefix("[[HAI_IMAGE_FILE]]")
+                .removePrefix("[[H_AGENT_IMAGE_FILE]]")
                 .trim()
                 .takeIf { it.isNotBlank() }
                 ?.let(::File)
         }
 
         turn.role == "assistant" &&
-            turn.text.startsWith("[[HAI_IMAGE]]") -> {
+            turn.text.startsWith("[[H_AGENT_IMAGE]]") -> {
             turn.text
-                .removePrefix("[[HAI_IMAGE]]")
+                .removePrefix("[[H_AGENT_IMAGE]]")
                 .trim()
                 .takeIf { it.isNotBlank() }
         }
@@ -1143,7 +1143,7 @@ private fun MessageBlock(turn: ChatTurn) {
                         LocalLayoutDirection provides LayoutDirection.Rtl
                     ) {
                         Text(
-                            "HAI",
+                            "H AGENT",
                             modifier = Modifier.fillMaxWidth(),
                             color = Blue,
                             fontSize = 11.sp,
@@ -1156,7 +1156,7 @@ private fun MessageBlock(turn: ChatTurn) {
 
                     SubcomposeAsyncImage(
                         model = generatedImageModel,
-                        contentDescription = "صورة مولدة بواسطة HAI",
+                        contentDescription = "صورة مولدة بواسطة H AGENT",
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(320.dp)
@@ -1253,7 +1253,7 @@ private fun MessageBlock(turn: ChatTurn) {
                         LocalLayoutDirection provides LayoutDirection.Rtl
                     ) {
                         Text(
-                            if (user) "أنت" else "HAI",
+                            if (user) "أنت" else "H AGENT",
                             modifier = Modifier.fillMaxWidth(),
                             color = if (user) Color(0xFFB66A55) else Blue,
                             fontSize = 11.sp,
@@ -1935,7 +1935,7 @@ private fun ToolHeader(title: String, onBack: () -> Unit) {
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    Icons.Outlined.ArrowBack,
+                    Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = "رجوع",
                     tint = Blue,
                     modifier = Modifier.size(20.dp)
@@ -1953,7 +1953,7 @@ private fun ToolHeader(title: String, onBack: () -> Unit) {
                 fontWeight = FontWeight.Black
             )
             Text(
-                "مساحة HAI",
+                "مساحة H AGENT",
                 color = Muted,
                 fontSize = 10.sp
             )
@@ -2395,7 +2395,7 @@ private fun SettingsRootContent(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "كل إعدادات HAI في مكان واحد",
+                    "كل إعدادات H AGENT في مكان واحد",
                     color = Muted,
                     fontSize = 11.sp
                 )
@@ -2672,7 +2672,7 @@ private fun GitHubSettingsContent(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            Icons.Outlined.Logout,
+                            Icons.AutoMirrored.Outlined.Logout,
                             contentDescription = null,
                             tint = Color(0xFFB66A55),
                             modifier = Modifier.size(18.dp)

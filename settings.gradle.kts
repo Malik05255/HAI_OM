@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "HAI_OM"
+rootProject.name = "H_AGENT"
 include(":app")

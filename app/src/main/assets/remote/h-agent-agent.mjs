@@ -3,11 +3,11 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const ROOT = process.cwd();
-const TASK_PATH = process.env.HAI_TASK_PATH || path.join(ROOT, ".hai-om", "task.json");
-const RESULT_PATH = process.env.HAI_RESULT_PATH || path.join(ROOT, ".hai-om", "result.json");
-const OMNI = (process.env.HAI_OMNIROUTE_URL || "http://127.0.0.1:20128").replace(/\/$/, "");
-const BRANCH = process.env.HAI_BRANCH || "";
-const REPOSITORY = process.env.HAI_REPOSITORY || "";
+const TASK_PATH = process.env.H_AGENT_TASK_PATH || path.join(ROOT, ".h-agent", "task.json");
+const RESULT_PATH = process.env.H_AGENT_RESULT_PATH || path.join(ROOT, ".h-agent", "result.json");
+const OMNI = (process.env.H_AGENT_OMNIROUTE_URL || "http://127.0.0.1:20128").replace(/\/$/, "");
+const BRANCH = process.env.H_AGENT_BRANCH || "";
+const REPOSITORY = process.env.H_AGENT_REPOSITORY || "";
 const TOKEN = process.env.GITHUB_TOKEN || "";
 const MAX_TASKS = 5;
 const MAX_FIX_ATTEMPTS = 3;
@@ -22,7 +22,7 @@ const requirements = String(taskSpec.requirements || "").trim();
 if (!requirements) fail("المطلوب فارغ");
 
 function log(message) {
-  process.stdout.write(`[HAI OM] ${message}\n`);
+  process.stdout.write(`[H AGENT] ${message}\n`);
 }
 
 function fail(message) {
@@ -36,13 +36,13 @@ function sleep(ms) {
 async function runtimePaused() {
   try {
     const response = await fetch(
-      `https://api.github.com/repos/${REPOSITORY}/contents/.hai-om/control.json?ref=hai-om%2Fruntime`,
+      `https://api.github.com/repos/${REPOSITORY}/contents/.h-agent/control.json?ref=h-agent%2Fruntime`,
       {
         headers: {
           "Accept": "application/vnd.github+json",
           "Authorization": `Bearer ${TOKEN}`,
           "X-GitHub-Api-Version": "2022-11-28",
-          "User-Agent": "HAI-OM-Agent"
+          "User-Agent": "H-AGENT-Agent"
         },
         signal: AbortSignal.timeout(15_000)
       }
@@ -97,9 +97,9 @@ function safeChildEnv() {
   const env = { ...process.env };
   delete env.GITHUB_TOKEN;
   delete env.GH_TOKEN;
-  delete env.HAI_OMNIROUTE_URL;
-  delete env.HAI_BRANCH;
-  delete env.HAI_REPOSITORY;
+  delete env.H_AGENT_OMNIROUTE_URL;
+  delete env.H_AGENT_BRANCH;
+  delete env.H_AGENT_REPOSITORY;
   return env;
 }
 
@@ -132,8 +132,8 @@ function isSensitive(file) {
 
 function excludedPath(file) {
   const lower = file.toLowerCase().replaceAll("\\", "/");
-  return lower === ".github/workflows/hai-om-agent.yml" ||
-    lower.startsWith(".hai-om/") ||
+  return lower === ".github/workflows/h-agent-agent.yml" ||
+    lower.startsWith(".h-agent/") ||
     lower.startsWith("node_modules/") ||
     lower.includes("/node_modules/") ||
     lower.startsWith(".gradle/") ||
@@ -197,7 +197,7 @@ async function publishLiveCode(batch) {
 
   if (!preview) return;
 
-  const livePath = `.hai-om/live/${String(taskSpec.taskId || "task")}.txt`;
+  const livePath = `.h-agent/live/${String(taskSpec.taskId || "task")}.txt`;
   const encodedPath = livePath
     .split("/")
     .map(part => encodeURIComponent(part))
@@ -207,13 +207,13 @@ async function publishLiveCode(batch) {
     try {
       let sha = "";
       const current = await fetch(
-        `https://api.github.com/repos/${REPOSITORY}/contents/${encodedPath}?ref=hai-om%2Fruntime`,
+        `https://api.github.com/repos/${REPOSITORY}/contents/${encodedPath}?ref=h-agent%2Fruntime`,
         {
           headers: {
             "Accept": "application/vnd.github+json",
             "Authorization": `Bearer ${TOKEN}`,
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "HAI-OM-Agent"
+            "User-Agent": "H-AGENT-Agent"
           },
           signal: AbortSignal.timeout(15_000)
         }
@@ -230,7 +230,7 @@ async function publishLiveCode(batch) {
       const payload = {
         message: `live-code: ${String(taskSpec.taskId || "task")}`,
         content: Buffer.from(preview, "utf8").toString("base64"),
-        branch: "hai-om/runtime"
+        branch: "h-agent/runtime"
       };
       if (sha) payload.sha = sha;
 
@@ -243,7 +243,7 @@ async function publishLiveCode(batch) {
             "Authorization": `Bearer ${TOKEN}`,
             "Content-Type": "application/json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "HAI-OM-Agent"
+            "User-Agent": "H-AGENT-Agent"
           },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(20_000)
@@ -339,7 +339,7 @@ async function chat(system, user, toolContext = "") {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": "Bearer hai-om-free",
+            "Authorization": "Bearer h-agent-free",
             "x-omniroute-compression": "default",
           },
           body: JSON.stringify({
@@ -412,8 +412,8 @@ function validateEditPath(relative) {
   const normalized = relative.replaceAll("\\", "/").replace(/^\.\//, "");
   if (normalized.startsWith("/") || normalized.split("/").includes("..")) fail(`مسار غير آمن: ${relative}`);
   if (normalized.startsWith(".git/") || normalized === ".git") fail("لا يمكن تعديل .git");
-  if (normalized.startsWith(".hai-om/")) fail("رفض تعديل ملفات تشغيل HAI OM");
-  if (normalized === ".github/workflows/hai-om-agent.yml") fail("رفض تعديل مشغل HAI OM");
+  if (normalized.startsWith(".h-agent/")) fail("رفض تعديل ملفات تشغيل H AGENT");
+  if (normalized === ".github/workflows/h-agent-agent.yml") fail("رفض تعديل مشغل H AGENT");
   if (isSensitive(normalized)) fail(`رفض تعديل ملف حساس: ${normalized}`);
   const absolute = path.resolve(ROOT, normalized);
   if (!(absolute === ROOT || absolute.startsWith(ROOT + path.sep))) fail(`مسار خارج المشروع: ${normalized}`);
@@ -515,8 +515,8 @@ function commitPaths(paths, message) {
   const diff = git(["diff", "--cached", "--quiet"]);
   if (diff.status === 0) return false;
 
-  git(["config", "user.name", "HAI OM"]);
-  git(["config", "user.email", "hai-om@users.noreply.github.com"]);
+  git(["config", "user.name", "H AGENT"]);
+  git(["config", "user.email", "h-agent@users.noreply.github.com"]);
 
   const commit = git(["commit", "-m", message.slice(0, 180)]);
   if (!commit.ok) fail(`تعذر حفظ التغييرات: ${redact(commit.text).slice(-1000)}`);
@@ -657,7 +657,7 @@ async function main() {
     if (!check.ok) fail(`تعذر إصلاح المهمة: ${title}`);
 
     await waitIfPaused();
-    const committed = commitPaths(changedPaths, `HAI OM: ${title}`);
+    const committed = commitPaths(changedPaths, `H AGENT: ${title}`);
     if (committed) log("تم حفظ التعديل");
     else log("لم تحتج المهمة إلى تغيير");
   }
@@ -676,7 +676,7 @@ async function main() {
     const finalPaths = applyBatch(finalBatch);
     const retry = runChecks(true);
     if (!retry.ok) fail("تعذر اجتياز الفحص النهائي");
-    commitPaths(finalPaths, "HAI OM: final build repair");
+    commitPaths(finalPaths, "H AGENT: final build repair");
   }
 
   const summary = String(plan.answer || "").trim() ||

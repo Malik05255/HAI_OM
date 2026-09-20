@@ -1,80 +1,66 @@
-# HAI OM
+# H AGENT
 
-تطبيق Android مفتوح المصدر يعمل كـ **Free-only autonomous coding agent** مرتبط بـ GitHub، ويستخدم **OmniRoute فقط** كبوابة AI.
+**H AGENT** هو تطبيق Android أصلي يعمل كمساعد ذكاء اصطناعي ووكيل برمجي مرتبط بـ GitHub. يجمع المحادثة، المساعدة البرمجية، توليد الصور، الإدخال الصوتي، تشغيل مهام تطوير تلقائية، ومتابعة CI داخل واجهة واحدة.
 
-## المعمارية
+## ما الذي يقدمه الآن؟
 
-```text
-HAI OM Android
-├─ GitHub API        → قراءة المستودع / الفروع / commits / Actions / PR
-└─ OmniRoute API     → النماذج / free routing / fallback / quota / compression
-                       └─ providers managed entirely by OmniRoute
-```
+- Android Native باستخدام Kotlin وJetpack Compose مع دعم RTL.
+- محادثة مباشرة للمهام العامة والبرمجية.
+- توجيه مختلف بين المحادثة الخفيفة ومهام البرمجة مع fallback عند تعطل مزود.
+- ربط GitHub عبر OAuth Device Flow: يعرض كودًا، يفتح GitHub للموافقة، ثم يجلب المستودعات المتاحة.
+- اختيار المستودع يدويًا بعد الربط بدل اختيار مشروع تلقائيًا.
+- وكيل تطوير مستقل ينشئ فرع `h-agent/*` ولا يعدّل `main` مباشرة.
+- Runtime خاص بالوكيل في `h-agent/runtime` وملفات تحكم تحت `.h-agent/`.
+- قراءة ملفات المشروع، تنفيذ تعديلات، تشغيل GitHub Actions، تحليل فشل CI، ومحاولة الإصلاح تلقائيًا.
+- إنشاء Pull Request عند اكتمال مهمة التطوير.
+- مهام تلقائية/مجدولة عبر Android WorkManager.
+- إدخال صوتي وتحويل الكلام إلى نص.
+- توليد صور داخل المحادثة؛ AI Horde مدعوم كمزود مجاني أساسي مع دعم endpoint اختياري عبر إعدادات البناء.
+- عرض الصور المولدة محليًا داخل المحادثة بعد تنزيلها والتحقق منها.
+- فحص تحديثات التطبيق من Releases في هذا المستودع.
+- تخزين بيانات الربط والأسرار محليًا باستخدام Android Keystore.
 
-HAI OM لا يحتوي تكاملات منفصلة مع Pollinations أو Gemini أو Groq أو غيرها، ولا يحتاج معرفة عدد المزودين داخل OmniRoute.
+## ربط GitHub
 
-## ما الذي ينفذه الآن؟
+H AGENT يستخدم GitHub OAuth Device Flow. لا يحتاج المستخدم إلى إنشاء أو لصق Personal Access Token يدويًا.
 
-- Android Native بـ Kotlin + Jetpack Compose وواجهة عربية RTL.
-- اتصال واحد فقط للذكاء الاصطناعي: `OmniRoute`.
-- مسار البرمجة الافتراضي: `auto/coding`.
-- يفرض على OmniRoute قبل التنفيذ `freeAccessPolicy: strict`؛ إذا لم يمكن التحقق منه يرفض تشغيل الوكيل بدل المخاطرة بمسار مدفوع.
-- يفعّل ضغط السياق في OmniRoute باستخدام pipeline: `RTK → Caveman`.
-- يرسل CI/build logs كـ tool context حتى يستفيد RTK من ضغط مخرجات الأدوات.
-- يجلب `Free Provider Rankings` لفئة Coding من OmniRoute ويرتبها من الأقوى إلى الأقل حسب score المقدم من OmniRoute.
-- ربط GitHub عبر Fine-grained Personal Access Token محفوظ محليًا بتشفير Android Keystore.
-- إعطاء رابط المستودع + مواصفات العمل فقط.
-- قراءة ملفات المشروع المهمة وبناء context محدود.
-- تقسيم الطلب إلى مهام تلقائيًا.
-- إنشاء فرع `hai-agent/*` بدل التعديل المباشر على `main`.
-- تعديل الملفات مهمة بعد مهمة.
-- انتظار GitHub Actions بعد كل مهمة.
-- عند فشل CI: تنزيل logs، تحليلها، إصلاح الكود، وإعادة الاختبار حتى 5 مرات.
-- عند اكتمال جميع المهام: إنشاء Pull Request تلقائيًا.
-- GitHub Actions يبني APK ويشغّل unit tests وlint.
+التدفق:
+1. اضغط ربط GitHub.
+2. يعرض H AGENT كود الربط.
+3. افتح GitHub وأدخل الكود ووافق على الصلاحيات.
+4. يعود H AGENT لمتابعة التحقق تلقائيًا.
+5. تظهر المستودعات المتاحة لتختار المشروع المطلوب.
 
-## سياسة المجانية
+إعداد OAuth موضح في `docs/GITHUB_OAUTH_SETUP.md`.
 
-التطبيق نفسه لا يقرر أي Provider مجاني أو مدفوع. OmniRoute هو مصدر الحقيقة، وHAI OM يطلب منه وضع **strict zero-cost** قبل أي طلب AI.
+## أمان التنفيذ
 
-> المجانية لا تعني موارد غير محدودة. إذا لم يعد هناك مسار مجاني آمن، يجب أن يفشل الطلب بدل الانتقال لمسار يمكن أن يسبب فوترة.
+- لا تعديل مباشر على `main` أثناء تنفيذ الوكيل.
+- مسارات runtime/control الخاصة بـ H AGENT محمية من تعديل الوكيل نفسه.
+- الأسرار لا تُكتب في المستودع.
+- بيانات GitHub المحفوظة محليًا مشفرة عبر Android Keystore.
+- عدد محاولات إصلاح CI محدود لتجنب الحلقات غير المنتهية.
+- HTTP العام غير مسموح به لمسارات تحتاج اتصالًا آمنًا؛ الاتصالات المحلية الخاصة يمكن دعمها حسب المسار.
 
-## اتصال OmniRoute
+## البناء
 
-الافتراضي محليًا:
+المتطلبات المستخدمة في CI:
+- JDK 17
+- Gradle 8.10.2
+- Android compile/target SDK 35
 
-```text
-http://127.0.0.1:20128
-```
-
-يمكن استخدام عنوان LAN خاص مثل `192.168.x.x` عبر HTTP. أي خادم عام يجب أن يستخدم HTTPS؛ التطبيق يرفض HTTP العام.
-
-إذا كان OmniRoute محميًا، أدخل API/management key يسمح بتعديل `/api/settings` و`/api/settings/compression` حتى يتمكن HAI OM من فرض strict zero-cost والضغط.
-
-## تشغيل البناء محليًا
-
-استخدم Gradle 8.10.2 + JDK 17:
+الأمر:
 
 ```bash
-gradle testDebugUnitTest lintDebug assembleDebug
+gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 ```
 
-أو استخدم GitHub Actions؛ سيظهر `HAI-OM-debug-apk` كـ artifact بعد نجاح البناء.
+كل push إلى `main` يشغّل الاختبارات وlint والبناء، ثم ينشئ APK إصدارًا موقعًا باسم `H-AGENT.apk`.
 
-## صلاحيات GitHub المقترحة
+## ملاحظات التوافق
 
-استخدم Fine-grained PAT وحدده للمستودعات التي تريد أن يعمل عليها HAI OM فقط. يحتاج عمليًا إلى Contents وPull requests وActions بالقدر اللازم للتعديل، إنشاء PR، وقراءة نتائج CI.
+بعض المعرفات الداخلية القديمة مثل Android application ID، مفاتيح SharedPreferences، واسم signing material بقيت كما هي عمدًا. تغييرها سيمنع التحديث فوق النسخ المثبتة أو يفقد بيانات الربط المحلية. هذه ليست هوية مرئية للمستخدم.
 
-## أمان الوكيل
+## الإصدار
 
-- لا تعديل مباشر على `main`.
-- منع مسارات `..` و`.git`.
-- حد أقصى لعدد الملفات في الدفعة وحجم الملف.
-- حد أقصى 5 محاولات إصلاح لكل فشل CI.
-- منع الخدمات المدفوعة في prompts الوكيل، مع حماية أقوى على مستوى OmniRoute عبر strict zero-cost.
-- التوكنات ومفتاح OmniRoute تُخزن عبر Android Keystore ولا تُكتب في المستودع.
-- HTTP العام مرفوض؛ HTTP مسموح فقط لـ loopback والشبكات الخاصة.
-
-## الحالة
-
-`0.2.0-dev` — OmniRoute-only routing + GitHub autonomous agent + strict zero-cost + RTK/Caveman compression + CI self-healing.
+`0.11.0` — H AGENT rebrand + runtime/CI cleanup.
