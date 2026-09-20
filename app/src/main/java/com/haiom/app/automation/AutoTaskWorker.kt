@@ -227,7 +227,7 @@ class AutoTaskWorker(
             manager.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
-                    "HAI OM",
+                    "H AGENT",
                     NotificationManager.IMPORTANCE_LOW
                 )
             )
@@ -235,7 +235,7 @@ class AutoTaskWorker(
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("HAI OM")
+            .setContentTitle("H AGENT")
             .setContentText(text.take(80))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
