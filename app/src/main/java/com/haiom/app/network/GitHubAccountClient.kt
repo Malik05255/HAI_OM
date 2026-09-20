@@ -85,7 +85,7 @@ class GitHubAccountClient(
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", "Bearer $token")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "OM-Android/0.9")
+            .header("User-Agent", "H-AGENT-Android/0.11")
         return client.newCall(builder.build()).execute()
     }
 }
