@@ -122,3 +122,28 @@ jobs:
               --notes "H AGENT release $TAG" \
               --latest
           fi
+
+
+  cleanup-legacy-branches:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'H AGENT 0.11.0')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Delete all legacy branches except main
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t branches < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name'
+          )
+          for branch in "${branches[@]}"; do
+            if [[ "$branch" == "main" ]]; then
+              continue
+            fi
+            echo "Deleting branch: $branch"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" || true
+          done
