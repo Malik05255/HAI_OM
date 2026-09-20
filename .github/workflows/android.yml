@@ -20,11 +20,76 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  image-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      url: ${{ steps.image-url.outputs.url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check Cloudflare image configuration
+        id: cloudflare-config
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          H_AGENT_IMAGE_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
+        run: |
+          if [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ACCOUNT_ID" && -n "$H_AGENT_IMAGE_APP_KEY" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare image secrets are not configured; Android build will continue without a live image endpoint."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.cloudflare-config.outputs.enabled == 'true'
+        with:
+          node-version: '22'
+
+      - name: Deploy H AGENT image worker
+        id: deploy-image-worker
+        if: steps.cloudflare-config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          H_AGENT_IMAGE_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$H_AGENT_IMAGE_APP_KEY" | npx --yes wrangler@4 secret put H_AGENT_APP_KEY --config cloudflare/image-worker/wrangler.jsonc
+          DEPLOY_OUTPUT="$(npx --yes wrangler@4 deploy --config cloudflare/image-worker/wrangler.jsonc 2>&1)"
+          printf '%s\n' "$DEPLOY_OUTPUT"
+          URL="$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -Eo 'https://[^[:space:]]+\.workers\.dev' | tail -1 || true)"
+          if [[ -z "$URL" ]]; then
+            echo "Cloudflare Worker deployed but workers.dev URL could not be detected." >&2
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Select image endpoint
+        id: image-url
+        if: always()
+        shell: bash
+        env:
+          DEPLOYED_URL: ${{ steps.deploy-image-worker.outputs.url }}
+          CONFIGURED_URL: ${{ vars.H_AGENT_IMAGE_PROXY_URL }}
+        run: |
+          URL="$DEPLOYED_URL"
+          if [[ -z "$URL" ]]; then
+            URL="$CONFIGURED_URL"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: image-worker
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
       GITHUB_OAUTH_CLIENT_ID: ${{ inputs.github_oauth_client_id || vars.GITHUB_OAUTH_CLIENT_ID }}
+      CLOUDFLARE_IMAGE_PROXY_URL: ${{ needs.image-worker.outputs.url }}
+      H_AGENT_IMAGE_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -40,7 +105,7 @@ jobs:
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    needs: [image-worker, build]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -48,6 +113,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GITHUB_OAUTH_CLIENT_ID: ${{ inputs.github_oauth_client_id || vars.GITHUB_OAUTH_CLIENT_ID }}
+      CLOUDFLARE_IMAGE_PROXY_URL: ${{ needs.image-worker.outputs.url }}
+      H_AGENT_IMAGE_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5

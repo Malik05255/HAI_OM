@@ -41,7 +41,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
 import org.json.JSONObject
 
 data class MainUiState(
@@ -99,8 +98,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val directChat = DirectChatClient()
     private val imageClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(40, TimeUnit.SECONDS)
-        .callTimeout(45, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .callTimeout(130, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
@@ -856,40 +855,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val allowFallback: Boolean
     ) : Exception(message)
 
-    private fun resolveImageReference(reference: String): ImagePayload {
-        val value = reference.trim()
-
-        if (value.startsWith("data:image/", true)) {
-            val comma = value.indexOf(',')
-            if (comma <= 0) {
-                throw ImageProviderException(
-                    "صيغة Base64 للصورة غير صالحة",
-                    true
-                )
-            }
-            val header = value.substring(0, comma)
-            val mime = header.substringAfter("data:")
-                .substringBefore(';')
-            val encoded = value.substring(comma + 1)
-            return ImagePayload(
-                bytes = decodeBase64Image(encoded),
-                mimeType = mime
-            )
-        }
-
-        if (
-            value.startsWith("http://", true) ||
-            value.startsWith("https://", true)
-        ) {
-            return downloadImage(value)
-        }
-
-        return ImagePayload(
-            bytes = decodeBase64Image(value),
-            mimeType = null
-        )
-    }
-
     private fun decodeBase64Image(encoded: String): ByteArray {
         return runCatching {
             Base64.decode(
@@ -899,483 +864,103 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }.getOrElse {
             throw ImageProviderException(
                 "تعذر فك بيانات الصورة",
-                true
+                false
             )
         }
     }
 
-    private fun downloadImage(url: String): ImagePayload {
-        val request = Request.Builder()
-            .url(url)
+    private fun requestCloudflareImage(
+        prompt: String,
+        seed: Long
+    ): ImagePayload {
+        val endpoint = BuildConfig.CLOUDFLARE_IMAGE_PROXY_URL
+            .trim()
+            .trimEnd('/')
+
+        if (endpoint.isBlank()) {
+            throw ImageProviderException(
+                "خدمة الصور الجديدة غير مهيأة بعد",
+                false
+            )
+        }
+
+        val bodyJson = JSONObject().apply {
+            put("prompt", prompt)
+            put("width", 1024)
+            put("height", 1024)
+            put("seed", seed)
+        }
+
+        val builder = Request.Builder()
+            .url("$endpoint/generate")
             .header(
                 "User-Agent",
                 "H-AGENT/${BuildConfig.VERSION_NAME}"
             )
-            .header("Accept", "image/*")
-            .build()
-
-        imageClient.newCall(request)
-            .execute()
-            .use { response ->
-                if (!response.isSuccessful) {
-                    throw ImageProviderException(
-                        "تعذر تحميل الصورة: HTTP ${response.code}",
-                        response.code >= 500 ||
-                            response.code == 408 ||
-                            response.code == 429
-                    )
-                }
-
-                val body = response.body
-                    ?: throw ImageProviderException(
-                        "ملف الصورة فارغ",
-                        true
-                    )
-                val mime = body.contentType()
-                    ?.toString()
-                    ?.lowercase()
-                    .orEmpty()
-
-                if (
-                    mime.isNotBlank() &&
-                    !mime.startsWith("image/")
-                ) {
-                    throw ImageProviderException(
-                        "الرابط لم يُرجع ملف صورة",
-                        true
-                    )
-                }
-
-                return ImagePayload(
-                    bytes = body.bytes(),
-                    mimeType = mime
-                )
-            }
-    }
-
-    private fun cancelAiHordeRequest(
-        requestId: String,
-        clientAgent: String
-    ) {
-        val request = Request.Builder()
-            .url(
-                "https://aihorde.net/api/v2/generate/status/" +
-                    requestId
-            )
-            .header("Client-Agent", clientAgent)
-            .delete()
-            .build()
-
-        runCatching {
-            imageClient.newCall(request)
-                .execute()
-                .close()
-        }
-    }
-
-    private data class HordeImageModel(
-        val name: String,
-        val workers: Int,
-        val jobs: Int,
-        val eta: Int
-    )
-
-    private data class GenerationProfile(
-        val width: Int,
-        val height: Int,
-        val steps: Int,
-        val cfgScale: Double
-    )
-
-    private fun activeAiHordeModels(
-        clientAgent: String
-    ): List<HordeImageModel> {
-        val request = Request.Builder()
-            .url("https://aihorde.net/api/v2/status/models?type=image")
-            .header("Client-Agent", clientAgent)
             .header("Accept", "application/json")
-            .build()
+            .post(
+                bodyJson.toString()
+                    .toRequestBody(
+                        "application/json; charset=utf-8".toMediaType()
+                    )
+            )
 
-        return imageClient.newCall(request)
+        BuildConfig.H_AGENT_IMAGE_APP_KEY
+            .trim()
+            .takeIf { it.isNotBlank() }
+            ?.let { key ->
+                builder.header("X-H-Agent-Key", key)
+            }
+
+        return imageClient.newCall(builder.build())
             .execute()
             .use { response ->
+                val raw = response.body?.string().orEmpty()
+
                 if (!response.isSuccessful) {
+                    val message = when (response.code) {
+                        401, 403 ->
+                            "تعذر التحقق من خدمة الصور"
+                        408 ->
+                            "انتهت مهلة إنشاء الصورة"
+                        429 ->
+                            "خدمة الصور مزدحمة الآن، حاول بعد قليل"
+                        in 500..599 ->
+                            "خدمة الصور غير متاحة مؤقتًا"
+                        else ->
+                            "تعذر إنشاء الصورة"
+                    }
                     throw ImageProviderException(
-                        "تعذر جلب نماذج الصور المتاحة: HTTP ${response.code}",
-                        true
+                        message,
+                        response.code == 408 ||
+                            response.code == 429 ||
+                            response.code >= 500
                     )
                 }
 
-                val raw = response.body?.string().orEmpty()
-                val array = runCatching { JSONArray(raw) }
+                val root = runCatching { JSONObject(raw) }
                     .getOrElse {
                         throw ImageProviderException(
-                            "تعذر قراءة قائمة نماذج الصور",
+                            "استجابة خدمة الصور غير صالحة",
                             true
                         )
                     }
 
-                buildList {
-                    for (index in 0 until array.length()) {
-                        val item = array.optJSONObject(index) ?: continue
-                        val name = item.optString("name").trim()
-                        val workers = item.optInt("count", 0)
-                        if (name.isBlank() || workers <= 0) continue
-
-                        add(
-                            HordeImageModel(
-                                name = name,
-                                workers = workers,
-                                jobs = item.optInt("jobs", 0),
-                                eta = item.optInt("eta", Int.MAX_VALUE)
-                            )
-                        )
-                    }
-                }
-            }
-    }
-
-    private fun selectAiHordeImageModel(
-        prompt: String,
-        clientAgent: String
-    ): String {
-        val active = activeAiHordeModels(clientAgent)
-        if (active.isEmpty()) {
-            throw ImageProviderException(
-                "لا توجد نماذج صور متاحة الآن",
-                true
-            )
-        }
-
-        val portraitRequest = listOf(
-            "girl", "boy", "child", "woman", "man", "person",
-            "portrait", "female", "male", "face", "طفل", "طفله",
-            "طفلة", "بنت", "ولد", "رجل", "امرأة", "امراه", "وجه"
-        ).any { prompt.contains(it, ignoreCase = true) }
-
-        val preferredHints = if (portraitRequest) {
-            listOf(
-                "ICBINP",
-                "Realistic Vision",
-                "Juggernaut XL",
-                "AlbedoBase XL"
-            )
-        } else {
-            listOf(
-                "Juggernaut XL",
-                "AlbedoBase XL",
-                "ICBINP",
-                "Realistic Vision"
-            )
-        }
-
-        for (hint in preferredHints) {
-            active
-                .filter { model ->
-                    model.name.contains(hint, ignoreCase = true)
-                }
-                .minWithOrNull(
-                    compareBy<HordeImageModel> { it.eta }
-                        .thenByDescending { it.workers }
-                        .thenBy { it.jobs }
-                )
-                ?.let { return it.name }
-        }
-
-        val safeFallback = active
-            .filterNot { model ->
-                OLD_IMAGE_MODEL_MARKERS.any { marker ->
-                    model.name.contains(marker, ignoreCase = true)
-                } ||
-                    model.name.contains("nsfw", ignoreCase = true) ||
-                    model.name.contains("anime", ignoreCase = true)
-            }
-            .minWithOrNull(
-                compareBy<HordeImageModel> { it.eta }
-                    .thenByDescending { it.workers }
-                    .thenBy { it.jobs }
-            )
-
-        return safeFallback?.name
-            ?: throw ImageProviderException(
-                "لا يوجد نموذج صور جديد مناسب متاح الآن",
-                true
-            )
-    }
-
-    private suspend fun requestAiHordeImage(
-        prompt: String,
-        seed: Long
-    ): ImagePayload {
-        val apiKey = BuildConfig.AI_HORDE_API_KEY
-            .trim()
-            .ifBlank { "0000000000" }
-
-        val clientAgent =
-            "H-AGENT:${BuildConfig.VERSION_NAME}:" +
-                "https://github.com/Malik05255/HAI_OM"
-
-        val selectedModel = selectAiHordeImageModel(
-            prompt = prompt,
-            clientAgent = clientAgent
-        )
-
-        val negativePrompt = listOf(
-            "deformed anatomy",
-            "fused body parts",
-            "extra limbs",
-            "duplicate limbs",
-            "distorted face",
-            "malformed hands",
-            "watermark",
-            "unreadable text"
-        ).joinToString(", ")
-
-        val profiles = listOf(
-            GenerationProfile(
-                width = 512,
-                height = 512,
-                steps = 14,
-                cfgScale = 6.0
-            ),
-            GenerationProfile(
-                width = 384,
-                height = 384,
-                steps = 10,
-                cfgScale = 5.5
-            )
-        )
-
-        fun buildRequestBody(
-            profile: GenerationProfile
-        ): JSONObject = JSONObject().apply {
-            put("prompt", "$prompt ### $negativePrompt")
-            put("models", JSONArray().put(selectedModel))
-            put("nsfw", false)
-            put("censor_nsfw", true)
-            put("r2", true)
-            put("shared", false)
-            put("replacement_filter", true)
-            put("slow_workers", true)
-            put("allow_downgrade", true)
-            put(
-                "params",
-                JSONObject().apply {
-                    put("n", 1)
-                    put("width", profile.width)
-                    put("height", profile.height)
-                    put("steps", profile.steps)
-                    put("cfg_scale", profile.cfgScale)
-                    put("sampler_name", "k_euler_a")
-                    put("karras", true)
-                    put("seed", seed.toString())
-                }
-            )
-        }
-
-        var lastSubmitError = "تعذر إرسال طلب الصورة"
-        var requestId: String? = null
-
-        for ((index, profile) in profiles.withIndex()) {
-            val bodyJson = buildRequestBody(profile)
-
-            val submitRequest = Request.Builder()
-                .url("https://aihorde.net/api/v2/generate/async")
-                .header("apikey", apiKey)
-                .header("Client-Agent", clientAgent)
-                .header("Accept", "application/json")
-                .post(
-                    bodyJson.toString()
-                        .toRequestBody(
-                            "application/json; charset=utf-8".toMediaType()
-                        )
-                )
-                .build()
-
-            val attempt = imageClient.newCall(submitRequest)
-                .execute()
-                .use { response ->
-                    val raw = response.body?.string().orEmpty()
-
-                    if (response.isSuccessful) {
-                        val id = runCatching {
-                            JSONObject(raw).optString("id")
-                        }.getOrNull().orEmpty()
-
-                        if (id.isNotBlank()) {
-                            return@use Triple(id, false, "")
-                        }
-
-                        return@use Triple(
-                            "",
-                            false,
-                            "AI Horde لم يرجع رقم طلب صالح"
-                        )
-                    }
-
-                    val apiMessage = runCatching {
-                        JSONObject(raw).optString("message")
-                    }.getOrNull().orEmpty()
-
-                    val normalizedMessage = apiMessage.lowercase()
-                    val needsKudos =
-                        normalizedMessage.contains("kudos") ||
-                        normalizedMessage.contains("heavy demand") ||
-                        normalizedMessage.contains("work budget") ||
-                        normalizedMessage.contains("642x642")
-
-                    val message = when {
-                        needsKudos ->
-                            "خدمة الصور تحت ضغط مرتفع"
-                        response.code == 429 ->
-                            "خدمة الصور مزدحمة الآن"
-                        response.code in 500..599 ->
-                            "خدمة الصور متعطلة مؤقتًا"
-                        response.code == 408 ->
-                            "انتهت مهلة خدمة الصور"
-                        else ->
-                            "تعذر إرسال طلب الصورة"
-                    }
-
-                    Triple("", needsKudos, message)
-                }
-
-            if (attempt.first.isNotBlank()) {
-                requestId = attempt.first
-                break
-            }
-
-            lastSubmitError = attempt.third
-
-            if (!attempt.second || index == profiles.lastIndex) {
-                break
-            }
-        }
-
-        val resolvedRequestId = requestId
-            ?: throw ImageProviderException(
-                lastSubmitError,
-                true
-            )
-
-        repeat(18) {
-            kotlinx.coroutines.delay(1_500L)
-
-            val checkRequest = Request.Builder()
-                .url(
-                    "https://aihorde.net/api/v2/generate/check/" +
-                        resolvedRequestId
-                )
-                .header("Client-Agent", clientAgent)
-                .header("Accept", "application/json")
-                .build()
-
-            val check = imageClient.newCall(checkRequest)
-                .execute()
-                .use { response ->
-                    val raw = response.body?.string().orEmpty()
-                    if (!response.isSuccessful) {
-                        throw ImageProviderException(
-                            "تعذر فحص طلب AI Horde: HTTP ${response.code}",
-                            response.code >= 500 ||
-                                response.code == 408 ||
-                                response.code == 429
-                        )
-                    }
-                    JSONObject(raw)
-                }
-
-            if (check.optBoolean("faulted", false)) {
-                throw ImageProviderException(
-                    "تعذر إكمال الصورة على AI Horde",
-                    true
-                )
-            }
-
-            if (
-                check.has("is_possible") &&
-                !check.optBoolean("is_possible", true)
-            ) {
-                cancelAiHordeRequest(resolvedRequestId, clientAgent)
-                throw ImageProviderException(
-                    "لا يوجد عامل متاح لهذا الطلب على AI Horde",
-                    true
-                )
-            }
-
-            val waitTime = check.optInt("wait_time", 0)
-            val queuePosition = check.optInt("queue_position", 0)
-
-            if (
-                !check.optBoolean("done", false) &&
-                (waitTime > 28 || queuePosition > 12)
-            ) {
-                cancelAiHordeRequest(resolvedRequestId, clientAgent)
-                throw ImageProviderException(
-                    "AI Horde مزدحم، يتم التحويل للمزود الاحتياطي",
-                    true
-                )
-            }
-
-            if (!check.optBoolean("done", false)) {
-                return@repeat
-            }
-
-            val statusRequest = Request.Builder()
-                .url(
-                    "https://aihorde.net/api/v2/generate/status/" +
-                        resolvedRequestId
-                )
-                .header("Client-Agent", clientAgent)
-                .header("Accept", "application/json")
-                .build()
-
-            return imageClient.newCall(statusRequest)
-                .execute()
-                .use { response ->
-                    val raw = response.body?.string().orEmpty()
-
-                    if (!response.isSuccessful) {
-                        throw ImageProviderException(
-                            "تعذر استلام صورة AI Horde: HTTP ${response.code}",
-                            response.code >= 500 ||
-                                response.code == 408 ||
-                                response.code == 429
-                        )
-                    }
-
-                    val status = JSONObject(raw)
-                    val generations = status.optJSONArray("generations")
-                        ?: throw ImageProviderException(
-                            "AI Horde لم يرجع صورة",
-                            true
-                        )
-
-                    val first = generations.optJSONObject(0)
-                        ?: throw ImageProviderException(
-                            "AI Horde رجع نتيجة غير صالحة",
-                            true
-                        )
-
-                    val image = first.optString("img")
-                    if (image.isBlank()) {
-                        throw ImageProviderException(
-                            "AI Horde لم يرجع بيانات الصورة",
-                            true
-                        )
-                    }
-
-                    normalizeRenderableImage(
-                        resolveImageReference(image)
+                val encoded = root.optString("image").trim()
+                if (encoded.isBlank()) {
+                    throw ImageProviderException(
+                        "خدمة الصور لم ترجع صورة",
+                        true
                     )
                 }
-        }
 
-        cancelAiHordeRequest(resolvedRequestId, clientAgent)
-        throw ImageProviderException(
-            "خدمة الصور مزدحمة الآن، حاول مرة أخرى بعد قليل",
-            true
-        )
+                ImagePayload(
+                    bytes = decodeBase64Image(encoded),
+                    mimeType = root.optString("mime")
+                        .takeIf { it.isNotBlank() }
+                        ?: "image/png"
+                )
+            }
     }
 
     private fun normalizeRenderableImage(
@@ -1542,9 +1127,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
 
                 val imageFile = withContext(Dispatchers.IO) {
-                    val payload = requestAiHordeImage(
-                        optimizedPrompt,
-                        seed
+                    val payload = normalizeRenderableImage(
+                        requestCloudflareImage(
+                            optimizedPrompt,
+                            seed
+                        )
                     )
 
                     saveGeneratedImage(payload, seed)
@@ -2005,13 +1592,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Regex("""(^|\s)(سويلي|سولي|صمملي|صمّملي|ارسملي|اعمللي)\s+(صورة|صوره|صور|رسمة|رسمه|تصميم)(\s|$)"""),
             Regex("""^(صورة|صوره|رسمة|رسمه|تصميم)\s+.+"""),
             Regex("""(^|\s)(generate|create|draw|make)\s+(an?\s+)?(image|picture|illustration|artwork)(\s|$)""", RegexOption.IGNORE_CASE)
-        )
-
-        private val OLD_IMAGE_MODEL_MARKERS = setOf(
-            "flux",
-            "z-image",
-            "zimage",
-            "pollinations"
         )
 
         private val IMAGE_ACTION_WORDS = setOf(

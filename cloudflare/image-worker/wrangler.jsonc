@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "h-agent-image",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-20",
+  "workers_dev": true,
+  "ai": {
+    "binding": "AI"
+  }
+}

@@ -19,8 +19,14 @@ val githubOAuthClientId = providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID"
     .takeUnless { it.isNullOrBlank() }
     ?: defaultGitHubOAuthClientId
 
-val aiHordeApiKey = providers.environmentVariable("AI_HORDE_API_KEY")
-    .orElse(providers.gradleProperty("AI_HORDE_API_KEY"))
+val cloudflareImageProxyUrl = providers.environmentVariable("CLOUDFLARE_IMAGE_PROXY_URL")
+    .orElse(providers.gradleProperty("CLOUDFLARE_IMAGE_PROXY_URL"))
+    .orNull
+    ?.trim()
+    .orEmpty()
+
+val hAgentImageAppKey = providers.environmentVariable("H_AGENT_IMAGE_APP_KEY")
+    .orElse(providers.gradleProperty("H_AGENT_IMAGE_APP_KEY"))
     .orNull
     ?.trim()
     .orEmpty()
@@ -36,8 +42,8 @@ android {
         applicationId = "com.haiom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 71
-        versionName = "0.11.5"
+        versionCode = 72
+        versionName = "0.12.0"
 
         buildConfigField(
             "String",
@@ -47,8 +53,13 @@ android {
 
         buildConfigField(
             "String",
-            "AI_HORDE_API_KEY",
-            buildConfigString(aiHordeApiKey)
+            "CLOUDFLARE_IMAGE_PROXY_URL",
+            buildConfigString(cloudflareImageProxyUrl)
+        )
+        buildConfigField(
+            "String",
+            "H_AGENT_IMAGE_APP_KEY",
+            buildConfigString(hAgentImageAppKey)
         )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
