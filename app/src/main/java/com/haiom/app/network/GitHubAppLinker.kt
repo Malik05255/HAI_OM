@@ -185,7 +185,7 @@ class GitHubAppLinker(
             put("setup_on_update", false)
             put("public", false)
             put("hook_attributes", buildJsonObject {
-                put("url", "https://example.invalid/om")
+                put("url", "https://example.invalid/h-agent")
                 put("active", false)
             })
             put("default_permissions", buildJsonObject {
@@ -436,10 +436,10 @@ class GitHubAppLinker(
         <body style="font-family:sans-serif;padding:24px">
           <h3>تم ربط GitHub</h3>
           <p>جاري الرجوع للتطبيق…</p>
-          <p><a href="om://github-connected">العودة للتطبيق</a></p>
+          <p><a href="h-agent://github-connected">العودة للتطبيق</a></p>
           <script>
             setTimeout(function () {
-              window.location.href = 'om://github-connected';
+              window.location.href = 'h-agent://github-connected';
             }, 350);
           </script>
         </body>
