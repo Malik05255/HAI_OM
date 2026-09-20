@@ -796,7 +796,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .url(endpoint)
             .header(
                 "User-Agent",
-                "HAI-OM/${BuildConfig.VERSION_NAME}"
+                "H-AGENT/${BuildConfig.VERSION_NAME}"
             )
             .header("Accept", "application/json,image/*")
             .post(
@@ -899,7 +899,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         throw ImageProviderException(
-            "لم يعثر HAI على صورة في استجابة المزود",
+            "لم يعثر H AGENT على صورة في استجابة المزود",
             true
         )
     }
@@ -983,7 +983,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .url(url)
             .header(
                 "User-Agent",
-                "HAI-OM/${BuildConfig.VERSION_NAME}"
+                "H-AGENT/${BuildConfig.VERSION_NAME}"
             )
             .header("Accept", "image/*")
             .build()
@@ -1056,7 +1056,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .ifBlank { "0000000000" }
 
         val clientAgent =
-            "HAI-OM:${BuildConfig.VERSION_NAME}:" +
+            "H-AGENT:${BuildConfig.VERSION_NAME}:" +
                 "https://github.com/Malik05255/HAI_OM"
 
         val bodyJson = JSONObject().apply {
@@ -1330,7 +1330,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val extension = imageExtension(payload)
         return File(
             directory,
-            "hai_${System.currentTimeMillis()}_$seed.$extension"
+            "h_agent_${System.currentTimeMillis()}_$seed.$extension"
         ).apply {
             writeBytes(payload.bytes)
         }
@@ -1447,7 +1447,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val imageTurn = ChatTurn(
                     role = "assistant",
-                    text = "[[HAI_IMAGE_FILE]]${imageFile.absolutePath}"
+                    text = "[[H_AGENT_IMAGE_FILE]]${imageFile.absolutePath}"
                 )
 
                 _state.update {
