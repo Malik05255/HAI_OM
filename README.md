@@ -63,4 +63,4 @@ gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 
 ## الإصدار
 
-`0.11.0` — H AGENT rebrand + runtime/CI cleanup.
+`0.11.1` — فهم أفضل للأخطاء الكتابية + تحسين دقة وسرعة توليد الصور.

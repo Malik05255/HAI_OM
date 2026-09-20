@@ -130,6 +130,52 @@ class DirectChatClient(
         error(lastError)
     }
 
+    suspend fun optimizeImagePrompt(prompt: String): String =
+        withContext(Dispatchers.IO) {
+            val source = prompt.trim()
+            if (source.isBlank()) return@withContext source
+
+            val route = KILO_LIGHT_ROUTES.first()
+            val body = buildJsonObject {
+                put("model", route.model)
+                put("stream", false)
+                put("temperature", 0.15)
+                put("max_tokens", 220)
+                put("messages", buildJsonArray {
+                    add(buildJsonObject {
+                        put("role", "system")
+                        put(
+                            "content",
+                            "حوّل طلب الصورة إلى prompt إنجليزي قصير ودقيق لمولد صور. " +
+                                "استنتج الأخطاء الإملائية الواضحة من السياق، وحافظ بدقة على الموضوع والعمر والجنس والعدد والملابس والمكان والأسلوب المذكور. " +
+                                "لا تضف موضوعًا مختلفًا ولا تشرح. أخرج prompt فقط."
+                        )
+                    })
+                    add(buildJsonObject {
+                        put("role", "user")
+                        put("content", source.take(2_000))
+                    })
+                })
+            }
+
+            val attempt = send(
+                url = route.url,
+                token = "anonymous",
+                body = body,
+                extraHeaders = mapOf("X-KILOCODE-EDITORNAME" to "H AGENT"),
+                timeoutSeconds = 4
+            )
+
+            attempt.answer
+                ?.trim()
+                ?.removePrefix("```text")
+                ?.removePrefix("```")
+                ?.removeSuffix("```")
+                ?.trim()
+                ?.takeIf { it.length in 3..700 }
+                ?: source
+        }
+
     private data class ChatAttempt(
         val code: Int,
         val answer: String? = null,
@@ -154,6 +200,9 @@ class DirectChatClient(
                     "content",
                     buildString {
                         append("أنت H AGENT. رد كمساعد محادثة مباشر وواضح وبنفس لغة المستخدم. ")
+                        append("افهم المقصود من سياق الجملة والمحادثة حتى لو وُجد خطأ إملائي أو حرف قريب على لوحة المفاتيح. ")
+                        append("إذا كان هناك تصحيح واحد واضح يجعل المعنى منطقيًا فاعتمده ضمنيًا ونفّذ المقصود بدل تفسير الكلمة حرفيًا؛ مثال: «تمشئ» في سياق الإنشاء تُفهم غالبًا «تنشئ». ")
+                        append("لا تطلب توضيحًا بسبب خطأ كتابي بسيط، واطلبه فقط إذا بقي أكثر من تفسير معقول يغيّر المطلوب. ")
                         if (fast) {
                             append("ابدأ بالجواب مباشرة وبأقصر صياغة مفيدة. لا تكتب خطة طويلة أو مقدمات إلا إذا طلب المستخدم التفاصيل. ")
                         }

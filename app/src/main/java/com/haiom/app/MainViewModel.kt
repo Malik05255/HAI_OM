@@ -762,9 +762,85 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val value = text.trim().lowercase()
         if (value.isBlank()) return false
 
-        return IMAGE_GENERATION_PATTERNS.any {
-            it.containsMatchIn(value)
+        val normalized = normalizeIntentText(value)
+        val tokens = normalized.split(' ').filter { it.isNotBlank() }
+
+        val firstActionIndex = tokens.indexOfFirst { token ->
+            IMAGE_ACTION_WORDS.any { candidate ->
+                isWithinOneEdit(token, candidate)
+            }
         }
+
+        if (
+            tokens.firstOrNull() == "لا" &&
+            firstActionIndex in 1..3
+        ) {
+            return false
+        }
+
+        if (IMAGE_GENERATION_PATTERNS.any { it.containsMatchIn(value) }) {
+            return true
+        }
+
+        val hasImageObject = tokens.any { it in IMAGE_OBJECT_WORDS }
+        if (!hasImageObject) return false
+
+        val hasAction = firstActionIndex >= 0
+        val hasDesire = tokens.any { it in IMAGE_DESIRE_WORDS }
+
+        return hasAction || hasDesire
+    }
+
+    private fun normalizeIntentText(text: String): String =
+        text.lowercase()
+            .replace(Regex("[\\u064B-\\u065F\\u0670\\u0640]"), "")
+            .replace('أ', 'ا')
+            .replace('إ', 'ا')
+            .replace('آ', 'ا')
+            .replace('ؤ', 'و')
+            .replace('ئ', 'ي')
+            .replace('ى', 'ي')
+            .replace('ة', 'ه')
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+            .trim()
+
+    private fun isWithinOneEdit(
+        value: String,
+        target: String
+    ): Boolean {
+        if (value == target) return true
+        if (value.length < 3 || target.length < 3) return false
+        if (kotlin.math.abs(value.length - target.length) > 1) return false
+
+        var left = 0
+        var right = 0
+        var edits = 0
+
+        while (left < value.length && right < target.length) {
+            if (value[left] == target[right]) {
+                left += 1
+                right += 1
+                continue
+            }
+
+            edits += 1
+            if (edits > 1) return false
+
+            when {
+                value.length > target.length -> left += 1
+                target.length > value.length -> right += 1
+                else -> {
+                    left += 1
+                    right += 1
+                }
+            }
+        }
+
+        if (left < value.length || right < target.length) {
+            edits += 1
+        }
+
+        return edits <= 1
     }
 
     private data class ImagePayload(
@@ -1117,8 +1193,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
             }
 
-        repeat(6) {
-            kotlinx.coroutines.delay(2_500L)
+        repeat(4) {
+            kotlinx.coroutines.delay(1_500L)
 
             val checkRequest = Request.Builder()
                 .url(
@@ -1167,7 +1243,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             if (
                 !check.optBoolean("done", false) &&
-                (waitTime > 18 || queuePosition > 6)
+                (waitTime > 10 || queuePosition > 4)
             ) {
                 cancelAiHordeRequest(requestId, clientAgent)
                 throw ImageProviderException(
@@ -1243,14 +1319,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val urls = listOf(
             "https://image.pollinations.ai/prompt/" +
                 encoded +
-                "?width=1024&height=1024" +
+                "?width=768&height=768" +
                 "&model=flux" +
                 "&seed=$seed" +
                 "&nologo=true" +
-                "&enhance=true",
+                "&enhance=false",
             "https://image.pollinations.ai/prompt/" +
                 encoded +
-                "?width=1024&height=1024" +
+                "?width=768&height=768" +
                 "&seed=$seed" +
                 "&nologo=true"
         )
@@ -1359,15 +1435,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         manualChatJob = viewModelScope.launch {
             try {
-                val cleanPrompt = prompt
-                    .replace(
-                        Regex(
-                            """(?i)(صمم|صمّم|أنشئ|انشئ|ولد|ولّد|ارسم|اصنع|سوي|سو|generate|create|draw|make)\s+(لي\s+)?(صورة|صوره|image|picture)"""
-                        ),
-                        ""
-                    )
-                    .trim()
-                    .ifBlank { prompt.trim() }
+                val imageObjectMatch = Regex(
+                    """(?i)(صورة|صوره|صور|رسمة|رسمه|تصميم|image|picture|illustration|artwork)"""
+                ).find(prompt)
+
+                val cleanPrompt = if (
+                    imageObjectMatch != null &&
+                    imageObjectMatch.range.first <= 40
+                ) {
+                    prompt
+                        .substring(imageObjectMatch.range.last + 1)
+                        .trim(' ', ':', '-', '،', ',')
+                        .ifBlank { prompt.trim() }
+                } else {
+                    prompt.trim()
+                }
+
+                val optimizedPrompt = runCatching {
+                    directChat.optimizeImagePrompt(cleanPrompt)
+                }.getOrDefault(cleanPrompt)
 
                 val seed = (
                     cleanPrompt.hashCode().toLong() and 0x7fffffffL
@@ -1379,7 +1465,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ) {
                         runCatching {
                             requestConfiguredImage(
-                                cleanPrompt,
+                                optimizedPrompt,
                                 seed
                             )
                         }
@@ -1403,15 +1489,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
 
                             try {
-                                requestAiHordeImage(
-                                    cleanPrompt,
+                                requestDefaultImage(
+                                    optimizedPrompt,
                                     seed
                                 )
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
                             } catch (_: Throwable) {
-                                requestDefaultImage(
-                                    cleanPrompt,
+                                requestAiHordeImage(
+                                    optimizedPrompt,
                                     seed
                                 )
                             }
@@ -1419,15 +1505,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                         else -> {
                             try {
-                                requestAiHordeImage(
-                                    cleanPrompt,
+                                requestDefaultImage(
+                                    optimizedPrompt,
                                     seed
                                 )
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
                             } catch (_: Throwable) {
-                                requestDefaultImage(
-                                    cleanPrompt,
+                                requestAiHordeImage(
+                                    optimizedPrompt,
                                     seed
                                 )
                             }
@@ -1892,6 +1978,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Regex("""(^|\s)(سويلي|سولي|صمملي|صمّملي|ارسملي|اعمللي)\s+(صورة|صوره|صور|رسمة|رسمه|تصميم)(\s|$)"""),
             Regex("""^(صورة|صوره|رسمة|رسمه|تصميم)\s+.+"""),
             Regex("""(^|\s)(generate|create|draw|make)\s+(an?\s+)?(image|picture|illustration|artwork)(\s|$)""", RegexOption.IGNORE_CASE)
+        )
+
+        private val IMAGE_ACTION_WORDS = setOf(
+            "صمم", "تصمم", "انشي", "تنشي", "ولد", "تولد",
+            "ارسم", "ترسم", "اصنع", "تصنع", "سوي", "تسوي", "اعمل"
+        )
+
+        private val IMAGE_OBJECT_WORDS = setOf(
+            "صوره", "صور", "تصميم", "رسمه", "رسم", "لوحه",
+            "image", "picture", "illustration", "artwork"
+        )
+
+        private val IMAGE_DESIRE_WORDS = setOf(
+            "ابي", "ابغى", "اريد", "احتاج", "محتاج",
+            "محتاجه", "بدي", "ودي"
         )
 
         private val REPOSITORY_CONTEXT_WORDS = listOf(
