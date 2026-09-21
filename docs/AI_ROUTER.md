@@ -79,3 +79,12 @@ The router does not require all six provider keys to be present. Any configured
 subset is used. Adding a missing provider later only requires adding its GitHub
 secret and rerunning the Android workflow; no Android source-code change is
 required.
+
+
+## Deployment readiness probe
+
+After the Worker is deployed, CI calls the authenticated `POST /probe` endpoint.
+The probe tries configured providers in order until one returns a valid response.
+It uses a tiny request and stops after the first healthy provider, minimizing free
+quota usage. CI treats the AI router as ready only when at least one configured
+provider actually responds.
