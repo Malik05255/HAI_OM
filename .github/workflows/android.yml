@@ -175,6 +175,28 @@ jobs:
           fi
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
+      - name: Verify live AI routing
+        if: steps.ai-config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          ROUTER_URL: ${{ steps.deploy-ai-router.outputs.url }}
+          H_AGENT_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if RESPONSE="$(curl -fsS --max-time 45 \
+              -X POST "$ROUTER_URL/probe" \
+              -H "X-H-Agent-Key: $H_AGENT_APP_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{}' 2>/dev/null)"; then
+              echo "$RESPONSE"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "AI router deployed, but no configured provider passed the readiness probe." >&2
+          exit 1
+
       - name: Select AI router endpoint
         id: ai-url
         if: always()
