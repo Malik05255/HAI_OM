@@ -1,5 +1,6 @@
 package com.haiom.app.network
 
+import com.haiom.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -49,6 +50,32 @@ class DirectChatClient(
         require(prompt.isNotBlank()) { "اكتب رسالتك" }
 
         var lastError = "الخدمة المجانية مشغولة الآن"
+
+        val relayHint = when {
+            !repositoryContext.isNullOrBlank() -> "repo_code"
+            fast -> "chat"
+            else -> "code"
+        }
+        val relayBody = buildJsonObject {
+            buildBody(
+                model = "auto",
+                prompt = prompt,
+                history = history,
+                repositoryContext = repositoryContext,
+                fast = fast
+            ).forEach { (key, value) -> put(key, value) }
+            put("route_hint", relayHint)
+        }
+        val relay = sendRelay(
+            body = relayBody,
+            timeoutSeconds = when (relayHint) {
+                "repo_code" -> 60
+                "code" -> 40
+                else -> if (fast) 18 else 30
+            }
+        )
+        if (relay.answer != null) return@withContext relay.answer
+        lastError = relay.error ?: lastError
 
         val kiloRoutes = if (fast) {
             KILO_LIGHT_ROUTES.take(2)
@@ -136,6 +163,33 @@ class DirectChatClient(
             if (source.isBlank()) return@withContext source
 
             val route = KILO_LIGHT_ROUTES.first()
+            val relayBody = buildJsonObject {
+                put("model", "auto")
+                put("route_hint", "prompt_optimize")
+                put("stream", false)
+                put("temperature", 0.15)
+                put("max_tokens", 220)
+                put("messages", buildJsonArray {
+                    add(buildJsonObject {
+                        put("role", "system")
+                        put(
+                            "content",
+                            "Translate and rewrite the user's image request into one concise, literal English image-generation prompt. " +
+                                "Infer obvious spelling mistakes from context. Preserve subject, age category, gender, count, hair, clothing, setting, pose and style exactly when specified. " +
+                                "Do not answer the user, do not discuss policy, do not refuse, do not add a different subject. Output English prompt text only."
+                        )
+                    })
+                    add(buildJsonObject {
+                        put("role", "user")
+                        put("content", source.take(2_000))
+                    })
+                })
+            }
+
+            val relay = sendRelay(relayBody, timeoutSeconds = 9)
+            val relayCandidate = cleanOptimizedPrompt(relay.answer)
+            if (relayCandidate != null) return@withContext relayCandidate
+
             val body = buildJsonObject {
                 put("model", route.model)
                 put("stream", false)
@@ -166,33 +220,7 @@ class DirectChatClient(
                 timeoutSeconds = 4
             )
 
-            val candidate = attempt.answer
-                ?.trim()
-                ?.removePrefix("```text")
-                ?.removePrefix("```")
-                ?.removeSuffix("```")
-                ?.trim()
-                ?.takeIf { it.length in 3..700 }
-
-            val looksLikeRefusal = candidate?.let { value ->
-                listOf(
-                    "لا أستطيع",
-                    "لا يمكنني",
-                    "عذر",
-                    "سياس",
-                    "can't",
-                    "cannot",
-                    "sorry",
-                    "policy",
-                    "unable to"
-                ).any { marker ->
-                    value.contains(marker, ignoreCase = true)
-                }
-            } ?: false
-
-            candidate
-                ?.takeUnless { looksLikeRefusal }
-                ?: source
+            cleanOptimizedPrompt(attempt.answer) ?: source
         }
 
     private data class ChatAttempt(
@@ -260,6 +288,98 @@ class DirectChatClient(
                 put("content", prompt.take(if (fast) 8_000 else 12_000))
             })
         })
+    }
+
+    private fun cleanOptimizedPrompt(value: String?): String? {
+        val candidate = value
+            ?.trim()
+            ?.removePrefix("```text")
+            ?.removePrefix("```")
+            ?.removeSuffix("```")
+            ?.trim()
+            ?.takeIf { it.length in 3..700 }
+
+        val looksLikeRefusal = candidate?.let { text ->
+            listOf(
+                "لا أستطيع",
+                "لا يمكنني",
+                "عذر",
+                "سياس",
+                "can't",
+                "cannot",
+                "sorry",
+                "policy",
+                "unable to"
+            ).any { marker -> text.contains(marker, ignoreCase = true) }
+        } ?: false
+
+        return candidate?.takeUnless { looksLikeRefusal }
+    }
+
+    private fun sendRelay(
+        body: kotlinx.serialization.json.JsonObject,
+        timeoutSeconds: Long
+    ): ChatAttempt {
+        val endpoint = BuildConfig.CLOUDFLARE_AI_PROXY_URL
+            .trim()
+            .trimEnd('/')
+        val appKey = BuildConfig.H_AGENT_IMAGE_APP_KEY.trim()
+
+        if (endpoint.isBlank() || appKey.isBlank()) {
+            return ChatAttempt(0, error = "المسار الذكي غير مهيأ، جاري تجربة البدائل المجانية")
+        }
+
+        val request = Request.Builder()
+            .url("$endpoint/chat")
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .header("User-Agent", "H-AGENT-Android")
+            .header("X-H-Agent-Key", appKey)
+            .post(body.toString().toRequestBody(JSON))
+            .build()
+
+        val call = client.newCall(request)
+        call.timeout().timeout(timeoutSeconds, TimeUnit.SECONDS)
+
+        return try {
+            call.execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val message = when (response.code) {
+                        408 -> "انتهت مهلة المسار الذكي"
+                        429 -> "الحصة المجانية مشغولة، جاري التحويل تلقائيًا"
+                        401, 403 -> "المسار الذكي غير متاح الآن"
+                        in 500..599 -> "المزودات الأساسية غير متاحة مؤقتًا، جاري تجربة البدائل"
+                        else -> "تعذر الرد من المسار الذكي"
+                    }
+                    return@use ChatAttempt(response.code, error = message)
+                }
+
+                val answer = runCatching {
+                    (json.parseToJsonElement(raw).jsonObject["choices"] as? JsonArray)
+                        ?.firstOrNull()
+                        ?.jsonObject
+                        ?.get("message")
+                        ?.jsonObject
+                        ?.get("content")
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.trim()
+                }.getOrNull()
+
+                if (answer.isNullOrBlank()) {
+                    ChatAttempt(response.code, error = "وصل رد فارغ من المسار الذكي")
+                } else {
+                    ChatAttempt(response.code, answer = answer)
+                }
+            }
+        } catch (_: java.net.SocketTimeoutException) {
+            ChatAttempt(408, error = "انتهت مهلة المسار الذكي")
+        } catch (_: java.io.InterruptedIOException) {
+            ChatAttempt(408, error = "انتهت مهلة المسار الذكي")
+        } catch (_: IOException) {
+            ChatAttempt(0, error = "تعذر الاتصال بالمسار الذكي، جاري تجربة بديل")
+        }
     }
 
     private fun issueDahlToken(): String {

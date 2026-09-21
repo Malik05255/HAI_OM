@@ -180,6 +180,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           H_AGENT_OMNIROUTE_URL: http://127.0.0.1:20128
+          H_AGENT_AI_PROXY_URL: ${{ vars.H_AGENT_AI_PROXY_URL }}
+          H_AGENT_AI_RELAY_KEY: ${{ secrets.H_AGENT_AI_RELAY_KEY || secrets.H_AGENT_IMAGE_APP_KEY }}
           H_AGENT_BRANCH: ${{ steps.task.outputs.target_branch }}
           H_AGENT_REPOSITORY: ${{ github.repository }}
           H_AGENT_TASK_PATH: ${{ github.workspace }}/runtime/.h-agent/task.json

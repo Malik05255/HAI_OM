@@ -25,6 +25,12 @@ val cloudflareImageProxyUrl = providers.environmentVariable("CLOUDFLARE_IMAGE_PR
     ?.trim()
     .orEmpty()
 
+val cloudflareAiProxyUrl = providers.environmentVariable("CLOUDFLARE_AI_PROXY_URL")
+    .orElse(providers.gradleProperty("CLOUDFLARE_AI_PROXY_URL"))
+    .orNull
+    ?.trim()
+    .orEmpty()
+
 val hAgentImageAppKey = providers.environmentVariable("H_AGENT_IMAGE_APP_KEY")
     .orElse(providers.gradleProperty("H_AGENT_IMAGE_APP_KEY"))
     .orNull
@@ -42,8 +48,8 @@ android {
         applicationId = "com.haiom.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 72
-        versionName = "0.12.0"
+        versionCode = 73
+        versionName = "0.12.1"
 
         buildConfigField(
             "String",
@@ -55,6 +61,11 @@ android {
             "String",
             "CLOUDFLARE_IMAGE_PROXY_URL",
             buildConfigString(cloudflareImageProxyUrl)
+        )
+        buildConfigField(
+            "String",
+            "CLOUDFLARE_AI_PROXY_URL",
+            buildConfigString(cloudflareAiProxyUrl)
         )
         buildConfigField(
             "String",
