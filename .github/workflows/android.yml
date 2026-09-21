@@ -125,9 +125,12 @@ jobs:
           fi
 
       - uses: actions/setup-node@v4
-        if: steps.ai-config.outputs.enabled == 'true'
         with:
           node-version: '22'
+
+      - name: Validate AI router syntax
+        shell: bash
+        run: node --input-type=module --check < cloudflare/ai-router/src/index.js
 
       - name: Deploy secure AI router
         id: deploy-ai-router
