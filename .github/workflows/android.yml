@@ -233,6 +233,18 @@ jobs:
       H_AGENT_IMAGE_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Prevent provider API keys from entering Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE \
+            'NVIDIA_API_KEY|GEMINI_API_KEY|MISTRAL_API_KEY|CEREBRAS_API_KEY|FIREWORKS_API_KEY|GROQ_API_KEY' \
+            app/; then
+            echo "Provider API credentials must remain server-side and may not be referenced by Android source or build configuration." >&2
+            exit 1
+          fi
+
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
