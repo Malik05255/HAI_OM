@@ -367,7 +367,10 @@ export default {
       });
     }
 
-    if (request.method !== "POST" || url.pathname !== "/chat") {
+    const isChat = request.method === "POST" && url.pathname === "/chat";
+    const isProbe = request.method === "POST" && url.pathname === "/probe";
+
+    if (!isChat && !isProbe) {
       return json({ error: "Not found" }, 404);
     }
 
@@ -377,6 +380,59 @@ export default {
 
     if (request.headers.get("X-H-Agent-Key") !== env.H_AGENT_APP_KEY) {
       return json({ error: "Unauthorized" }, 401);
+    }
+
+    if (isProbe) {
+      const configured = Object.entries(PROVIDERS)
+        .filter(([, provider]) =>
+          typeof env[provider.envKey] === "string" &&
+          env[provider.envKey].trim()
+        );
+
+      if (configured.length === 0) {
+        return json({
+          ok: false,
+          configuredProviders: 0,
+          healthyProviders: 0
+        }, 503);
+      }
+
+      const probeInput = {
+        temperature: 0,
+        max_tokens: 8
+      };
+      const probeMessages = [
+        {
+          role: "user",
+          content: "Reply exactly with OK."
+        }
+      ];
+
+      let healthy = 0;
+      for (const [name, provider] of configured) {
+        const state = await providerHealth(name);
+        if (state.cooldownUntil > Date.now()) continue;
+
+        const result = await callProvider(
+          name,
+          provider,
+          env[provider.envKey].trim(),
+          probeInput,
+          probeMessages,
+          "prompt_optimize"
+        );
+
+        if (result.ok) {
+          healthy += 1;
+          break;
+        }
+      }
+
+      return json({
+        ok: healthy > 0,
+        configuredProviders: configured.length,
+        healthyProviders: healthy
+      }, healthy > 0 ? 200 : 503);
     }
 
     let input;
