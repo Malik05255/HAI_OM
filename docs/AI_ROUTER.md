@@ -8,7 +8,7 @@ The router can use these providers when their corresponding GitHub secret is con
 
 | Provider | GitHub secret | Default model |
 | --- | --- | --- |
-| NVIDIA NIM | `NVIDIA_API_KEY` | `z-ai/glm-5.3` |
+| NVIDIA NIM | `NVIDIA_API_KEY` | `z-ai/glm-5-3` |
 | Google Gemini | `GEMINI_API_KEY` | `gemini-3.8-flash` |
 | Mistral | `MISTRAL_API_KEY` | `mistral-medium-latest` |
 | Cerebras | `CEREBRAS_API_KEY` | `zai-glm-4.7` |
@@ -37,6 +37,8 @@ Failures automatically trigger failover. Rate limiting, exhausted credit,
 authorization/model availability errors, timeouts, network failures, and 5xx
 responses put that provider into a temporary cooldown. The next eligible
 provider is then tried.
+
+Cooldown state is also written to the Cloudflare Cache API, so a provider that has exhausted its quota is not retried on every fresh Worker isolate. The in-memory map remains the fast local path.
 
 If every authenticated provider is unavailable, the Android chat client falls
 back to the existing Kilo/Dahl free path. The remote GitHub coding agent falls
