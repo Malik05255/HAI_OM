@@ -11,6 +11,11 @@ on:
         description: "Optional GitHub OAuth Client ID override"
         required: false
         type: string
+      activate_backends:
+        description: "Deploy Cloudflare backends, verify a live AI provider, and publish the current APK"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -41,6 +46,14 @@ jobs:
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "Cloudflare image secrets are not configured; Android build will continue without a live image endpoint."
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.activate_backends }}" == "true" ]]; then
+              missing=()
+              [[ -z "$CLOUDFLARE_API_TOKEN" ]] && missing+=("CLOUDFLARE_API_TOKEN")
+              [[ -z "$CLOUDFLARE_ACCOUNT_ID" ]] && missing+=("CLOUDFLARE_ACCOUNT_ID")
+              [[ -z "$H_AGENT_IMAGE_APP_KEY" ]] && missing+=("H_AGENT_IMAGE_APP_KEY")
+              printf 'Backend activation requires GitHub secrets: %s\n' "${missing[*]}" >&2
+              exit 1
+            fi
           fi
 
       - uses: actions/setup-node@v4
@@ -122,6 +135,17 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "provider_count=$provider_count" >> "$GITHUB_OUTPUT"
             echo "AI router deploy skipped; existing configured endpoint will still be used if present."
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.activate_backends }}" == "true" ]]; then
+              missing=()
+              [[ -z "$CLOUDFLARE_API_TOKEN" ]] && missing+=("CLOUDFLARE_API_TOKEN")
+              [[ -z "$CLOUDFLARE_ACCOUNT_ID" ]] && missing+=("CLOUDFLARE_ACCOUNT_ID")
+              [[ -z "$H_AGENT_APP_KEY" ]] && missing+=("H_AGENT_IMAGE_APP_KEY")
+              if [[ "$provider_count" -eq 0 ]]; then
+                missing+=("ONE_OF:NVIDIA_API_KEY,GEMINI_API_KEY,MISTRAL_API_KEY,CEREBRAS_API_KEY,FIREWORKS_API_KEY,GROQ_API_KEY")
+              fi
+              printf 'AI backend activation requires GitHub secrets: %s\n' "${missing[*]}" >&2
+              exit 1
+            fi
           fi
 
       - uses: actions/setup-node@v4
@@ -257,7 +281,12 @@ jobs:
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 
   publish:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.image-worker.outputs.url != ''
+    if: >-
+      needs.image-worker.outputs.url != '' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_dispatch' && inputs.activate_backends == true)
+      )
     needs: [image-worker, ai-router, build]
     runs-on: ubuntu-latest
     timeout-minutes: 25
