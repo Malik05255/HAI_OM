@@ -208,6 +208,7 @@ function providerBody(name, provider, input, messages, hint) {
 
   if (name === "nvidia") {
     body.reasoning_effort = hint === "chat" || hint === "prompt_optimize" ? "low" : "high";
+    body.clear_thinking = true;
   } else if (name === "groq") {
     body.reasoning_effort = hint === "chat" || hint === "prompt_optimize" ? "low" : "high";
   } else if (name === "cerebras" && provider.model === "zai-glm-4.7") {
