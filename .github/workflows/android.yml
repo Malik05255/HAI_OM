@@ -82,13 +82,115 @@ jobs:
           fi
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
+  ai-router:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      url: ${{ steps.ai-url.outputs.url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check Cloudflare AI router configuration
+        id: ai-config
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          H_AGENT_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set -euo pipefail
+          provider_count=0
+          for value in "$NVIDIA_API_KEY" "$GEMINI_API_KEY" "$MISTRAL_API_KEY" "$CEREBRAS_API_KEY" "$FIREWORKS_API_KEY" "$GROQ_API_KEY"; do
+            if [[ -n "$value" ]]; then
+              provider_count=$((provider_count + 1))
+            fi
+          done
+
+          if [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ACCOUNT_ID" && -n "$H_AGENT_APP_KEY" && "$provider_count" -gt 0 ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "provider_count=$provider_count" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "provider_count=$provider_count" >> "$GITHUB_OUTPUT"
+            echo "AI router deploy skipped; existing configured endpoint will still be used if present."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.ai-config.outputs.enabled == 'true'
+        with:
+          node-version: '22'
+
+      - name: Deploy secure AI router
+        id: deploy-ai-router
+        if: steps.ai-config.outputs.enabled == 'true'
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          H_AGENT_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set -euo pipefail
+          CONFIG="cloudflare/ai-router/wrangler.jsonc"
+
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            if [[ -n "$value" ]]; then
+              printf '%s' "$value" | npx --yes wrangler@4 secret put "$name" --config "$CONFIG" >/dev/null
+            fi
+          }
+
+          put_secret H_AGENT_APP_KEY "$H_AGENT_APP_KEY"
+          put_secret NVIDIA_API_KEY "$NVIDIA_API_KEY"
+          put_secret GEMINI_API_KEY "$GEMINI_API_KEY"
+          put_secret MISTRAL_API_KEY "$MISTRAL_API_KEY"
+          put_secret CEREBRAS_API_KEY "$CEREBRAS_API_KEY"
+          put_secret FIREWORKS_API_KEY "$FIREWORKS_API_KEY"
+          put_secret GROQ_API_KEY "$GROQ_API_KEY"
+
+          DEPLOY_OUTPUT="$(npx --yes wrangler@4 deploy --config "$CONFIG" 2>&1)"
+          printf '%s\n' "$DEPLOY_OUTPUT"
+          URL="$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -Eo 'https://[^[:space:]]+\.workers\.dev' | tail -1 || true)"
+          if [[ -z "$URL" ]]; then
+            echo "Cloudflare AI router deployed but workers.dev URL could not be detected." >&2
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Select AI router endpoint
+        id: ai-url
+        if: always()
+        shell: bash
+        env:
+          DEPLOYED_URL: ${{ steps.deploy-ai-router.outputs.url }}
+          CONFIGURED_URL: ${{ vars.H_AGENT_AI_PROXY_URL }}
+        run: |
+          URL="$DEPLOYED_URL"
+          if [[ -z "$URL" ]]; then
+            URL="$CONFIGURED_URL"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
   build:
-    needs: image-worker
+    needs: [image-worker, ai-router]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
       GITHUB_OAUTH_CLIENT_ID: ${{ inputs.github_oauth_client_id || vars.GITHUB_OAUTH_CLIENT_ID }}
       CLOUDFLARE_IMAGE_PROXY_URL: ${{ needs.image-worker.outputs.url }}
+      CLOUDFLARE_AI_PROXY_URL: ${{ needs.ai-router.outputs.url }}
       H_AGENT_IMAGE_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
     steps:
       - uses: actions/checkout@v5
@@ -105,7 +207,7 @@ jobs:
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.image-worker.outputs.url != ''
-    needs: [image-worker, build]
+    needs: [image-worker, ai-router, build]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -114,6 +216,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GITHUB_OAUTH_CLIENT_ID: ${{ inputs.github_oauth_client_id || vars.GITHUB_OAUTH_CLIENT_ID }}
       CLOUDFLARE_IMAGE_PROXY_URL: ${{ needs.image-worker.outputs.url }}
+      CLOUDFLARE_AI_PROXY_URL: ${{ needs.ai-router.outputs.url }}
       H_AGENT_IMAGE_APP_KEY: ${{ secrets.H_AGENT_IMAGE_APP_KEY }}
     steps:
       - uses: actions/checkout@v5
