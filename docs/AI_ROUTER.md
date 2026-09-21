@@ -88,3 +88,17 @@ The probe tries configured providers in order until one returns a valid response
 It uses a tiny request and stops after the first healthy provider, minimizing free
 quota usage. CI treats the AI router as ready only when at least one configured
 provider actually responds.
+
+
+## Adaptive provider selection
+
+The router starts from the task-specific preference order, then continuously adjusts
+the eligible provider order using recent health and latency measurements.
+
+It tracks a rolling latency average, successful responses, attempts, consecutive
+failures, last success time, and cooldown state. Healthy fast providers move up,
+while slow or failing providers move down or enter cooldown. State is cached at the
+Cloudflare edge for a short period so routing does not reset on every Worker isolate.
+
+The Android app still sends only a route hint and never sees the selected provider,
+model credential, provider quota, or provider API key.

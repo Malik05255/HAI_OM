@@ -32,7 +32,8 @@ const PROVIDERS = {
 };
 
 const HEALTH = new Map();
-const COOLDOWN_CACHE_PREFIX = "https://h-agent-router.invalid/cooldown/";
+const PROVIDER_STATE_CACHE_PREFIX = "https://h-agent-router.invalid/provider-state/";
+const PROVIDER_STATE_TTL_SECONDS = 30 * 60;
 const MAX_INPUT_CHARS = 180_000;
 const ALLOWED_HINTS = new Set(["chat", "code", "repo_code", "prompt_optimize"]);
 
@@ -145,41 +146,90 @@ function routeOrder(hint, chars) {
   return ["gemini", "groq", "mistral", "cerebras", "nvidia", "fireworks"];
 }
 
-function localProviderHealth(name) {
-  return HEALTH.get(name) || { failures: 0, cooldownUntil: 0 };
+function adaptiveOrder(baseOrder, stateByName) {
+  return [...baseOrder].sort((a, b) => {
+    const aState = stateByName.get(a) || emptyProviderHealth();
+    const bState = stateByName.get(b) || emptyProviderHealth();
+    const aBase = baseOrder.indexOf(a) * 100;
+    const bBase = baseOrder.indexOf(b) * 100;
+
+    const score = (base, state) => {
+      const latencyPenalty = state.ewmaLatencyMs > 0
+        ? Math.min(180, state.ewmaLatencyMs / 120)
+        : 30;
+      const failurePenalty = state.failures * 250;
+      const successBonus = Math.min(40, state.successes * 4);
+      return base + latencyPenalty + failurePenalty - successBonus;
+    };
+
+    return score(aBase, aState) - score(bBase, bState);
+  });
 }
 
-function cooldownRequest(name) {
-  return new Request(COOLDOWN_CACHE_PREFIX + encodeURIComponent(name), {
+function emptyProviderHealth() {
+  return {
+    failures: 0,
+    cooldownUntil: 0,
+    ewmaLatencyMs: 0,
+    successes: 0,
+    attempts: 0,
+    lastSuccessAt: 0
+  };
+}
+
+function normalizeProviderHealth(value) {
+  return {
+    failures: Number(value?.failures) || 0,
+    cooldownUntil: Number(value?.cooldownUntil) || 0,
+    ewmaLatencyMs: Number(value?.ewmaLatencyMs) || 0,
+    successes: Number(value?.successes) || 0,
+    attempts: Number(value?.attempts) || 0,
+    lastSuccessAt: Number(value?.lastSuccessAt) || 0
+  };
+}
+
+function localProviderHealth(name) {
+  return HEALTH.get(name) || emptyProviderHealth();
+}
+
+function providerStateRequest(name) {
+  return new Request(PROVIDER_STATE_CACHE_PREFIX + encodeURIComponent(name), {
     method: "GET"
   });
 }
 
+async function persistProviderHealth(name, state, ttlSeconds = PROVIDER_STATE_TTL_SECONDS) {
+  HEALTH.set(name, state);
+  if (typeof caches === "undefined" || !caches.default) return;
+
+  try {
+    await caches.default.put(
+      providerStateRequest(name),
+      new Response(JSON.stringify(state), {
+        headers: {
+          "content-type": "application/json",
+          "cache-control": `public, max-age=${Math.max(1, Math.ceil(ttlSeconds))}`
+        }
+      })
+    );
+  } catch {}
+}
+
 async function providerHealth(name) {
   const local = localProviderHealth(name);
-  if (local.cooldownUntil > Date.now()) return local;
 
   if (typeof caches === "undefined" || !caches.default) return local;
 
   try {
-    const cached = await caches.default.match(cooldownRequest(name));
+    const cached = await caches.default.match(providerStateRequest(name));
     if (!cached) return local;
 
-    const state = await cached.json();
-    const normalized = {
-      failures: Number(state?.failures) || 0,
-      cooldownUntil: Number(state?.cooldownUntil) || 0
-    };
-
-    if (normalized.cooldownUntil > Date.now()) {
-      HEALTH.set(name, normalized);
-      return normalized;
-    }
-
-    await caches.default.delete(cooldownRequest(name));
-  } catch {}
-
-  return local;
+    const normalized = normalizeProviderHealth(await cached.json());
+    HEALTH.set(name, normalized);
+    return normalized;
+  } catch {
+    return local;
+  }
 }
 
 function parseRetryAfter(response) {
@@ -199,13 +249,21 @@ function parseRetryAfter(response) {
   return 0;
 }
 
-async function markSuccess(name) {
-  HEALTH.set(name, { failures: 0, cooldownUntil: 0 });
+async function markSuccess(name, latencyMs) {
+  const current = await providerHealth(name);
+  const safeLatency = Math.max(1, Number(latencyMs) || 1);
+  const ewmaLatencyMs = current.ewmaLatencyMs > 0
+    ? Math.round(current.ewmaLatencyMs * 0.7 + safeLatency * 0.3)
+    : safeLatency;
 
-  if (typeof caches === "undefined" || !caches.default) return;
-  try {
-    await caches.default.delete(cooldownRequest(name));
-  } catch {}
+  await persistProviderHealth(name, {
+    failures: 0,
+    cooldownUntil: 0,
+    ewmaLatencyMs,
+    successes: current.successes + 1,
+    attempts: current.attempts + 1,
+    lastSuccessAt: Date.now()
+  });
 }
 
 async function markFailure(name, status, retryAfterMs = 0) {
@@ -226,25 +284,17 @@ async function markFailure(name, status, retryAfterMs = 0) {
   }
 
   const state = {
+    ...current,
     failures,
+    attempts: current.attempts + 1,
     cooldownUntil: Date.now() + cooldownMs
   };
-  HEALTH.set(name, state);
 
-  if (typeof caches === "undefined" || !caches.default) return;
-
-  try {
-    const ttlSeconds = Math.max(1, Math.ceil(cooldownMs / 1000));
-    await caches.default.put(
-      cooldownRequest(name),
-      new Response(JSON.stringify(state), {
-        headers: {
-          "content-type": "application/json",
-          "cache-control": `public, max-age=${ttlSeconds}`
-        }
-      })
-    );
-  } catch {}
+  await persistProviderHealth(
+    name,
+    state,
+    Math.max(PROVIDER_STATE_TTL_SECONDS, Math.ceil(cooldownMs / 1000))
+  );
 }
 
 function providerBody(name, provider, input, messages, hint) {
@@ -274,6 +324,7 @@ function providerBody(name, provider, input, messages, hint) {
 }
 
 async function callProvider(name, provider, apiKey, input, messages, hint) {
+  const startedAt = Date.now();
   const controller = new AbortController();
   const timeoutMs =
     hint === "prompt_optimize" ? 8_000 :
@@ -316,11 +367,11 @@ async function callProvider(name, provider, apiKey, input, messages, hint) {
 
     const content = normalizeContent(payload?.choices?.[0]?.message?.content);
     if (!content) {
-      markFailure(name, 502);
+      await markFailure(name, 502);
       return { ok: false, status: 502 };
     }
 
-    await markSuccess(name);
+    await markSuccess(name, Date.now() - startedAt);
     return {
       ok: true,
       payload: {
@@ -456,9 +507,9 @@ export default {
     }
 
     const chars = totalChars(messages);
-    const order = routeOrder(hint, chars);
+    const baseOrder = routeOrder(hint, chars);
 
-    const configured = order.filter((name) => {
+    const configured = baseOrder.filter((name) => {
       const provider = PROVIDERS[name];
       return typeof env[provider.envKey] === "string" && env[provider.envKey].trim();
     });
@@ -471,9 +522,9 @@ export default {
     const states = await Promise.all(
       configured.map(async (name) => [name, await providerHealth(name)])
     );
-    const ready = states
-      .filter(([, state]) => state.cooldownUntil <= now)
-      .map(([name]) => name);
+    const stateByName = new Map(states);
+    const ready = adaptiveOrder(configured, stateByName)
+      .filter((name) => stateByName.get(name).cooldownUntil <= now);
 
     if (ready.length === 0) {
       return json({ error: "AI providers cooling down" }, 503, {
